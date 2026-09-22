@@ -7,14 +7,14 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Cosa guardo">
+<meta name="apple-mobile-web-app-title" content="TV">
 <meta name="format-detection" content="telephone=no">
 <link rel="apple-touch-icon" href="icona-180.png">
 <link rel="icon" href="icona-180.png">
 <link rel="manifest" href="manifest.webmanifest">
-<title>Cosa guardo</title>
+<title>TV</title>
 <!--
-  Cosa guardo — senza server.
+  TV — senza server.
 
   Parla diretto a TMDB e al cloud SmartThings: niente Mac, niente
   funzione serverless, funziona anche da 4G. Possibile perche'
@@ -896,7 +896,7 @@ async function schermoSfoglia() {
   // ------------------------------------------------------------- capo
   const testa = el("div", "pad");
   const capo = el("div", "capo");
-  capo.appendChild(el("h1", "titolone", "Cosa guardo"));
+  capo.appendChild(el("h1", "titolone", "TV"));
   const bf = el("button", "bottoneFiltri",
     "Filtri" + (quantiFiltri() ? " · " + quantiFiltri() : ""));
   bf.setAttribute("aria-expanded", String(filtri_aperti));

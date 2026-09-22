@@ -1,4 +1,4 @@
-# Cosa guardo
+# TV
 
 Dice se un film o una serie è **già compreso** negli abbonamenti che paghi,
 e apre l'app giusta sulla TV Samsung. Un file, nessuna dipendenza,

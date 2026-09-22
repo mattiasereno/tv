@@ -1,6 +1,6 @@
 {
-  "name": "Cosa guardo",
-  "short_name": "Cosa guardo",
+  "name": "TV",
+  "short_name": "TV",
   "description": "Ti dice se un film è già compreso nei tuoi abbonamenti, e apre l'app giusta sulla TV.",
   "lang": "it",
   "start_url": "./",
@@ -10,7 +10,16 @@
   "background_color": "#0B1014",
   "theme_color": "#0B1014",
   "icons": [
-    { "src": "icona-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "icona-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+    {
+      "src": "icona-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icona-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
   ]
 }
