@@ -1,0 +1,1494 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0B1014">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Cosa guardo">
+<meta name="format-detection" content="telephone=no">
+<link rel="apple-touch-icon" href="icona-180.png">
+<link rel="icon" href="icona-180.png">
+<link rel="manifest" href="manifest.webmanifest">
+<title>Cosa guardo</title>
+<!--
+  Cosa guardo — senza server.
+
+  Parla diretto a TMDB e al cloud SmartThings: niente Mac, niente
+  funzione serverless, funziona anche da 4G. Possibile perche'
+  entrambe le API mandano access-control-allow-origin: * e
+  SmartThings accetta l'header Authorization (verificato 22/09/2026).
+
+  I SEGRETI NON SONO IN QUESTO FILE. Li inserisci tu una volta e
+  restano in localStorage, sul telefono. Per questo il file puo'
+  stare in un repo pubblico senza problemi.
+
+  Il filtro "solo cio' che pago" nella navigazione per generi lo fa
+  TMDB, non noi: /discover accetta with_watch_providers +
+  watch_region, quindi quello che non hai non arriva nemmeno.
+-->
+<style>
+  :root {
+    --fondo:      #0B1014;
+    --fondo-alto: #101922;
+    --piano:      #16222D;
+    --piano-alto: #1E2D3A;
+    --bordo:      #24353F;
+    --testo:      #EDF2F5;
+    --tenue:      #8CA2B2;
+    --debole:     #5D7382;
+    --acceso:     #F2E9D8;
+    --acceso-testo: #16220F;
+    --verde:      #7FBF7A;
+    --rosso:      #C97A6D;
+    --ombra: 0 8px 28px rgba(0,0,0,.45);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html {
+    background: var(--fondo);
+    /* niente ingrandimento automatico del testo in orizzontale */
+    -webkit-text-size-adjust: 100%;
+    /* il rimbalzo della pagina mostrerebbe il bianco dietro */
+    overscroll-behavior-y: none;
+  }
+  body {
+    margin: 0;
+    /* dvh e non vh: su iOS la vh non tiene conto delle barre che
+       compaiono e spariscono, e il fondo pagina resta tagliato */
+    min-height: 100dvh;
+    background: var(--fondo); color: var(--testo);
+    font: 400 16px/1.5 -apple-system, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overscroll-behavior-y: none;
+    /* Dynamic Island: da app aggiunta a Home il contenuto partirebbe
+       sotto l'isola. 59pt su iPhone 15. */
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: calc(66px + env(safe-area-inset-bottom));
+  }
+  button {
+    font: inherit; color: inherit; background: none; border: 0; cursor: pointer;
+    /* manipulation toglie i 300ms di attesa del doppio tap: su un
+       telecomando la differenza si sente */
+    touch-action: manipulation;
+    -webkit-user-select: none; user-select: none;
+  }
+  img { display: block; }
+
+  /* ----------------------------------------------------------- struttura */
+  #schermo { min-height: 60vh; }
+  .pad { padding: 0 16px; }
+  .titolone {
+    font-size: 27px; font-weight: 640; letter-spacing: -.021em;
+    margin: 22px 0 14px;
+  }
+  .sezione {
+    font-size: 12px; font-weight: 640; letter-spacing: .07em;
+    text-transform: uppercase; color: var(--debole);
+    margin: 26px 0 10px;
+  }
+  .nota { color: var(--tenue); font-size: 15px; margin: 18px 0; }
+  .vuoto { color: var(--debole); text-align: center; padding: 16vh 24px; line-height: 1.6; }
+
+  /* ------------------------------------------------------ barra in basso */
+  nav {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+    display: flex; gap: 2px;
+    background: rgba(11,16,20,.86);
+    backdrop-filter: saturate(160%) blur(18px);
+    -webkit-backdrop-filter: saturate(160%) blur(18px);
+    border-top: 1px solid var(--bordo);
+    padding: 7px 8px calc(7px + env(safe-area-inset-bottom));
+  }
+  nav button {
+    flex: 1; display: flex; flex-direction: column; align-items: center;
+    gap: 3px; padding: 5px 0 3px; color: var(--debole);
+    font-size: 10.5px; font-weight: 560; letter-spacing: .02em;
+    border-radius: 11px;
+    min-height: 44px;   /* minimo tocco comodo secondo Apple */
+  }
+  nav button svg { width: 23px; height: 23px; fill: none;
+    stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  nav button[aria-selected=true] { color: var(--acceso); }
+
+  /* -------------------------------------------------------------- generi */
+  .generi {
+    display: flex; gap: 8px; overflow-x: auto; padding: 2px 16px 4px;
+    scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  }
+  .generi::-webkit-scrollbar { display: none; }
+  .chip {
+    flex: 0 0 auto; padding: 9px 15px; border-radius: 999px;
+    background: var(--piano); border: 1px solid var(--bordo);
+    color: var(--tenue); font-size: 14.5px; font-weight: 500; white-space: nowrap;
+  }
+  .chip[aria-pressed=true] {
+    background: var(--acceso); border-color: var(--acceso);
+    color: var(--acceso-testo); font-weight: 600;
+  }
+  .interruttore {
+    display: inline-flex; margin: 0 0 2px; padding: 3px;
+    background: var(--piano); border: 1px solid var(--bordo); border-radius: 12px;
+  }
+  .interruttore button {
+    padding: 7px 17px; border-radius: 9px; font-size: 14.5px;
+    font-weight: 560; color: var(--tenue);
+  }
+  .interruttore button[aria-pressed=true] { background: var(--piano-alto); color: var(--testo); }
+
+  /* ------------------------------------------------------ griglia poster */
+  .griglia {
+    display: grid; gap: 14px 11px; padding: 4px 16px 8px;
+    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  }
+  /* align-self: start perche' le righe della griglia si dimensionano
+     sulla carta piu' alta (titolo su due righe) e le altre, essendo
+     <button>, si centrerebbero verticalmente scendendo di 15px.
+     display: flex annulla il centramento interno del button. */
+  .carta {
+    text-align: left; align-self: start;
+    display: flex; flex-direction: column; align-items: stretch;
+  }
+  .carta .tela {
+    position: relative; aspect-ratio: 2/3; border-radius: 11px;
+    overflow: hidden; background: var(--piano);
+    box-shadow: 0 3px 14px rgba(0,0,0,.35);
+  }
+  .carta img { width: 100%; height: 100%; object-fit: cover; -webkit-touch-callout: none; }
+  .carta:active .tela { transform: scale(.972); }
+  .carta .tela { transition: transform .13s ease; }
+  .carta .manca {
+    display: flex; align-items: center; justify-content: center;
+    height: 100%; padding: 10px; text-align: center;
+    color: var(--debole); font-size: 11.5px; line-height: 1.35;
+  }
+  .carta .voto {
+    position: absolute; top: 6px; right: 6px;
+    background: rgba(8,12,15,.82); backdrop-filter: blur(6px);
+    color: var(--testo); font-size: 11px; font-weight: 640;
+    padding: 3px 6px; border-radius: 7px;
+  }
+  .carta h3 {
+    margin: 7px 1px 0; font-size: 13px; font-weight: 520; line-height: 1.3;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    min-height: 2.6em;
+  }
+  .carta p { margin: 1px 1px 0; font-size: 11.5px; color: var(--debole); }
+
+  /* ----------------------------------------------------------- dettaglio */
+  .sfondo { position: relative; margin-bottom: 8px; }
+  .sfondo img { width: 100%; aspect-ratio: 16/9; object-fit: cover; }
+  .sfondo::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(to bottom, rgba(11,16,20,.15) 0%, rgba(11,16,20,.6) 55%, var(--fondo) 100%);
+  }
+  .sfondo.senza { aspect-ratio: 16/7; background: linear-gradient(160deg, var(--piano-alto), var(--fondo)); }
+  .testa { display: flex; gap: 14px; align-items: flex-end; margin: -64px 0 0; position: relative; z-index: 2; }
+  .testa .locandina {
+    flex: 0 0 96px; aspect-ratio: 2/3; border-radius: 10px; overflow: hidden;
+    background: var(--piano); box-shadow: var(--ombra);
+  }
+  .testa .locandina img { width: 100%; height: 100%; object-fit: cover; }
+  .testa h1 { font-size: 22px; font-weight: 660; letter-spacing: -.018em; margin: 0 0 5px; line-height: 1.2; }
+  .meta { color: var(--tenue); font-size: 13.5px; }
+  .meta b { color: var(--testo); font-weight: 600; }
+
+  /* ------------------------------------------------------------ verdetto */
+  .verdetto { border-radius: 15px; padding: 17px 18px; margin: 20px 0 0; }
+  .verdetto.si { background: var(--acceso); color: var(--acceso-testo); }
+  .verdetto.no { background: var(--piano); border: 1px solid var(--bordo); }
+  .verdetto .risposta { font-size: 21px; font-weight: 640; letter-spacing: -.015em; margin: 0; }
+  .verdetto .dove { margin: 7px 0 0; font-size: 14.5px; opacity: .82; }
+
+  .apri {
+    display: flex; align-items: center; gap: 12px; width: 100%;
+    margin: 10px 0 0; padding: 13px 15px;
+    background: var(--piano); border: 1px solid var(--bordo);
+    border-radius: 13px; font-size: 16px; font-weight: 560;
+    transition: background .14s;
+  }
+  .apri:active { background: var(--piano-alto); }
+  .apri .logo { width: 34px; height: 34px; border-radius: 8px; flex: 0 0 34px; background: var(--piano-alto); }
+  .apri .etichetta { flex: 1; text-align: left; }
+  .apri small { display: block; font-size: 12.5px; font-weight: 400; color: var(--debole); margin-top: 1px; }
+  .apri.fatto { background: var(--acceso); color: var(--acceso-testo); border-color: var(--acceso); }
+  .apri.fatto small { color: rgba(22,34,15,.62); }
+  .apri.male { border-color: var(--rosso); }
+  .apri:disabled { opacity: .55; }
+
+  .trama { color: var(--testo); font-size: 15.5px; line-height: 1.62; margin: 10px 0 0; opacity: .9; }
+  .cast { display: flex; gap: 12px; overflow-x: auto; padding: 2px 16px 6px; scrollbar-width: none; }
+  .cast::-webkit-scrollbar { display: none; }
+  .attore { flex: 0 0 74px; text-align: center; }
+  .attore .faccia {
+    width: 74px; height: 74px; border-radius: 50%; overflow: hidden;
+    background: var(--piano); margin: 0 auto 6px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--debole); font-size: 20px; font-weight: 600;
+  }
+  .attore .faccia img { width: 100%; height: 100%; object-fit: cover; }
+  /* due righe fisse: i nomi lunghi non devono sfasare la fila */
+  .attore b {
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden; font-size: 12px; font-weight: 540; line-height: 1.3;
+    min-height: 2.6em;
+  }
+  .attore span { display: block; font-size: 11px; color: var(--debole); line-height: 1.3; margin-top: 1px; }
+
+  /* -------------------------------------------------------------- ricerca */
+  .barraRicerca { padding: 4px 16px 0; }
+  /* 16px e' la soglia: sotto, iOS ingrandisce la pagina quando il
+     campo prende il fuoco e non la rimpicciolisce piu' */
+  .barraRicerca input {
+    width: 100%; background: var(--piano); border: 1px solid var(--bordo);
+    border-radius: 13px; color: var(--testo); font: 400 16.5px system-ui, sans-serif;
+    padding: 14px 16px; -webkit-appearance: none; appearance: none;
+  }
+  .barraRicerca input::placeholder { color: var(--debole); }
+  input:focus, textarea:focus, .chip:focus-visible, .carta:focus-visible, .apri:focus-visible {
+    outline: 2px solid var(--acceso); outline-offset: 2px;
+  }
+
+  .riga {
+    display: flex; gap: 13px; width: 100%; text-align: left;
+    padding: 9px 0; border-bottom: 1px solid var(--bordo);
+  }
+  .riga .mini { flex: 0 0 52px; aspect-ratio: 2/3; border-radius: 7px; overflow: hidden; background: var(--piano); }
+  .riga .mini img { width: 100%; height: 100%; object-fit: cover; }
+  .riga .dati { flex: 1; min-width: 0; align-self: center; }
+  .riga b { display: block; font-size: 15.5px; font-weight: 550; }
+  .riga span { font-size: 13px; color: var(--debole); }
+
+  /* --------------------------------------------------------- impostazioni */
+  .campo { margin: 0 0 20px; }
+  .campo label { display: block; font-size: 14px; font-weight: 560; margin: 0 0 7px; }
+  .campo textarea {
+    width: 100%; background: var(--piano); border: 1px solid var(--bordo);
+    border-radius: 12px; color: var(--testo);
+    font: 400 14px/1.5 ui-monospace, SFMono-Regular, monospace;
+    padding: 13px 14px; resize: vertical;
+  }
+  .campo p { color: var(--debole); font-size: 12.5px; margin: 7px 0 0; line-height: 1.5; }
+  .primario {
+    display: block; width: 100%; margin: 6px 0 0; padding: 15px;
+    background: var(--acceso); color: var(--acceso-testo);
+    border-radius: 13px; font-size: 16.5px; font-weight: 620;
+  }
+  .primario:disabled { opacity: .5; }
+  .esito { margin: 14px 0 0; font-size: 14px; line-height: 1.6; color: var(--tenue); }
+  .esito .ok::before   { content: "✓ "; color: var(--verde); }
+  .esito .ko::before   { content: "✕ "; color: var(--rosso); }
+
+  .indietro {
+    display: inline-flex; align-items: center; gap: 6px; color: var(--tenue);
+    font-size: 15px; padding: 14px 16px 4px; min-height: 44px;
+  }
+
+  /* ------------------------------------------------------------ filtri */
+  .capo { display: flex; align-items: baseline; justify-content: space-between; }
+  .bottoneFiltri {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 13px; border-radius: 999px; font-size: 14px; font-weight: 560;
+    background: var(--piano); border: 1px solid var(--bordo); color: var(--tenue);
+  }
+  .bottoneFiltri[aria-expanded=true], .bottoneFiltri.attivi {
+    background: var(--acceso); border-color: var(--acceso); color: var(--acceso-testo);
+  }
+  .pannello {
+    margin: 12px 16px 2px; padding: 4px 0 10px;
+    border: 1px solid var(--bordo); border-radius: 14px; background: var(--fondo-alto);
+  }
+  .pannello .gruppo { padding: 10px 14px 2px; }
+  .pannello .gruppo > span {
+    display: block; font-size: 11.5px; font-weight: 640; letter-spacing: .07em;
+    text-transform: uppercase; color: var(--debole); margin: 0 0 8px;
+  }
+  .scelte { display: flex; flex-wrap: wrap; gap: 7px; }
+  .scelte .chip { font-size: 13.5px; padding: 7px 12px; }
+  .azzera {
+    display: block; width: calc(100% - 28px); margin: 12px 14px 4px; padding: 11px;
+    border-radius: 11px; border: 1px solid var(--bordo); color: var(--tenue); font-size: 14.5px;
+  }
+  .conteggio { color: var(--debole); font-size: 12.5px; font-weight: 400; }
+
+  /* ------------------------------------------------------- telecomando */
+  .telecomando { padding: 0 16px 20px; }
+  .fila { display: flex; gap: 10px; margin: 0 0 12px; }
+  .fila > button { flex: 1; }
+  .tasto {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 3px; min-height: 56px; padding: 10px 6px;
+    -webkit-touch-callout: none;   /* niente menu al tocco lungo */
+    background: var(--piano); border: 1px solid var(--bordo); border-radius: 13px;
+    font-size: 12.5px; font-weight: 560; color: var(--tenue);
+    transition: background .1s, transform .1s;
+  }
+  .tasto:active { background: var(--acceso); color: var(--acceso-testo); transform: scale(.96); }
+  .tasto svg { width: 21px; height: 21px; fill: none; stroke: currentColor;
+               stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+  .tasto.acceso { background: var(--acceso); color: var(--acceso-testo); border-color: var(--acceso); }
+  .tasto:disabled { opacity: .45; }
+
+  .croce {
+    display: grid; gap: 9px; margin: 0 auto 14px; max-width: 260px;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-areas: ". su ." "sx ok dx" ". giu .";
+  }
+  .croce .su  { grid-area: su; }  .croce .giu { grid-area: giu; }
+  .croce .sx  { grid-area: sx; }  .croce .dx  { grid-area: dx; }
+  .croce .ok  { grid-area: ok; }
+  .croce .tasto { min-height: 62px; border-radius: 15px; }
+  .croce .ok {
+    background: var(--piano-alto); font-size: 15px; font-weight: 660; color: var(--testo);
+    border-radius: 50%;
+  }
+  .stato {
+    display: flex; align-items: center; gap: 9px; margin: 0 0 16px;
+    padding: 12px 14px; background: var(--fondo-alto);
+    border: 1px solid var(--bordo); border-radius: 13px; font-size: 14px;
+  }
+  .pallina { width: 9px; height: 9px; border-radius: 50%; background: var(--debole); flex: 0 0 9px; }
+  .pallina.viva { background: var(--verde); }
+  .pallina.morta { background: var(--rosso); }
+  .stato .quale { color: var(--tenue); }
+  .stato button { margin-left: auto; color: var(--tenue); font-size: 13px; text-decoration: underline; }
+
+  /* -------------------------------------------------------- trailer */
+  .trailer { position: relative; margin: 10px 0 0; border-radius: 13px; overflow: hidden;
+             background: var(--piano); aspect-ratio: 16/9; }
+  .trailer img { width: 100%; height: 100%; object-fit: cover; }
+  .trailer iframe { width: 100%; height: 100%; border: 0; display: block; }
+  .trailer .via {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(rgba(11,16,20,.1), rgba(11,16,20,.55));
+  }
+  .trailer .via span {
+    display: flex; align-items: center; justify-content: center;
+    width: 62px; height: 62px; border-radius: 50%;
+    background: rgba(242,233,216,.94); box-shadow: var(--ombra);
+  }
+  .trailer .via svg { width: 26px; height: 26px; margin-left: 3px; fill: var(--acceso-testo); }
+  .trailer .quale {
+    position: absolute; left: 0; right: 0; bottom: 0; padding: 20px 14px 10px;
+    font-size: 12.5px; color: var(--testo);
+    background: linear-gradient(transparent, rgba(11,16,20,.85));
+  }
+
+  /* ------------------------------------------------------- tastiera TV */
+  .tastiera { margin: 0 0 6px; }
+  .tastiera .campo2 { display: flex; gap: 9px; }
+  .tastiera input {
+    flex: 1; min-width: 0; background: var(--piano); border: 1px solid var(--bordo);
+    border-radius: 12px; color: var(--testo); font: 400 16.5px system-ui, sans-serif;
+    padding: 14px 15px;
+  }
+  .tastiera input::placeholder { color: var(--debole); }
+  .tastiera .manda {
+    padding: 14px 18px; border-radius: 12px; font-size: 15.5px; font-weight: 600;
+    background: var(--acceso); color: var(--acceso-testo);
+  }
+  .tastiera .manda:disabled { opacity: .5; }
+  .cifre { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 12px 0 0; }
+  .cifre .tasto { min-height: 46px; font-size: 16px; font-weight: 600; }
+  .avvisoPonte {
+    margin: 10px 0 0; padding: 12px 14px; border-radius: 12px;
+    background: var(--fondo-alto); border: 1px solid var(--bordo);
+    color: var(--tenue); font-size: 13.5px; line-height: 1.55;
+  }
+
+  .sentinella { height: 1px; }
+  .altri { padding: 18px 0 8px; text-align: center; color: var(--debole); font-size: 14px; }
+  button.altri {
+    display: block; width: calc(100% - 32px); margin: 14px 16px 6px; padding: 15px;
+    background: var(--piano); border: 1px solid var(--bordo); border-radius: 13px;
+    color: var(--testo); font-size: 15.5px; font-weight: 560;
+  }
+  button.altri:active { background: var(--piano-alto); }
+  button.altri:disabled { opacity: .55; }
+
+  .caricamento { display: flex; justify-content: center; padding: 16vh 0; }
+  .giro {
+    width: 26px; height: 26px; border-radius: 50%;
+    border: 2.5px solid var(--bordo); border-top-color: var(--acceso);
+    animation: gira .8s linear infinite;
+  }
+  @keyframes gira { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+<div id="schermo"></div>
+
+<nav>
+  <button data-scheda="sfoglia" aria-selected="true">
+    <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.6"/><rect x="14" y="3" width="7" height="7" rx="1.6"/><rect x="3" y="14" width="7" height="7" rx="1.6"/><rect x="14" y="14" width="7" height="7" rx="1.6"/></svg>
+    Sfoglia
+  </button>
+  <button data-scheda="cerca" aria-selected="false">
+    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.9-3.9"/></svg>
+    Cerca
+  </button>
+  <button data-scheda="telecomando" aria-selected="false">
+    <svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="3"/><circle cx="12" cy="8" r="1.6"/><path d="M10 13h4M10 16.5h4"/></svg>
+    Telecomando
+  </button>
+  <button data-scheda="impostazioni" aria-selected="false">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-2.9 1.2V21a2 2 0 11-4 0v-.1A1.7 1.7 0 007 19.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1A1.7 1.7 0 003 13.6H3a2 2 0 110-4h.1A1.7 1.7 0 004.7 7l-.1-.1a2 2 0 112.8-2.8l.1.1A1.7 1.7 0 0010.4 3h.2a2 2 0 114 0v.1a1.7 1.7 0 002.9 1.2l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 001.2 2.9H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>
+    Impostazioni
+  </button>
+</nav>
+
+<script>
+"use strict";
+
+/* ---------------------------------------------------- dati non segreti
+   Tenuti allineati a mappa_app.json e miei_servizi.json del repo.    */
+
+const MAPPA = {
+  "8":    { nome: "Netflix",           app: "3201907018807" },
+  "119":  { nome: "Prime Video",       app: "3201910019365" },
+  "337":  { nome: "Disney+",           app: "3201901017640" },
+  "350":  { nome: "Apple TV",          app: "3201807016597" },
+  "584":  { nome: "Discovery+",        app: "3201803015944" },
+  "39":   { nome: "NOW",               app: "jcz0WrZYdy.NOWTV" },
+  "1899": { nome: "HBO Max",           app: "5b8c3eb16b.BeamCTVDev" },
+  "359":  { nome: "Mediaset Infinity", app: "g3zzYA7yO8.InfinityNew" },
+  "110":  { nome: "Infinity+",         app: "g3zzYA7yO8.InfinityNew" },
+};
+
+// Solo quelli che paghi davvero. Una voce di troppo qui non da'
+// errore: da' una risposta sbagliata.
+const SERVIZI = ["8", "119", "337", "1899", "39", "359", "584"];
+
+// Sottogeneri veri: sono le keyword di TMDB, non i generi. Gli id
+// li ho cercati una volta con /search/keyword e verificati uno per
+// uno incrociati col filtro abbonamenti: nessuno torna vuoto.
+const SOTTOGENERI = [
+  { n: "Supereroi", k: "9715" },        { n: "Storia vera", k: "9672" },
+  { n: "Rapine", k: "10051" },          { n: "Spionaggio", k: "470" },
+  { n: "Serial killer", k: "10714" },   { n: "Distopia", k: "4565" },
+  { n: "Viaggi nel tempo", k: "4379" }, { n: "Post-apocalittico", k: "359337" },
+  { n: "Zombie", k: "12377" },          { n: "Vampiri", k: "3133" },
+  { n: "Alieni", k: "14909" },          { n: "Robot", k: "14544" },
+  { n: "Arti marziali", k: "779" },     { n: "Sopravvivenza", k: "10349" },
+  { n: "Mafia", k: "10391" },           { n: "Cospirazioni", k: "10410" },
+  { n: "Processi", k: "33519" },        { n: "Anime", k: "210024" },
+  { n: "Dinosauri", k: "12616" },       { n: "Natale", k: "207317" },
+];
+
+const ORDINI = [
+  { n: "Popolari", v: "popularity.desc" },
+  { n: "Voto più alto", v: "vote_average.desc" },
+  { n: "Più recenti", v: "data.desc" },
+];
+
+const DECENNI = [
+  { n: "Tutti", da: "", a: "" },
+  { n: "2020 →", da: "2020-01-01", a: "" },
+  { n: "2010-19", da: "2010-01-01", a: "2019-12-31" },
+  { n: "2000-09", da: "2000-01-01", a: "2009-12-31" },
+  { n: "Prima", da: "", a: "1999-12-31" },
+];
+
+const TIPI = { flatrate: "nell'abbonamento", free: "gratis", ads: "gratis con pubblicità",
+               rent: "a noleggio", buy: "da comprare" };
+const COMPRESI = ["flatrate", "free", "ads"];
+const PAGANDO = ["rent", "buy"];
+
+const TMDB = "https://api.themoviedb.org/3";
+const ST = "https://api.smartthings.com/v1";
+const IMG = "https://image.tmdb.org/t/p";
+const PAESE = "IT", LINGUA = "it-IT";
+
+
+/* -------------------------------------------------- segreti sul telefono */
+
+const chiavi = {
+  get tmdb()   { return localStorage.getItem("tmdb_key") || ""; },
+  set tmdb(v)  { localStorage.setItem("tmdb_key", v.trim()); },
+  get token()  { return localStorage.getItem("st_token") || ""; },
+  set token(v) { localStorage.setItem("st_token", v.trim()); },
+  get tv()     { return localStorage.getItem("st_device") || ""; },
+  set tv(v)    { localStorage.setItem("st_device", v); },
+};
+
+const schermo = document.getElementById("schermo");
+const nav = document.querySelector("nav");
+
+function el(tag, classe, dentro) {
+  const n = document.createElement(tag);
+  if (classe) n.className = classe;
+  if (dentro !== undefined) n.innerHTML = dentro;
+  return n;
+}
+function esc(t) {
+  return String(t ?? "").replace(/[&<>"]/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+function girello() {
+  schermo.innerHTML = '<div class="caricamento"><div class="giro"></div></div>';
+}
+function vuoto(testo) {
+  schermo.innerHTML = '<p class="vuoto">' + esc(testo) + "</p>";
+}
+function locandina(percorso, larghezza = "w342") {
+  return percorso ? '<img loading="lazy" src="' + IMG + "/" + larghezza + percorso + '" alt="">' : "";
+}
+
+
+/* ------------------------------------------------------------- chiamate */
+
+async function tmdb(percorso, parametri = {}) {
+  if (!chiavi.tmdb) throw new Error("Manca la chiave TMDB: vai in Impostazioni.");
+  const url = TMDB + percorso + "?" + new URLSearchParams({ ...parametri, api_key: chiavi.tmdb });
+  const r = await fetch(url);
+  if (r.status === 401) throw new Error("Chiave TMDB rifiutata.");
+  if (!r.ok) throw new Error("TMDB non risponde (HTTP " + r.status + ").");
+  return r.json();
+}
+
+async function smartthings(percorso, corpoRichiesta) {
+  if (!chiavi.token) throw new Error("Manca il token SmartThings: vai in Impostazioni.");
+  const r = await fetch(ST + percorso, {
+    method: corpoRichiesta ? "POST" : "GET",
+    headers: { "Authorization": "Bearer " + chiavi.token, "Content-Type": "application/json" },
+    body: corpoRichiesta ? JSON.stringify(corpoRichiesta) : undefined,
+  });
+  if (r.status === 401) throw new Error("Token SmartThings rifiutato (scaduto o revocato).");
+  if (r.status === 403) throw new Error("Token senza i permessi sui dispositivi.");
+  if (!r.ok) throw new Error("SmartThings non risponde (HTTP " + r.status + ").");
+  return r.status === 204 ? {} : r.json();
+}
+
+// Il ponte locale esiste solo se l'app e' servita da server.py in
+// rete di casa. Da GitHub Pages questa fetch fallisce, e va bene:
+// SmartThings non sa mandare testo, quindi la tastiera non c'e'.
+let ponte = undefined;   // undefined = non ancora chiesto
+async function provaPonte() {
+  if (ponte !== undefined) return ponte;
+  try {
+    const r = await fetch("/api/ponte", { cache: "no-store" });
+    const d = await r.json();
+    ponte = d.ok ? d : null;
+  } catch (e) { ponte = null; }
+  return ponte;
+}
+
+async function scriviSullaTv(testo) {
+  const r = await fetch("/api/scrivi", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ testo }),
+  });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || !d.ok) throw new Error(d.errore || "Il ponte non risponde.");
+}
+
+async function tastoLocale(nome) {
+  const r = await fetch("/api/tasto", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tasto: nome }),
+  });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || !d.ok) throw new Error(d.errore || "Il ponte non risponde.");
+}
+
+async function trovaTv() {
+  if (chiavi.tv) return chiavi.tv;
+  const dati = await smartthings("/devices");
+  for (const d of dati.items || [])
+    for (const c of d.components || [])
+      if ((c.capabilities || []).some(x => x.id === "custom.launchapp")) {
+        chiavi.tv = d.deviceId;
+        return d.deviceId;
+      }
+  throw new Error("Nessuna TV con custom.launchapp nel tuo account SmartThings.");
+}
+
+async function appInPrimoPiano() {
+  const stato = await smartthings("/devices/" + await trovaTv() + "/status");
+  return (((stato.components || {}).main || {}).tvChannel || {}).tvChannelName?.value || "";
+}
+
+// COMPLETED vuol dire "comando recapitato", non "app aperta": la
+// prova e' rileggere l'app in primo piano. Per questo verifichiamo.
+async function lancia(appId) {
+  const ident = await trovaTv();
+  const prima = await appInPrimoPiano().catch(() => "");
+  await smartthings("/devices/" + ident + "/commands", {
+    commands: [{ component: "main", capability: "custom.launchapp",
+                 command: "launchApp", arguments: [appId] }],
+  });
+  for (let i = 0; i < 5; i++) {
+    await new Promise(r => setTimeout(r, 2400));
+    const adesso = await appInPrimoPiano().catch(() => "");
+    if (adesso === appId || (adesso && adesso !== prima)) return true;
+  }
+  return false;
+}
+
+
+/* ------------------------------------------------------------- contenuti */
+
+// Il filtro lo fa TMDB: with_watch_providers + watch_region.
+// Quello che non hai in abbonamento non arriva nemmeno.
+async function sfoglia(f, pagina = 1) {
+  const campoData = f.tipo === "movie" ? "primary_release_date" : "first_air_date";
+  const parametri = {
+    language: LINGUA,
+    watch_region: PAESE,
+    // un solo servizio se l'hai scelto, altrimenti tutti i tuoi
+    with_watch_providers: f.servizio || SERVIZI.join("|"),
+    with_watch_monetization_types: COMPRESI.join("|"),
+    sort_by: f.ordine === "data.desc" ? campoData + ".desc" : f.ordine,
+    include_adult: "false",
+    page: pagina,
+  };
+  if (f.genere) parametri.with_genres = f.genere;
+  if (f.keyword) parametri.with_keywords = f.keyword;
+
+  // Senza una soglia di voti, "voto più alto" restituisce cose con
+  // tre voti da 10: tecnicamente giusto, inutile in pratica.
+  if (f.ordine === "vote_average.desc") parametri["vote_count.gte"] = 150;
+
+  const d = DECENNI.find(x => x.n === f.decennio);
+  if (d && d.da) parametri[campoData + ".gte"] = d.da;
+  if (d && d.a) parametri[campoData + ".lte"] = d.a;
+
+  const dati = await tmdb("/discover/" + f.tipo, parametri);
+  return {
+    elementi: (dati.results || []).map(v => normalizza(v, f.tipo)),
+    pagine: dati.total_pages || 1,
+    totale: dati.total_results || 0,
+  };
+}
+
+// Un comando qualsiasi alla TV, per il telecomando.
+async function comando(capacita, cmd, argomenti = []) {
+  const ident = await trovaTv();
+  await smartthings("/devices/" + ident + "/commands", {
+    commands: [{ component: "main", capability: capacita, command: cmd, arguments: argomenti }],
+  });
+}
+
+async function statoTv() {
+  const dati = await smartthings("/devices/" + await trovaTv() + "/status");
+  const m = (dati.components || {}).main || {};
+  const leggi = (c, a) => ((m[c] || {})[a] || {}).value;
+  return {
+    accesa: leggi("switch", "switch") === "on",
+    app: leggi("tvChannel", "tvChannelName") || "",
+    volume: leggi("audioVolume", "volume"),
+    muto: leggi("audioMute", "mute") === "muted",
+    ingresso: leggi("samsungvd.mediaInputSource", "inputSource"),
+    ingressi: leggi("samsungvd.mediaInputSource", "supportedInputSourcesMap") || [],
+  };
+}
+
+async function generi(tipo) {
+  const memoria = "generi_" + tipo;
+  const salvati = sessionStorage.getItem(memoria);
+  if (salvati) return JSON.parse(salvati);
+  const dati = await tmdb("/genre/" + tipo + "/list", { language: LINGUA });
+  const lista = dati.genres || [];
+  sessionStorage.setItem(memoria, JSON.stringify(lista));
+  return lista;
+}
+
+function normalizza(v, tipoNoto) {
+  const tipo = tipoNoto || v.media_type;
+  return {
+    id: v.id, tipo,
+    titolo: v.title || v.name || "?",
+    anno: (v.release_date || v.first_air_date || "").slice(0, 4),
+    voto: v.vote_average || 0,
+    locandina: v.poster_path,
+  };
+}
+
+async function cercaTitoli(query) {
+  const dati = await tmdb("/search/multi", { query, language: LINGUA, include_adult: "false" });
+  return (dati.results || [])
+    .filter(v => v.media_type === "movie" || v.media_type === "tv")
+    // TMDB non ordina per rilevanza: senza questo "Bikini Inception"
+    // finisce sopra "Inception".
+    .sort((a, b) => (b.popularity || 0) - (a.popularity || 0))
+    .slice(0, 12)
+    .map(v => normalizza(v));
+}
+
+async function scheda(tipo, id) {
+  const d = await tmdb("/" + tipo + "/" + id, {
+    language: LINGUA,
+    append_to_response: "credits,watch/providers,videos",
+  });
+  const italia = ((d["watch/providers"] || {}).results || {})[PAESE] || {};
+
+  const compresi = [], visti = new Set();
+  for (const t of COMPRESI)
+    for (const p of italia[t] || []) {
+      const pid = String(p.provider_id);
+      if (SERVIZI.includes(pid) && !visti.has(pid)) {
+        visti.add(pid);
+        compresi.push({
+          pid, come: TIPI[t], logo: p.logo_path,
+          nome: (MAPPA[pid] || {}).nome || p.provider_name,
+          app: (MAPPA[pid] || {}).app || null,
+        });
+      }
+    }
+
+  const altrove = [...new Set(COMPRESI.flatMap(t =>
+    (italia[t] || []).filter(p => !SERVIZI.includes(String(p.provider_id)))
+                     .map(p => p.provider_name)))].sort();
+  const pagando = [...new Set(PAGANDO.flatMap(t =>
+    (italia[t] || []).map(p => p.provider_name)))].sort().slice(0, 5);
+
+  const durata = tipo === "movie"
+    ? (d.runtime ? d.runtime + " min" : "")
+    : (d.number_of_seasons ? d.number_of_seasons + (d.number_of_seasons === 1 ? " stagione" : " stagioni") : "");
+
+  // Trailer: prima in italiano, che TMDB ce l'ha spesso. Se non c'e',
+  // ripiego sull'inglese con una seconda chiamata, non prima.
+  const scegliVideo = lista => {
+    const yt = (lista || []).filter(v => v.site === "YouTube");
+    return yt.find(v => v.type === "Trailer" && v.official)
+        || yt.find(v => v.type === "Trailer")
+        || yt.find(v => v.type === "Teaser")
+        || null;
+  };
+  let video = scegliVideo(((d.videos || {}).results) || []);
+  if (!video) {
+    try {
+      const altri = await tmdb("/" + tipo + "/" + id + "/videos", { language: "en-US" });
+      video = scegliVideo(altri.results);
+    } catch (e) { /* senza trailer si vive */ }
+  }
+
+  return {
+    tipo, id, video,
+    titolo: d.title || d.name || "?",
+    anno: (d.release_date || d.first_air_date || "").slice(0, 4),
+    voto: d.vote_average || 0,
+    quanti: d.vote_count || 0,
+    durata,
+    generi: (d.genres || []).map(g => g.name),
+    trama: d.overview || "",
+    locandina: d.poster_path,
+    sfondo: d.backdrop_path,
+    cast: ((d.credits || {}).cast || []).slice(0, 10).map(a => ({
+      nome: a.name, ruolo: a.character, foto: a.profile_path,
+    })),
+    compresi, altrove, pagando,
+    niente: !Object.keys(italia).length,
+  };
+}
+
+
+/* --------------------------------------------------------------- schermi */
+
+let scheda_attiva = "sfoglia";
+let F = { tipo: "movie", genere: "", keyword: "", ordine: "popularity.desc",
+          servizio: "", decennio: "Tutti" };
+let filtri_aperti = false;
+let osservatore = null;
+
+// Con la paginazione, tornare indietro da una scheda non deve
+// farti ripartire dalla prima pagina: tengo cio' che era caricato.
+let cache = { chiave: "", elementi: [], pagina: 0, pagine: 1, totale: 0, scroll: 0 };
+const chiaveFiltri = () => JSON.stringify(F);
+
+function quantiFiltri() {
+  return (F.keyword ? 1 : 0) + (F.servizio ? 1 : 0) +
+         (F.decennio !== "Tutti" ? 1 : 0) + (F.ordine !== "popularity.desc" ? 1 : 0);
+}
+
+function vai(nome) {
+  if (osservatore) { osservatore.disconnect(); osservatore = null; }
+  scheda_attiva = nome;
+  nav.querySelectorAll("button").forEach(b =>
+    b.setAttribute("aria-selected", String(b.dataset.scheda === nome)));
+  if (nome !== "sfoglia") window.scrollTo(0, 0);
+  if (nome === "sfoglia") schermoSfoglia();
+  else if (nome === "cerca") schermoCerca();
+  else if (nome === "telecomando") schermoTelecomando();
+  else schermoImpostazioni();
+}
+nav.onclick = e => {
+  const b = e.target.closest("button[data-scheda]");
+  if (b) vai(b.dataset.scheda);
+};
+
+function grigliaDi(elementi) {
+  const g = el("div", "griglia");
+  elementi.forEach(v => {
+    const c = el("button", "carta");
+    c.innerHTML =
+      '<div class="tela">' +
+        (v.locandina ? locandina(v.locandina) : '<div class="manca">' + esc(v.titolo) + "</div>") +
+        (v.voto ? '<span class="voto">' + v.voto.toFixed(1) + "</span>" : "") +
+      "</div>" +
+      "<h3>" + esc(v.titolo) + "</h3>" +
+      '<p>' + (v.anno || "—") + "</p>";
+    c.onclick = () => { cache.scroll = window.scrollY; schermoDettaglio(v.tipo, v.id); };
+    g.appendChild(c);
+  });
+  return g;
+}
+
+function fasciaChip(voci, attuale, scegli) {
+  const f = el("div", "generi");
+  voci.forEach(({ etichetta, valore }) => {
+    const b = el("button", "chip", esc(etichetta));
+    b.setAttribute("aria-pressed", String(valore === attuale));
+    b.onclick = () => scegli(valore);
+    f.appendChild(b);
+  });
+  return f;
+}
+
+function pannelloFiltri() {
+  const p = el("div", "pannello");
+
+  const gruppo = (titolo, voci, attuale, scegli) => {
+    const g = el("div", "gruppo");
+    g.appendChild(el("span", null, titolo));
+    const sc = el("div", "scelte");
+    voci.forEach(({ etichetta, valore }) => {
+      const b = el("button", "chip", esc(etichetta));
+      b.setAttribute("aria-pressed", String(valore === attuale));
+      b.onclick = () => scegli(valore);
+      sc.appendChild(b);
+    });
+    g.appendChild(sc);
+    return g;
+  };
+
+  p.appendChild(gruppo("Ordine",
+    ORDINI.map(o => ({ etichetta: o.n, valore: o.v })), F.ordine,
+    v => { F.ordine = v; schermoSfoglia(); }));
+
+  p.appendChild(gruppo("Servizio",
+    [{ etichetta: "Tutti i miei", valore: "" },
+     ...SERVIZI.map(pid => ({ etichetta: (MAPPA[pid] || {}).nome || pid, valore: pid }))],
+    F.servizio, v => { F.servizio = v; schermoSfoglia(); }));
+
+  p.appendChild(gruppo("Anni",
+    DECENNI.map(d => ({ etichetta: d.n, valore: d.n })), F.decennio,
+    v => { F.decennio = v; schermoSfoglia(); }));
+
+  if (quantiFiltri()) {
+    const z = el("button", "azzera", "Azzera i filtri");
+    z.onclick = () => {
+      F = { ...F, keyword: "", servizio: "", decennio: "Tutti", ordine: "popularity.desc" };
+      schermoSfoglia();
+    };
+    p.appendChild(z);
+  }
+  return p;
+}
+
+async function schermoSfoglia() {
+  if (!chiavi.tmdb) return vai("impostazioni");
+  if (osservatore) { osservatore.disconnect(); osservatore = null; }
+  schermo.innerHTML = "";
+
+  // ------------------------------------------------------------- capo
+  const testa = el("div", "pad");
+  const capo = el("div", "capo");
+  capo.appendChild(el("h1", "titolone", "Cosa guardo"));
+  const bf = el("button", "bottoneFiltri",
+    "Filtri" + (quantiFiltri() ? " · " + quantiFiltri() : ""));
+  bf.setAttribute("aria-expanded", String(filtri_aperti));
+  if (quantiFiltri()) bf.classList.add("attivi");
+  capo.appendChild(bf);
+  testa.appendChild(capo);
+
+  const sw = el("div", "interruttore");
+  [["movie", "Film"], ["tv", "Serie"]].forEach(([v, etichetta]) => {
+    const b = el("button", null, etichetta);
+    b.setAttribute("aria-pressed", String(F.tipo === v));
+    // cambiando tipo, genere e sottogenere non valgono piu'
+    b.onclick = () => { F = { ...F, tipo: v, genere: "", keyword: "" }; schermoSfoglia(); };
+    sw.appendChild(b);
+  });
+  testa.appendChild(sw);
+  schermo.appendChild(testa);
+
+  // ------------------------------------------------ generi e sottogeneri
+  const fasciaGeneri = el("div", "generi");
+  schermo.appendChild(fasciaGeneri);
+  schermo.appendChild(fasciaChip(
+    [{ etichetta: "Tutti i sottogeneri", valore: "" },
+     ...SOTTOGENERI.map(k => ({ etichetta: k.n, valore: k.k }))],
+    F.keyword, v => { F.keyword = v; schermoSfoglia(); }));
+
+  const zonaFiltri = el("div");
+  schermo.appendChild(zonaFiltri);
+  if (filtri_aperti) zonaFiltri.appendChild(pannelloFiltri());
+  bf.onclick = () => {
+    filtri_aperti = !filtri_aperti;
+    bf.setAttribute("aria-expanded", String(filtri_aperti));
+    zonaFiltri.innerHTML = "";
+    if (filtri_aperti) zonaFiltri.appendChild(pannelloFiltri());
+  };
+
+  const contenitore = el("div");
+  schermo.appendChild(contenitore);
+
+  try {
+    const lista = await generi(F.tipo);
+    [{ id: "", name: "Tutto" }, ...lista].forEach(g => {
+      const b = el("button", "chip", esc(g.name));
+      b.setAttribute("aria-pressed", String(String(g.id) === F.genere));
+      b.onclick = () => { F.genere = String(g.id); schermoSfoglia(); };
+      fasciaGeneri.appendChild(b);
+    });
+  } catch (e) {
+    contenitore.innerHTML = '<p class="vuoto">' + esc(e.message) + "</p>";
+    return;
+  }
+
+  // Cache valida: rimetto quello che c'era e torno dove eri.
+  if (cache.chiave === chiaveFiltri() && cache.elementi.length) {
+    disegnaGriglia(contenitore);
+    requestAnimationFrame(() => window.scrollTo(0, cache.scroll));
+    return;
+  }
+
+  cache = { chiave: chiaveFiltri(), elementi: [], pagina: 0, pagine: 1, totale: 0, scroll: 0 };
+  window.scrollTo(0, 0);
+  contenitore.innerHTML = '<div class="caricamento"><div class="giro"></div></div>';
+  await prossimaPagina(contenitore, true);
+}
+
+let sto_caricando = false;
+
+async function prossimaPagina(contenitore, prima = false) {
+  if (sto_caricando || (!prima && cache.pagina >= cache.pagine)) return;
+  sto_caricando = true;
+  try {
+    const r = await sfoglia(F, cache.pagina + 1);
+    cache.pagina += 1;
+    cache.pagine = r.pagine;
+    cache.totale = r.totale;
+    // TMDB puo' ripetere titoli fra pagine quando l'ordine cambia
+    const visti = new Set(cache.elementi.map(x => x.tipo + x.id));
+    r.elementi.forEach(x => { if (!visti.has(x.tipo + x.id)) cache.elementi.push(x); });
+    const dov_ero = window.scrollY;
+    disegnaGriglia(contenitore);
+    if (!prima) window.scrollTo(0, dov_ero);
+  } catch (e) {
+    contenitore.innerHTML = '<p class="vuoto">' + esc(e.message) + "</p>";
+  } finally {
+    sto_caricando = false;
+  }
+}
+
+function disegnaGriglia(contenitore) {
+  contenitore.innerHTML = "";
+  if (!cache.elementi.length) {
+    contenitore.appendChild(el("p", "vuoto",
+      "Niente con questi filtri fra i tuoi abbonamenti.\nProva ad allargare."));
+    return;
+  }
+
+  const intestazione = el("p", "sezione pad");
+  intestazione.innerHTML = "Compreso nei tuoi abbonamenti " +
+    '<span class="conteggio">· ' + cache.totale.toLocaleString("it-IT") + " titoli</span>";
+  contenitore.appendChild(intestazione);
+  contenitore.appendChild(grigliaDi(cache.elementi));
+
+  if (cache.pagina < cache.pagine) {
+    const s = el("div", "sentinella");
+    contenitore.appendChild(s);
+
+    // Pulsante esplicito: l'IntersectionObserver qui sotto carica da
+    // solo quando la pagina e' visibile, ma non scatta se il documento
+    // e' nascosto (verificato: visibilityState hidden = zero callback).
+    // Il pulsante funziona sempre, e su un telefono e' anche piu' gentile
+    // che scaricare pagine da solo.
+    const b = el("button", "altri",
+      "Carica altri titoli · " + cache.elementi.length + " di " +
+      cache.totale.toLocaleString("it-IT"));
+    b.onclick = async () => {
+      b.disabled = true;
+      b.textContent = "Carico…";
+      await prossimaPagina(contenitore);
+    };
+    contenitore.appendChild(b);
+
+    if (osservatore) osservatore.disconnect();
+    osservatore = new IntersectionObserver(voci => {
+      if (voci.some(v => v.isIntersecting)) prossimaPagina(contenitore);
+    }, { rootMargin: "600px" });
+    osservatore.observe(s);
+  } else if (cache.elementi.length > 20) {
+    contenitore.appendChild(el("p", "altri", "Finiti: " + cache.elementi.length + " titoli."));
+  }
+}
+
+function schermoCerca() {
+  schermo.innerHTML = "";
+  const testa = el("div", "pad");
+  testa.appendChild(el("h1", "titolone", "Cerca"));
+  schermo.appendChild(testa);
+
+  const barra = el("div", "barraRicerca");
+  const input = el("input");
+  input.type = "search";
+  input.placeholder = "Film o serie";
+  input.autocomplete = "off";
+  input.enterKeyHint = "search";
+  input.setAttribute("aria-label", "Titolo da cercare");
+  barra.appendChild(input);
+  schermo.appendChild(barra);
+
+  const esiti = el("div");
+  schermo.appendChild(esiti);
+  esiti.appendChild(el("p", "vuoto", "Scrivi un titolo.\nTi dico se lo paghi già."));
+
+  let ultima = 0;
+  const lancia_ricerca = async () => {
+    const q = input.value.trim();
+    if (!q) { esiti.innerHTML = '<p class="vuoto">Scrivi un titolo.</p>'; return; }
+    const mio = ++ultima;
+    esiti.innerHTML = '<div class="caricamento"><div class="giro"></div></div>';
+    try {
+      const risultati = await cercaTitoli(q);
+      if (mio !== ultima) return;            // digitazione piu' recente
+      esiti.innerHTML = "";
+      if (!risultati.length) {
+        esiti.appendChild(el("p", "vuoto", "Nessun titolo con questo nome.\nProva a scriverlo diversamente."));
+        return;
+      }
+      const lista = el("div", "pad");
+      risultati.forEach(v => {
+        const r = el("button", "riga");
+        r.innerHTML =
+          '<div class="mini">' + locandina(v.locandina, "w154") + "</div>" +
+          '<div class="dati"><b>' + esc(v.titolo) + "</b><span>" +
+          (v.tipo === "tv" ? "Serie" : "Film") + (v.anno ? " · " + v.anno : "") +
+          (v.voto ? " · " + v.voto.toFixed(1) : "") + "</span></div>";
+        r.onclick = () => schermoDettaglio(v.tipo, v.id);
+        lista.appendChild(r);
+      });
+      esiti.appendChild(lista);
+    } catch (e) {
+      if (mio === ultima) esiti.innerHTML = '<p class="vuoto">' + esc(e.message) + "</p>";
+    }
+  };
+
+  let attesa;
+  input.oninput = () => { clearTimeout(attesa); attesa = setTimeout(lancia_ricerca, 420); };
+  input.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); clearTimeout(attesa); input.blur(); lancia_ricerca(); } };
+  input.focus();
+}
+
+async function schermoDettaglio(tipo, id) {
+  window.scrollTo(0, 0);
+  girello();
+  let d;
+  try { d = await scheda(tipo, id); }
+  catch (e) { return vuoto(e.message); }
+
+  schermo.innerHTML = "";
+
+  const su = el("button", "indietro", "← Indietro");
+  su.onclick = () => vai(scheda_attiva);
+  schermo.appendChild(su);
+
+  const sfondo = el("div", "sfondo" + (d.sfondo ? "" : " senza"));
+  if (d.sfondo) sfondo.innerHTML = '<img src="' + IMG + "/w780" + d.sfondo + '" alt="">';
+  schermo.appendChild(sfondo);
+
+  const pad = el("div", "pad");
+  schermo.appendChild(pad);
+
+  const meta = [
+    d.tipo === "tv" ? "Serie" : "Film",
+    d.anno, d.durata,
+    d.voto ? "★ " + d.voto.toFixed(1) : "",
+  ].filter(Boolean).join(" · ");
+
+  const testa = el("div", "testa");
+  testa.innerHTML =
+    '<div class="locandina">' + locandina(d.locandina, "w342") + "</div>" +
+    "<div><h1>" + esc(d.titolo) + '</h1><div class="meta">' + esc(meta) + "</div></div>";
+  pad.appendChild(testa);
+
+  // Il verdetto: la cosa piu' grande della pagina.
+  const ha = d.compresi.length > 0;
+  const box = el("div", "verdetto " + (ha ? "si" : "no"));
+  if (ha) {
+    box.innerHTML = '<p class="risposta">Lo paghi già</p><p class="dove">Su ' +
+      d.compresi.map(i => esc(i.nome) + (i.come !== "nell'abbonamento" ? " (" + esc(i.come) + ")" : "")).join(", ") + "</p>";
+  } else if (d.niente) {
+    box.innerHTML = '<p class="risposta">Non risulta disponibile in Italia</p>';
+  } else {
+    box.innerHTML = '<p class="risposta">Non è nei tuoi abbonamenti</p>' +
+      (d.altrove.length ? '<p class="dove">In abbonamento su ' + d.altrove.map(esc).join(", ") + "</p>" : "") +
+      (d.pagando.length ? '<p class="dove">Pagando: ' + d.pagando.map(esc).join(", ") + "</p>" : "");
+  }
+  pad.appendChild(box);
+
+  d.compresi.filter(i => i.app).forEach(i => {
+    const b = el("button", "apri");
+    b.innerHTML =
+      (i.logo ? '<img class="logo" src="' + IMG + "/w92" + i.logo + '" alt="">' : '<span class="logo"></span>') +
+      '<span class="etichetta">Apri ' + esc(i.nome) + " sulla TV<small>Poi cerca il titolo col telecomando</small></span>";
+    b.onclick = async () => {
+      b.disabled = true;
+      b.querySelector(".etichetta").innerHTML = "Apro " + esc(i.nome) + "…<small>Controllo che si apra davvero</small>";
+      try {
+        if (await lancia(i.app)) {
+          b.className = "apri fatto";
+          const p = await provaPonte();
+          b.querySelector(".etichetta").innerHTML = esc(i.nome) + " è aperta<small>" +
+            (p ? "Apri la ricerca nell'app, poi scrivi il titolo qui sotto"
+               : "Ora cerca «" + esc(d.titolo) + "»") + "</small>";
+          // Il ponte locale c'e': posso scrivere il titolo io, invece
+          // di farglielo battere col telecomando.
+          if (p && !b.parentElement.querySelector(".scriviTitolo")) {
+            const sb = el("button", "apri scriviTitolo");
+            sb.innerHTML = '<span class="logo"></span><span class="etichetta">Scrivi «' +
+              esc(d.titolo) + '» sulla TV<small>Prima metti a fuoco il campo di ricerca</small></span>';
+            sb.onclick = async () => {
+              sb.disabled = true;
+              const et = sb.querySelector(".etichetta");
+              et.innerHTML = "Scrivo…";
+              try {
+                await scriviSullaTv(d.titolo);
+                sb.className = "apri fatto scriviTitolo";
+                et.innerHTML = "Scritto<small>Se sulla TV non si vede, il campo non era a fuoco</small>";
+              } catch (e) {
+                sb.className = "apri male scriviTitolo";
+                et.innerHTML = esc(e.message) + "<small>Tocca per riprovare</small>";
+              }
+              sb.disabled = false;
+            };
+            b.after(sb);
+          }
+        } else {
+          b.className = "apri male";
+          b.disabled = false;
+          b.querySelector(".etichetta").innerHTML =
+            "La TV non ha aperto l'app<small>È accesa? Tocca per riprovare</small>";
+        }
+      } catch (e) {
+        b.className = "apri male";
+        b.disabled = false;
+        b.querySelector(".etichetta").innerHTML = esc(e.message) + "<small>Tocca per riprovare</small>";
+      }
+    };
+    pad.appendChild(b);
+  });
+
+  const senza = d.compresi.filter(i => !i.app).map(i => i.nome);
+  if (senza.length)
+    pad.appendChild(el("p", "nota", senza.join(" e ") + ": apri col telecomando, non so lanciarla."));
+
+  if (d.video) {
+    pad.appendChild(el("p", "sezione", "Trailer"));
+    const t = el("div", "trailer");
+    t.innerHTML =
+      '<img src="https://img.youtube.com/vi/' + esc(d.video.key) + '/hqdefault.jpg" alt="">' +
+      '<div class="via"><span><svg viewBox="0 0 24 24"><path d="M7 4.5l12 7.5-12 7.5z"/></svg></span></div>' +
+      '<div class="quale">' + esc(d.video.name) + "</div>";
+    t.onclick = () => {
+      // youtube-nocookie: meno tracciamento, stesso video
+      t.innerHTML = '<iframe src="https://www.youtube-nocookie.com/embed/' +
+        esc(d.video.key) + '?autoplay=1&rel=0" allow="autoplay; fullscreen; encrypted-media" ' +
+        'allowfullscreen title="Trailer"></iframe>';
+    };
+    pad.appendChild(t);
+  }
+
+  if (d.generi.length) {
+    pad.appendChild(el("p", "sezione", "Generi"));
+    pad.appendChild(el("p", "meta", esc(d.generi.join(" · "))));
+  }
+  if (d.trama) {
+    pad.appendChild(el("p", "sezione", "Trama"));
+    pad.appendChild(el("p", "trama", esc(d.trama)));
+  }
+  if (d.cast.length) {
+    schermo.appendChild(el("p", "sezione pad", "Cast"));
+    const fila = el("div", "cast");
+    d.cast.forEach(a => {
+      const x = el("div", "attore");
+      x.innerHTML =
+        '<div class="faccia">' + (a.foto ? locandina(a.foto, "w185") : esc((a.nome || "?")[0])) + "</div>" +
+        "<b>" + esc(a.nome) + "</b>" + (a.ruolo ? "<span>" + esc(a.ruolo) + "</span>" : "");
+      fila.appendChild(x);
+    });
+    schermo.appendChild(fila);
+  }
+}
+
+const ICONE = {
+  su:    '<svg viewBox="0 0 24 24"><path d="M12 19V6M5.5 12.5L12 6l6.5 6.5"/></svg>',
+  giu:   '<svg viewBox="0 0 24 24"><path d="M12 5v13M5.5 11.5L12 18l6.5-6.5"/></svg>',
+  sx:    '<svg viewBox="0 0 24 24"><path d="M19 12H6M12.5 5.5L6 12l6.5 6.5"/></svg>',
+  dx:    '<svg viewBox="0 0 24 24"><path d="M5 12h13M11.5 5.5L18 12l-6.5 6.5"/></svg>',
+  back:  '<svg viewBox="0 0 24 24"><path d="M9 14l-4-4 4-4"/><path d="M5 10h9a5 5 0 010 10h-3"/></svg>',
+  home:  '<svg viewBox="0 0 24 24"><path d="M3 10.5L12 3l9 7.5"/><path d="M5.5 9.5V20h13V9.5"/></svg>',
+  menu:  '<svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>',
+  exit:  '<svg viewBox="0 0 24 24"><path d="M15 4h3a2 2 0 012 2v12a2 2 0 01-2 2h-3"/><path d="M10 8l-4 4 4 4M6 12h9"/></svg>',
+  fonte: '<svg viewBox="0 0 24 24"><rect x="2.5" y="4.5" width="19" height="13" rx="2"/><path d="M8 21h8"/></svg>',
+  piu:   '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
+  meno:  '<svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg>',
+  muto:  '<svg viewBox="0 0 24 24"><path d="M11 5L6.5 9H3v6h3.5L11 19z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/></svg>',
+  play:  '<svg viewBox="0 0 24 24"><path d="M7 4.5l12 7.5-12 7.5z"/></svg>',
+  pausa: '<svg viewBox="0 0 24 24"><path d="M9 5v14M15 5v14"/></svg>',
+  stop:  '<svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>',
+  indre: '<svg viewBox="0 0 24 24"><path d="M12 6v12L4 12zM20 6v12l-8-6z"/></svg>',
+  avan:  '<svg viewBox="0 0 24 24"><path d="M12 6v12l8-6zM4 6v12l8-6z"/></svg>',
+  acceso:'<svg viewBox="0 0 24 24"><path d="M12 3v9"/><path d="M6.8 7.2a7.5 7.5 0 1010.4 0"/></svg>',
+};
+
+function schermoTelecomando() {
+  schermo.innerHTML = "";
+  const pad = el("div", "pad");
+  pad.appendChild(el("h1", "titolone", "Telecomando"));
+  schermo.appendChild(pad);
+
+  const barra = el("div", "stato");
+  barra.innerHTML = '<span class="pallina"></span><span class="quale">Leggo lo stato…</span>';
+  pad.appendChild(barra);
+
+  const corpoTel = el("div", "telecomando");
+  schermo.appendChild(corpoTel);
+
+  let avviso_attivo = null;
+  function lamenta(testo) {
+    if (avviso_attivo) clearTimeout(avviso_attivo);
+    const q = barra.querySelector(".quale");
+    q.textContent = testo;
+    barra.querySelector(".pallina").className = "pallina morta";
+    avviso_attivo = setTimeout(aggiorna, 2600);
+  }
+
+  // Ogni tasto e' una POST: ottimista, ma se fallisce lo dice.
+  function tasto(etichetta, icona, azione, classe = "") {
+    const b = el("button", "tasto " + classe);
+    b.innerHTML = (icona || "") + (etichetta ? "<span>" + etichetta + "</span>" : "");
+    b.onclick = async () => {
+      b.classList.add("acceso");
+      setTimeout(() => b.classList.remove("acceso"), 170);
+      try { await azione(); } catch (e) { lamenta(e.message); }
+    };
+    return b;
+  }
+  const key = v => () => comando("samsungvd.remoteControl", "send", [v, "PRESS_AND_RELEASED"]);
+
+  function fila(...tasti) {
+    const f = el("div", "fila");
+    tasti.forEach(t => f.appendChild(t));
+    return f;
+  }
+
+  // ------------------------------------------------------------- croce
+  const croce = el("div", "croce");
+  croce.appendChild(tasto("", ICONE.su, key("UP"), "su"));
+  croce.appendChild(tasto("", ICONE.sx, key("LEFT"), "sx"));
+  croce.appendChild(tasto("OK", "", key("OK"), "ok"));
+  croce.appendChild(tasto("", ICONE.dx, key("RIGHT"), "dx"));
+  croce.appendChild(tasto("", ICONE.giu, key("DOWN"), "giu"));
+  corpoTel.appendChild(croce);
+
+  corpoTel.appendChild(fila(
+    tasto("Indietro", ICONE.back, key("BACK")),
+    tasto("Home", ICONE.home, key("HOME")),
+    tasto("Menu", ICONE.menu, key("MENU")),
+  ));
+  corpoTel.appendChild(fila(
+    tasto("Esci", ICONE.exit, key("EXIT")),
+    tasto("Sorgente", ICONE.fonte, key("SOURCE")),
+    tasto("Muto", ICONE.muto, () => comando("audioMute", "mute")),
+  ));
+
+  corpoTel.appendChild(el("p", "sezione", "Volume"));
+  corpoTel.appendChild(fila(
+    tasto("Giù", ICONE.meno, () => comando("audioVolume", "volumeDown")),
+    tasto("Su", ICONE.piu, () => comando("audioVolume", "volumeUp")),
+  ));
+
+  corpoTel.appendChild(el("p", "sezione", "Riproduzione"));
+  corpoTel.appendChild(fila(
+    tasto("", ICONE.indre, key("REWIND")),
+    tasto("", ICONE.play, key("PLAY")),
+    tasto("", ICONE.pausa, key("PAUSE")),
+    tasto("", ICONE.stop, key("STOP")),
+    tasto("", ICONE.avan, key("FF")),
+  ));
+
+  // ---------------------------------------------------------- tastiera
+  corpoTel.appendChild(el("p", "sezione", "Scrivi sulla TV"));
+  const zonaTastiera = el("div", "tastiera");
+  corpoTel.appendChild(zonaTastiera);
+
+  (async () => {
+    const p = await provaPonte();
+    if (!p) {
+      zonaTastiera.appendChild(el("div", "avvisoPonte",
+        "Non disponibile da qui. SmartThings non ha nessun comando per il testo: " +
+        "le lettere passano solo dal collegamento diretto alla TV, che richiede un " +
+        "computer sulla rete di casa a fare da ponte. Tutto il resto del telecomando " +
+        "funziona dal cloud, anche fuori casa."));
+      return;
+    }
+    if (!p.token) {
+      zonaTastiera.appendChild(el("div", "avvisoPonte",
+        "Manca la prima autorizzazione. Una volta sola, dal Mac:<br>" +
+        "<code>venv/bin/python3 tastiera.py collega</code><br>" +
+        "poi accetta il popup che compare sulla TV."));
+      return;
+    }
+
+    const riga = el("div", "campo2");
+    const campo = el("input");
+    campo.type = "text";
+    campo.placeholder = "Testo da scrivere sulla TV";
+    campo.autocomplete = "off";
+    campo.enterKeyHint = "send";
+    const manda = el("button", "manda", "Invia");
+    riga.appendChild(campo);
+    riga.appendChild(manda);
+    zonaTastiera.appendChild(riga);
+
+    const esito = el("div", "avvisoPonte");
+    esito.innerHTML = "Metti a fuoco il campo di ricerca sulla TV, poi invia. " +
+      "Se non c'è un campo a fuoco la TV ignora il testo senza dirlo.";
+    zonaTastiera.appendChild(esito);
+
+    const invia = async () => {
+      const testo = campo.value;
+      if (!testo.trim()) return campo.focus();
+      manda.disabled = true;
+      manda.textContent = "…";
+      try {
+        await scriviSullaTv(testo);
+        esito.textContent = 'Scritto: «' + testo + '»';
+      } catch (e) { esito.textContent = e.message; }
+      manda.disabled = false;
+      manda.textContent = "Invia";
+    };
+    manda.onclick = invia;
+    campo.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); invia(); } };
+
+    // Cifre e Invio: il WebSocket locale le ha, il cloud no.
+    const cifre = el("div", "cifre");
+    ["1","2","3","4","5","6","7","8","9","0"].forEach(c => {
+      const b = el("button", "tasto", "<span>" + c + "</span>");
+      b.onclick = async () => {
+        b.classList.add("acceso");
+        setTimeout(() => b.classList.remove("acceso"), 160);
+        try { await tastoLocale("KEY_" + c); } catch (e) { esito.textContent = e.message; }
+      };
+      cifre.appendChild(b);
+    });
+    zonaTastiera.appendChild(cifre);
+  })();
+
+  corpoTel.appendChild(el("p", "sezione", "Accensione"));
+  const accensione = el("div", "fila");
+  corpoTel.appendChild(accensione);
+
+  const zonaIngressi = el("div");
+  corpoTel.appendChild(zonaIngressi);
+
+  // ------------------------------------------------------------ stato
+  async function aggiorna() {
+    try {
+      const st = await statoTv();
+      barra.querySelector(".pallina").className = "pallina " + (st.accesa ? "viva" : "");
+      const nome = st.app
+        ? (Object.values(MAPPA).find(m => m.app === st.app) || {}).nome || st.app
+        : "";
+      barra.querySelector(".quale").textContent = st.accesa
+        ? (nome ? "Accesa · " + nome : "Accesa")
+        : "Spenta";
+
+      accensione.innerHTML = "";
+      accensione.appendChild(tasto(
+        st.accesa ? "Spegni" : "Accendi", ICONE.acceso,
+        async () => { await comando("switch", st.accesa ? "off" : "on"); setTimeout(aggiorna, 2500); },
+        st.accesa ? "" : "acceso"));
+
+      zonaIngressi.innerHTML = "";
+      if (st.ingressi.length) {
+        zonaIngressi.appendChild(el("p", "sezione", "Ingressi"));
+        const sc = el("div", "scelte");
+        st.ingressi.forEach(i => {
+          const b = el("button", "chip", esc(i.name || i.id));
+          b.setAttribute("aria-pressed", String(i.id === st.ingresso));
+          b.onclick = async () => {
+            try {
+              await comando("samsungvd.mediaInputSource", "setInputSource", [i.id]);
+              setTimeout(aggiorna, 2500);
+            } catch (e) { lamenta(e.message); }
+          };
+          sc.appendChild(b);
+        });
+        zonaIngressi.appendChild(sc);
+      }
+    } catch (e) {
+      barra.querySelector(".pallina").className = "pallina morta";
+      barra.querySelector(".quale").textContent = e.message;
+    }
+  }
+
+  const ricarica = el("button", null, "Aggiorna");
+  ricarica.onclick = aggiorna;
+  barra.appendChild(ricarica);
+  aggiorna();
+}
+
+function schermoImpostazioni() {
+  schermo.innerHTML = "";
+  const pad = el("div", "pad");
+  pad.appendChild(el("h1", "titolone", "Impostazioni"));
+  pad.innerHTML +=
+    '<div class="campo"><label for="k1">Chiave TMDB</label>' +
+    '<textarea id="k1" rows="2" autocapitalize="off" autocomplete="off" spellcheck="false"></textarea>' +
+    "<p>themoviedb.org → il tuo profilo → Impostazioni → API</p></div>" +
+    '<div class="campo"><label for="k2">Token SmartThings</label>' +
+    '<textarea id="k2" rows="3" autocapitalize="off" autocomplete="off" spellcheck="false"></textarea>' +
+    "<p>account.smartthings.com/tokens, con i permessi sui dispositivi. " +
+    "Resta su questo telefono: non è nel codice dell'app e non passa da nessun server.</p></div>";
+  schermo.appendChild(pad);
+
+  document.getElementById("k1").value = chiavi.tmdb;
+  document.getElementById("k2").value = chiavi.token;
+
+  const salva = el("button", "primario", "Salva e prova");
+  const esito = el("div", "esito");
+  salva.onclick = async () => {
+    chiavi.tmdb = document.getElementById("k1").value;
+    chiavi.token = document.getElementById("k2").value;
+    localStorage.removeItem("st_device");     // ricerca la TV da zero
+    salva.disabled = true;
+    salva.textContent = "Provo…";
+    esito.innerHTML = "";
+    const righe = [];
+    try { await tmdb("/configuration"); righe.push('<div class="ok">TMDB: chiave buona</div>'); }
+    catch (e) { righe.push('<div class="ko">' + esc(e.message) + "</div>"); }
+    try {
+      await trovaTv();
+      const app = await appInPrimoPiano();
+      righe.push('<div class="ok">TV trovata' + (app ? ", in primo piano: " + esc(app) : "") + "</div>");
+    } catch (e) { righe.push('<div class="ko">' + esc(e.message) + "</div>"); }
+    esito.innerHTML = righe.join("");
+    salva.disabled = false;
+    salva.textContent = "Salva e prova";
+  };
+  pad.appendChild(salva);
+  pad.appendChild(esito);
+}
+
+// Al primo avvio non c'e' niente da mostrare: si comincia dalle chiavi.
+vai(chiavi.tmdb ? "sfoglia" : "impostazioni");
+</script>
+</body>
+</html>
