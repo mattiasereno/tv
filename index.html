@@ -441,6 +441,27 @@
   .attore { -webkit-touch-callout: none; }
   button.attore { background: none; border: 0; padding: 0; }
 
+  /* --------------------------------------------------------- saga */
+  .carta.nonTua { opacity: .42; }
+  .carta.questo .tela { outline: 2px solid var(--acceso); outline-offset: 2px; }
+
+  /* ----------------------------------------------------- diagnosi */
+  .diagnosi { margin: 8px 0 0; }
+  .diagnosi .riga2 {
+    display: flex; justify-content: space-between; gap: 12px;
+    padding: 9px 0; border-bottom: 1px solid var(--bordo); font-size: 14px;
+  }
+  .diagnosi .riga2 span:first-child { color: var(--tenue); }
+  .diagnosi .riga2 span:last-child { text-align: right; font-weight: 550; }
+  .diagnosi .si { color: var(--verde); }
+  .diagnosi .no { color: var(--rosso); }
+  .guai { margin: 12px 0 0; }
+  .guai .guaio {
+    padding: 9px 0; border-bottom: 1px solid var(--bordo);
+    font: 400 12.5px/1.5 ui-monospace, monospace; color: var(--tenue);
+  }
+  .guai .guaio b { display: block; color: var(--rosso); font-weight: 600; }
+
   /* ---------------------------------------------------- visto/voto */
   .visto {
     margin: 12px 0 0; padding: 14px 16px; border-radius: 13px;
@@ -735,7 +756,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "202609231006";
+const VERSIONE = "202609231026";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -916,6 +937,33 @@ function profiloGusto() {
   return { quanti: buoni.length, generi: cima(generi), keyword: cima(keyword) };
 }
 
+// Senza server, quando qualcosa si rompe sul telefono di qualcun
+// altro non c'e' modo di saperlo. Quindi l'app tiene gli ultimi 20
+// problemi e li mostra in Opzioni. NON registro mai le chiavi.
+const registro = {
+  get tutto() {
+    try {
+      const v = JSON.parse(localStorage.getItem("guai") || "[]");
+      return Array.isArray(v) ? v : [];
+    } catch (e) { return []; }
+  },
+  aggiungi(dove, messaggio) {
+    try {
+      const voce = { dove, cosa: String(messaggio).slice(0, 200), quando: Date.now() };
+      localStorage.setItem("guai", JSON.stringify([voce, ...this.tutto].slice(0, 20)));
+    } catch (e) { /* magazzino pieno: pazienza, non e' questo il problema */ }
+  },
+  svuota() { localStorage.removeItem("guai"); },
+};
+
+window.addEventListener("error", e => {
+  registro.aggiungi("javascript", (e.message || "errore") +
+    (e.lineno ? " (riga " + e.lineno + ")" : ""));
+});
+window.addEventListener("unhandledrejection", e => {
+  registro.aggiungi("promessa", (e.reason && e.reason.message) || e.reason || "?");
+});
+
 const schermo = document.getElementById("schermo");
 const nav = document.querySelector("nav");
 
@@ -966,9 +1014,18 @@ async function tmdb(percorso, parametri = {}) {
   const url = TMDB + percorso + "?" + new URLSearchParams({ ...parametri, api_key: chiavi.tmdb });
   let r;
   try { r = await fetch(url); }
-  catch (e) { throw new Error("Non riesco a raggiungere TMDB. Controlla la rete."); }
-  if (r.status === 401) throw new Error("Chiave TMDB rifiutata.");
-  if (!r.ok) throw new Error("TMDB non risponde (HTTP " + r.status + ").");
+  catch (e) {
+    registro.aggiungi("TMDB", percorso + " -> rete: " + e.message);
+    throw new Error("Non riesco a raggiungere TMDB. Controlla la rete.");
+  }
+  if (r.status === 401) {
+    registro.aggiungi("TMDB", "chiave rifiutata (401)");
+    throw new Error("Chiave TMDB rifiutata.");
+  }
+  if (!r.ok) {
+    registro.aggiungi("TMDB", percorso + " -> HTTP " + r.status);
+    throw new Error("TMDB non risponde (HTTP " + r.status + ").");
+  }
   return r.json();
 }
 
@@ -981,9 +1038,18 @@ async function smartthings(percorso, corpoRichiesta) {
     headers: { "Authorization": "Bearer " + chiavi.token, "Content-Type": "application/json" },
     body: corpoRichiesta ? JSON.stringify(corpoRichiesta) : undefined,
   });
-  if (r.status === 401) throw new Error("Token SmartThings rifiutato (scaduto o revocato).");
-  if (r.status === 403) throw new Error("Token senza i permessi sui dispositivi.");
-  if (!r.ok) throw new Error("SmartThings non risponde (HTTP " + r.status + ").");
+  if (r.status === 401) {
+    registro.aggiungi("SmartThings", "token rifiutato (401): scaduto o revocato");
+    throw new Error("Token SmartThings rifiutato (scaduto o revocato).");
+  }
+  if (r.status === 403) {
+    registro.aggiungi("SmartThings", "403: token senza permessi sui dispositivi");
+    throw new Error("Token senza i permessi sui dispositivi.");
+  }
+  if (!r.ok) {
+    registro.aggiungi("SmartThings", percorso + " -> HTTP " + r.status);
+    throw new Error("SmartThings non risponde (HTTP " + r.status + ").");
+  }
   return r.status === 204 ? {} : r.json();
 }
 
@@ -1318,6 +1384,10 @@ async function scheda(tipo, id) {
     generiId: (d.genres || []).map(g => String(g.id)),
     compresi, altrove, pagando, cePaga,
     niente: !Object.keys(italia).length,
+    // solo per i film: le serie non hanno collezioni (verificato)
+    saga: d.belongs_to_collection
+      ? { id: d.belongs_to_collection.id, nome: d.belongs_to_collection.name }
+      : null,
     // solo per le serie
     stato: d.status || "",
     prossimo: d.next_episode_to_air || null,
@@ -1384,6 +1454,31 @@ async function personaDati(id) {
     regia: (comeRegista.results || []).map(v => normalizza(v, "movie")),
     serie,
   };
+}
+
+// La saga di un film, con la disponibilita' di ogni capitolo.
+// Le parti arrivano in ordine sparso (verificato: 2008, 2012, 2005),
+// quindi le ordino per data. Una chiamata per capitolo, in parallelo:
+// le saghe sono piccole, e sapere QUALI capitoli hai vale il costo.
+async function sagaCompleta(saga, idCorrente) {
+  const c = await tmdb("/collection/" + saga.id, { language: LINGUA });
+  const miei = chiavi.servizi;
+  const parti = (c.parts || [])
+    .filter(p => p.id)
+    .sort((a, b) => (a.release_date || "9999").localeCompare(b.release_date || "9999"));
+
+  const conDisponibilita = await Promise.all(parti.map(async p => {
+    const base = { ...normalizza(p, "movie"), questo: String(p.id) === String(idCorrente) };
+    try {
+      const d = await tmdb("/movie/" + p.id + "/watch/providers");
+      const italia = (d.results || {})[PAESE] || {};
+      base.tua = COMPRESI.some(t => (italia[t] || []).some(x =>
+        t === "flatrate" ? miei.includes(String(x.provider_id)) : true));
+    } catch (e) { base.tua = false; }
+    return base;
+  }));
+
+  return { nome: c.name || saga.nome, parti: conDisponibilita };
 }
 
 // Simili: uso le keyword del titolo, che sono piu' precise dei generi,
@@ -1453,7 +1548,8 @@ nav.onclick = e => {
 function grigliaDi(elementi, mostraMio = false) {
   const g = el("div", "griglia");
   elementi.forEach(v => {
-    const c = el("button", "carta");
+    const c = el("button", "carta" +
+      (v.tua === false ? " nonTua" : "") + (v.questo ? " questo" : ""));
     const distintivo = mostraMio && v.mio
       ? '<span class="voto">' + "★".repeat(v.mio) + "</span>"
       : (v.voto ? '<span class="voto">' + v.voto.toFixed(1) + "</span>" : "");
@@ -2300,6 +2396,24 @@ async function schermoDettaglio(tipo, id, torna) {
     schermo.appendChild(fila);
   }
 
+  // La saga: arriva dopo, come i simili.
+  if (d.saga) {
+    const zonaSaga = el("div");
+    schermo.appendChild(zonaSaga);
+    sagaCompleta(d.saga, d.id).then(s => {
+      if (s.parti.length < 2) return;
+      const tue = s.parti.filter(p => p.tua).length;
+      zonaSaga.appendChild(el("p", "sezione pad", esc(s.nome)));
+      const p = el("div", "gusto");
+      p.innerHTML = tue === s.parti.length
+        ? "Hai <b>tutti</b> i " + s.parti.length + " capitoli."
+        : "<b>" + tue + " di " + s.parti.length + "</b> capitoli sono nei tuoi " +
+          "abbonamenti. Gli altri sono sbiaditi.";
+      zonaSaga.appendChild(p);
+      zonaSaga.appendChild(grigliaDi(s.parti));
+    }).catch(() => {});
+  }
+
   // Simili: arriva dopo, senza far aspettare il resto della scheda.
   const zonaSimili = el("div");
   schermo.appendChild(zonaSimili);
@@ -3062,6 +3176,85 @@ function schermoImpostazioni() {
   };
   pad.appendChild(salva);
   pad.appendChild(esito);
+
+  bloccoDiagnosi(pad);
+}
+
+// Cosa sa l'app di se stessa. Serve quando si rompe sul telefono di
+// qualcun altro e non hai un server a cui chiedere.
+// NON contiene mai le chiavi: solo se ci sono.
+function bloccoDiagnosi(pad) {
+  pad.appendChild(el("p", "sezione", "Diagnostica"));
+  const d = el("div", "diagnosi");
+  pad.appendChild(d);
+
+  const voci = [];
+  const riga = (cosa, valore, stato) => {
+    voci.push([cosa, valore]);
+    const r = el("div", "riga2");
+    r.innerHTML = "<span>" + esc(cosa) + '</span><span class="' +
+      (stato === true ? "si" : stato === false ? "no" : "") + '">' + esc(valore) + "</span>";
+    d.appendChild(r);
+  };
+
+  riga("Versione", VERSIONE);
+  riga("Chiave TMDB", chiavi.tmdb ? "inserita" : "manca", !!chiavi.tmdb);
+  riga("Token SmartThings", chiavi.token ? "inserito" : "manca", !!chiavi.token);
+  riga("TV già trovata", chiavi.tv ? "sì (…" + chiavi.tv.slice(-6) + ")" : "no", !!chiavi.tv);
+  riga("Abbonamenti scelti", String(chiavi.servizi.length), chiavi.servizi.length > 0);
+  riga("Da guardare", String(lista.tutto.length));
+  riga("Titoli votati", String(visti.tutto.length));
+  riga("Servizi noti", String(Object.keys(PROVIDER).length));
+  riga("Rete", navigator.onLine === false ? "assente" : "presente",
+       navigator.onLine !== false);
+  riga("Funziona offline", (navigator.serviceWorker && navigator.serviceWorker.controller)
+       ? "sì" : "non ancora", !!(navigator.serviceWorker && navigator.serviceWorker.controller));
+
+  const guai = registro.tutto;
+  riga("Problemi registrati", String(guai.length), guai.length === 0);
+
+  if (guai.length) {
+    pad.appendChild(el("p", "sezione", "Ultimi problemi"));
+    const g = el("div", "guai");
+    guai.slice(0, 8).forEach(x => {
+      const r = el("div", "guaio");
+      const quando = new Date(x.quando).toLocaleString("it-IT",
+        { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+      r.innerHTML = "<b>" + esc(x.dove) + " · " + esc(quando) + "</b>" + esc(x.cosa);
+      g.appendChild(r);
+    });
+    pad.appendChild(g);
+
+    const pulisci = el("button", "svuota", "Dimentica i problemi");
+    pulisci.style.cssText = "width:100%;margin:12px 0 0";
+    pulisci.onclick = () => { registro.svuota(); schermoImpostazioni(); };
+    pad.appendChild(pulisci);
+  }
+
+  const copia = el("button", "svuota", "Copia la diagnostica");
+  copia.style.cssText = "width:100%;margin:12px 0 0";
+  copia.onclick = async () => {
+    const testo = ["TV — diagnostica", ...voci.map(([a, b]) => a + ": " + b),
+      "", "Ultimi problemi:",
+      ...(guai.length ? guai.slice(0, 8).map(x =>
+        new Date(x.quando).toISOString().slice(0, 16) + " " + x.dove + " — " + x.cosa)
+        : ["nessuno"])].join("\n");
+    const esito = await condividi("Diagnostica", testo, null);
+    if (esito === "niente") {
+      // nessuna condivisione e nessuna clipboard: la metto a schermo
+      const campo = el("textarea");
+      campo.className = "indirizzo";
+      campo.rows = 10;
+      campo.value = testo;
+      campo.readOnly = true;
+      copia.after(campo);
+      copia.disabled = true;
+    } else {
+      copia.textContent = esito === "copiato" ? "Copiata" : "Condivisa";
+      setTimeout(() => { copia.textContent = "Copia la diagnostica"; }, 2200);
+    }
+  };
+  pad.appendChild(copia);
 }
 
 // Le web app aggiunte alla Home tengono l'HTML in cache e possono
@@ -3114,8 +3307,13 @@ else vai(chiavi.tmdb ? "sfoglia" : "impostazioni");
 // Il service worker serve solo a far aprire l'app senza rete: vedi
 // sw.js. Se la registrazione fallisce (contesto non sicuro, o
 // browser che non lo supporta) l'app funziona come prima.
-if ("serviceWorker" in navigator)
-  navigator.serviceWorker.register("sw.js").catch(() => {});
+// "serviceWorker" in navigator e' vero anche se la proprieta' esiste
+// ma vale undefined, e register() puo' alzare in modo sincrono: il
+// .catch da solo non basta.
+try {
+  if (navigator.serviceWorker && navigator.serviceWorker.register)
+    navigator.serviceWorker.register("sw.js").catch(() => {});
+} catch (e) { /* l'app funziona anche senza */ }
 
 controllaVersione();
 </script>
