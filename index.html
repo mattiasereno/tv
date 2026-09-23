@@ -38,7 +38,10 @@
     --bordo:      #24353F;
     --testo:      #EDF2F5;
     --tenue:      #8CA2B2;
-    --debole:     #5D7382;
+    /* #5D7382 dava 3.86:1 sul fondo, sotto il minimo AA di 4.5.
+       Lo uso per testo piccolo (anni, date, intestazioni), dove
+       serve piu' contrasto, non meno. */
+    --debole:     #7C93A3;
     --acceso:     #F2E9D8;
     --acceso-testo: #16220F;
     --verde:      #7FBF7A;
@@ -81,7 +84,7 @@
   .pad { padding: 0 16px; }
   .titolone {
     font-size: 27px; font-weight: 640; letter-spacing: -.021em;
-    margin: 22px 0 14px;
+    margin: 16px 0 10px;
   }
   .sezione {
     font-size: 12px; font-weight: 640; letter-spacing: .07em;
@@ -120,7 +123,8 @@
   }
   .generi::-webkit-scrollbar { display: none; }
   .chip {
-    flex: 0 0 auto; padding: 9px 15px; border-radius: 999px;
+    flex: 0 0 auto; min-height: 44px; padding: 10px 16px; border-radius: 999px;
+    display: inline-flex; align-items: center;
     background: var(--piano); border: 1px solid var(--bordo);
     color: var(--tenue); font-size: 14.5px; font-weight: 500; white-space: nowrap;
   }
@@ -128,12 +132,15 @@
     background: var(--acceso); border-color: var(--acceso);
     color: var(--acceso-testo); font-weight: 600;
   }
+  /* Il riempimento della cornice non e' un bersaglio: i tocchi che
+     cadono li' non arrivano ai bottoni. Quindi sono i BOTTONI a
+     dover essere 44px, non la cornice. */
   .interruttore {
     display: inline-flex; margin: 0 0 2px; padding: 3px;
     background: var(--piano); border: 1px solid var(--bordo); border-radius: 12px;
   }
   .interruttore button {
-    padding: 7px 17px; border-radius: 9px; font-size: 14.5px;
+    min-height: 44px; padding: 8px 20px; border-radius: 9px; font-size: 15px;
     font-weight: 560; color: var(--tenue);
   }
   .interruttore button[aria-pressed=true] { background: var(--piano-alto); color: var(--testo); }
@@ -287,10 +294,20 @@
   }
 
   /* ------------------------------------------------------------ filtri */
-  .capo { display: flex; align-items: baseline; justify-content: space-between; }
+  .capo { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .capo .azioni { display: flex; gap: 8px; flex: 0 0 auto; }
+  /* "Stasera" sta nella barra del titolo: da pulsante a tutta larghezza
+     costava 57px di altezza prima del contenuto. In crema resta la cosa
+     piu' vistosa della schermata anche se e' piccolo. */
+  .capo .stasera {
+    width: auto; margin: 0; padding: 0 15px; min-height: 44px;
+    border-radius: 999px; font-size: 14.5px; gap: 6px;
+  }
+  .capo .stasera svg { width: 17px; height: 17px; }
   .bottoneFiltri {
-    display: inline-flex; align-items: center; gap: 6px;
-    padding: 8px 13px; border-radius: 999px; font-size: 14px; font-weight: 560;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    min-height: 44px; padding: 8px 15px; border-radius: 999px;
+    font-size: 14.5px; font-weight: 560;
     background: var(--piano); border: 1px solid var(--bordo); color: var(--tenue);
   }
   .bottoneFiltri[aria-expanded=true], .bottoneFiltri.attivi {
@@ -355,6 +372,33 @@
   .stato .quale { color: var(--tenue); }
   .stato button { margin-left: auto; color: var(--tenue); font-size: 13px; text-decoration: underline; }
 
+  /* ------------------------------------------------------- stasera */
+  .stasera {
+    display: flex; align-items: center; justify-content: center; gap: 9px;
+    width: calc(100% - 32px); margin: 4px 16px 14px; padding: 16px;
+    background: var(--acceso); color: var(--acceso-testo);
+    border-radius: 14px; font-size: 16.5px; font-weight: 640;
+  }
+  .stasera svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.9;
+                 stroke-linecap: round; stroke-linejoin: round; }
+  .pescato { padding: 0 16px; }
+  .pescato .grande {
+    display: flex; gap: 15px; margin: 6px 0 0;
+  }
+  .pescato .grande .locandina {
+    flex: 0 0 132px; aspect-ratio: 2/3; border-radius: 12px; overflow: hidden;
+    background: var(--piano); box-shadow: var(--ombra);
+  }
+  .pescato .grande .locandina img { width: 100%; height: 100%; object-fit: cover; }
+  .pescato h2 { font-size: 21px; font-weight: 660; letter-spacing: -.017em; margin: 0 0 6px; line-height: 1.18; }
+  .pescato .dentro { align-self: center; min-width: 0; }
+  .ancora {
+    display: block; width: 100%; margin: 12px 0 0; padding: 15px;
+    background: var(--piano); border: 1px solid var(--bordo);
+    border-radius: 13px; font-size: 16px; font-weight: 560; color: var(--testo);
+  }
+  .ancora:active { background: var(--piano-alto); }
+
   /* ----------------------------------------------- stagioni/episodi */
   .prossimo {
     margin: 14px 0 0; padding: 14px 16px; border-radius: 13px;
@@ -396,6 +440,39 @@
   .capoPersona h1 { font-size: 23px; font-weight: 660; letter-spacing: -.018em; margin: 0 0 3px; line-height: 1.15; }
   .attore { -webkit-touch-callout: none; }
   button.attore { background: none; border: 0; padding: 0; }
+
+  /* ------------------------------------------------------ in arrivo */
+  .arrivo {
+    display: flex; gap: 12px; align-items: center; width: 100%; text-align: left;
+    padding: 11px 0; border-bottom: 1px solid var(--bordo);
+  }
+  .arrivo .mini { flex: 0 0 44px; aspect-ratio: 2/3; border-radius: 7px; overflow: hidden; background: var(--piano); }
+  .arrivo .mini img { width: 100%; height: 100%; object-fit: cover; }
+  .arrivo .dati { flex: 1; min-width: 0; }
+  .arrivo b { display: block; font-size: 15px; font-weight: 550; }
+  .arrivo span { font-size: 12.5px; color: var(--debole); }
+  .arrivo .fra {
+    flex: 0 0 auto; padding: 5px 10px; border-radius: 8px;
+    background: var(--piano); color: var(--verde);
+    font-size: 12px; font-weight: 640; white-space: nowrap;
+  }
+  .arrivo .fra.oggi { background: var(--acceso); color: var(--acceso-testo); }
+
+  /* ---------------------------------------------------- condividi */
+  .condividi {
+    display: flex; align-items: center; justify-content: center;
+    width: 44px; height: 44px; border-radius: 50%;
+    background: var(--piano); border: 1px solid var(--bordo);
+    -webkit-touch-callout: none;
+  }
+  .condividi svg { width: 20px; height: 20px; fill: none; stroke: var(--tenue);
+                   stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .condividi:active { transform: scale(.92); }
+  .indirizzo {
+    width: 100%; margin: 10px 0 0; padding: 12px 14px;
+    background: var(--piano); border: 1px solid var(--bordo); border-radius: 12px;
+    color: var(--testo); font: 400 14px/1.4 ui-monospace, monospace;
+  }
 
   /* --------------------------------------------------- da guardare */
   .testaAzioni { display: flex; align-items: center; justify-content: space-between; padding-right: 12px; }
@@ -577,6 +654,22 @@ const ORDINI = [
   { n: "Più recenti", v: "data.desc" },
 ];
 
+// with_runtime funziona su film E serie (verificato). Per le serie il
+// minutaggio e' quello dell'episodio, quindi le soglie sono diverse.
+const DURATE = {
+  movie: [
+    { n: "Qualsiasi" },
+    { n: "Fino a 90′", lte: 90 },
+    { n: "90-120′", gte: 90, lte: 120 },
+    { n: "Oltre 2 ore", gte: 120 },
+  ],
+  tv: [
+    { n: "Qualsiasi" },
+    { n: "Episodi corti, ≤30′", lte: 30 },
+    { n: "Episodi lunghi, ≥50′", gte: 50 },
+  ],
+};
+
 const DECENNI = [
   { n: "Tutti", da: "", a: "" },
   { n: "2020 →", da: "2020-01-01", a: "" },
@@ -653,6 +746,60 @@ const lista = {
     this.tutto = this.tutto.filter(x => !(x.tipo === tipo && String(x.id) === String(id)));
   },
 };
+
+// Indirizzi interni: ogni scheda ha il suo, cosi' si puo' mandare.
+//   #/film/27205   #/serie/1396   #/persona/525
+// Li scrivo con replaceState e non toccando location.hash, perche'
+// location.hash farebbe scattare hashchange e ridisegnerebbe la
+// schermata che l'ha appena scritto.
+const A_PAROLA = { movie: "film", tv: "serie" };
+const A_TIPO = { film: "movie", serie: "tv" };
+
+function indirizzoDi(tipo, id) {
+  return location.origin + location.pathname +
+         "#/" + (A_PAROLA[tipo] || "film") + "/" + id;
+}
+
+function leggiIndirizzo() {
+  const m = (location.hash || "").match(/^#\/(film|serie|persona)\/(\d+)$/);
+  return m ? { cosa: m[1], id: Number(m[2]) } : null;
+}
+
+function scriviIndirizzo(cosa, id) {
+  const nuovo = "#/" + cosa + "/" + id;
+  if (location.hash !== nuovo) history.replaceState(null, "", nuovo);
+}
+
+function pulisciIndirizzo() {
+  if (location.hash) history.replaceState(null, "", location.pathname + location.search);
+}
+
+// navigator.share e navigator.clipboard vogliono un contesto sicuro:
+// su GitHub Pages (https) ci sono, sull'indirizzo locale in http no.
+// Percio' tre livelli, non uno.
+async function condividi(titolo, url, dove) {
+  try {
+    if (navigator.share) { await navigator.share({ title: titolo, url }); return "condiviso"; }
+  } catch (e) {
+    if (e && e.name === "AbortError") return "annullato";
+  }
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(url);
+      return "copiato";
+    }
+  } catch (e) { /* si ripiega sotto */ }
+  if (dove) {
+    const campo = el("input", "indirizzo");
+    campo.value = url;
+    campo.readOnly = true;
+    dove.appendChild(campo);
+    campo.focus();
+    campo.setSelectionRange(0, url.length);
+    return "mostrato";
+  }
+  return "niente";
+}
 
 const schermo = document.getElementById("schermo");
 const nav = document.querySelector("nav");
@@ -761,6 +908,28 @@ async function trovaTv() {
   throw new Error("Nessuna TV con custom.launchapp nel tuo account SmartThings.");
 }
 
+// setPictureMode e setSoundMode prendono "mode: string", ma non e'
+// documentato se voglia l'id ("modeMovie") o il nome localizzato
+// ("Film"). Lo stato riporta il NOME, quindi provo quello; se dopo
+// qualche secondo non e' cambiato, riprovo con l'id. Come per
+// launchApp, la risposta COMPLETED non e' una prova.
+async function impostaModo(capacita, comando, attributo, voce) {
+  const leggi = async () => {
+    const st = await statoTv();
+    return attributo === "immagine" ? st.immagine : st.suono;
+  };
+  const prima = await leggi().catch(() => null);
+  await comando(voce.name);
+  await new Promise(r => setTimeout(r, 2500));
+  let adesso = await leggi().catch(() => null);
+  if (adesso === voce.name) return adesso;
+
+  await comando(voce.id);
+  await new Promise(r => setTimeout(r, 2500));
+  adesso = await leggi().catch(() => null);
+  return adesso;
+}
+
 async function appInPrimoPiano() {
   const stato = await smartthings("/devices/" + await trovaTv() + "/status");
   return (((stato.components || {}).main || {}).tvChannel || {}).tvChannelName?.value || "";
@@ -811,12 +980,40 @@ async function sfoglia(f, pagina = 1) {
   if (d && d.da) parametri[campoData + ".gte"] = d.da;
   if (d && d.a) parametri[campoData + ".lte"] = d.a;
 
+  const t = (DURATE[f.tipo] || []).find(x => x.n === f.durata);
+  if (t && t.gte) parametri["with_runtime.gte"] = t.gte;
+  if (t && t.lte) parametri["with_runtime.lte"] = t.lte;
+
   const dati = await tmdb("/discover/" + f.tipo, parametri);
   return {
     elementi: (dati.results || []).map(v => normalizza(v, f.tipo)),
     pagine: dati.total_pages || 1,
     totale: dati.total_results || 0,
   };
+}
+
+// Pesca un titolo a caso fra quelli che paghi. Per avere varieta'
+// vera scelgo una pagina casuale e non il primo risultato: TMDB
+// ordina per popolarita', quindi la pagina 1 e' sempre la stessa.
+// Le pagine si fermano a 500 (la 501 risponde errore, verificato).
+const paginePerFiltro = {};
+
+async function pescaUno(f) {
+  const chiave = JSON.stringify(f);
+  let pagine = paginePerFiltro[chiave];
+
+  if (pagine === undefined) {
+    const primo = await sfoglia(f, 1);
+    if (!primo.elementi.length) return null;
+    pagine = Math.min(primo.pagine, 500);
+    paginePerFiltro[chiave] = pagine;
+    if (pagine === 1) return primo.elementi[Math.floor(Math.random() * primo.elementi.length)];
+  }
+
+  const p = 1 + Math.floor(Math.random() * pagine);
+  const r = await sfoglia(f, p);
+  if (!r.elementi.length) return null;
+  return r.elementi[Math.floor(Math.random() * r.elementi.length)];
 }
 
 // Un comando qualsiasi alla TV, per il telecomando.
@@ -838,6 +1035,10 @@ async function statoTv() {
     muto: leggi("audioMute", "mute") === "muted",
     ingresso: leggi("samsungvd.mediaInputSource", "inputSource"),
     ingressi: leggi("samsungvd.mediaInputSource", "supportedInputSourcesMap") || [],
+    immagine: leggi("custom.picturemode", "pictureMode"),
+    immagini: leggi("custom.picturemode", "supportedPictureModesMap") || [],
+    suono: leggi("custom.soundmode", "soundMode"),
+    suoni: leggi("custom.soundmode", "supportedSoundModesMap") || [],
   };
 }
 
@@ -1059,21 +1260,31 @@ async function simili(d) {
 
 let scheda_attiva = "sfoglia";
 let F = { tipo: "movie", genere: "", keyword: "", ordine: "popularity.desc",
-          servizio: "", decennio: "Tutti" };
+          servizio: "", decennio: "Tutti", durata: "Qualsiasi" };
 let filtri_aperti = false;
 let osservatore = null;
 
 // Con la paginazione, tornare indietro da una scheda non deve
 // farti ripartire dalla prima pagina: tengo cio' che era caricato.
 let cache = { chiave: "", elementi: [], pagina: 0, pagine: 1, totale: 0, scroll: 0 };
+
+// Ogni render di Sfoglia prende un numero. Le risposte che arrivano
+// dopo che ne e' partito un altro vengono scartate, altrimenti
+// disegnano dentro un contenitore che non e' piu' nel documento e la
+// schermata resta col girello per sempre. Succedeva davvero: al
+// caricamento parte un render, e se tocchi una pastiglia mentre il
+// primo e' in volo ne parte un secondo.
+let generazione = 0;
 const chiaveFiltri = () => JSON.stringify(F);
 
 function quantiFiltri() {
   return (F.keyword ? 1 : 0) + (F.servizio ? 1 : 0) +
-         (F.decennio !== "Tutti" ? 1 : 0) + (F.ordine !== "popularity.desc" ? 1 : 0);
+         (F.decennio !== "Tutti" ? 1 : 0) + (F.ordine !== "popularity.desc" ? 1 : 0) +
+         (F.durata !== "Qualsiasi" ? 1 : 0);
 }
 
 function vai(nome) {
+  pulisciIndirizzo();
   if (osservatore) { osservatore.disconnect(); osservatore = null; }
   scheda_attiva = nome;
   nav.querySelectorAll("button").forEach(b =>
@@ -1135,6 +1346,15 @@ function pannelloFiltri() {
     return g;
   };
 
+  // I sottogeneri stavano in una fila di pastiglie identica a quella
+  // dei generi, senza etichetta: non si capiva che erano due cose
+  // diverse, e costavano 48px prima del contenuto. Sono un filtro,
+  // quindi stanno qui.
+  p.appendChild(gruppo("Sottogenere",
+    [{ etichetta: "Tutti", valore: "" },
+     ...SOTTOGENERI.map(k => ({ etichetta: k.n, valore: k.k }))],
+    F.keyword, v => { F.keyword = v; schermoSfoglia(); }));
+
   p.appendChild(gruppo("Ordine",
     ORDINI.map(o => ({ etichetta: o.n, valore: o.v })), F.ordine,
     v => { F.ordine = v; schermoSfoglia(); }));
@@ -1145,6 +1365,10 @@ function pannelloFiltri() {
        etichetta: (MAPPA[pid] || {}).nome || nomeProvider(pid), valore: pid }))],
     F.servizio, v => { F.servizio = v; schermoSfoglia(); }));
 
+  p.appendChild(gruppo("Durata",
+    (DURATE[F.tipo] || []).map(t => ({ etichetta: t.n, valore: t.n })), F.durata,
+    v => { F.durata = v; schermoSfoglia(); }));
+
   p.appendChild(gruppo("Anni",
     DECENNI.map(d => ({ etichetta: d.n, valore: d.n })), F.decennio,
     v => { F.decennio = v; schermoSfoglia(); }));
@@ -1152,7 +1376,8 @@ function pannelloFiltri() {
   if (quantiFiltri()) {
     const z = el("button", "azzera", "Azzera i filtri");
     z.onclick = () => {
-      F = { ...F, keyword: "", servizio: "", decennio: "Tutti", ordine: "popularity.desc" };
+      F = { ...F, keyword: "", servizio: "", decennio: "Tutti",
+            ordine: "popularity.desc", durata: "Qualsiasi" };
       schermoSfoglia();
     };
     p.appendChild(z);
@@ -1162,6 +1387,9 @@ function pannelloFiltri() {
 
 async function schermoSfoglia() {
   if (!chiavi.tmdb) return vai("impostazioni");
+  const mia = ++generazione;
+  // la richiesta del render precedente, se c'e', si scarta da sola
+  sto_caricando = false;
   if (osservatore) { osservatore.disconnect(); osservatore = null; }
   schermo.innerHTML = "";
 
@@ -1187,11 +1415,23 @@ async function schermoSfoglia() {
   const testa = el("div", "pad");
   const capo = el("div", "capo");
   capo.appendChild(el("h1", "titolone", "TV"));
+  const azioni = el("div", "azioni");
+
+  const stasera = el("button", "stasera");
+  stasera.innerHTML =
+    '<svg viewBox="0 0 24 24"><path d="M12 3l2.4 5.6 6 .5-4.6 4 1.4 5.9L12 15.9 6.8 19l1.4-5.9-4.6-4 6-.5z"/></svg>' +
+    "Stasera";
+  stasera.setAttribute("aria-label", "Stasera cosa guardiamo");
+  stasera.onclick = () => schermoStasera();
+  azioni.appendChild(stasera);
+
   const bf = el("button", "bottoneFiltri",
     "Filtri" + (quantiFiltri() ? " · " + quantiFiltri() : ""));
   bf.setAttribute("aria-expanded", String(filtri_aperti));
   if (quantiFiltri()) bf.classList.add("attivi");
-  capo.appendChild(bf);
+  azioni.appendChild(bf);
+
+  capo.appendChild(azioni);
   testa.appendChild(capo);
 
   const sw = el("div", "interruttore");
@@ -1199,19 +1439,19 @@ async function schermoSfoglia() {
     const b = el("button", null, etichetta);
     b.setAttribute("aria-pressed", String(F.tipo === v));
     // cambiando tipo, genere e sottogenere non valgono piu'
-    b.onclick = () => { F = { ...F, tipo: v, genere: "", keyword: "" }; schermoSfoglia(); };
+    // le soglie di durata dei film non valgono per le serie
+    b.onclick = () => {
+      F = { ...F, tipo: v, genere: "", keyword: "", durata: "Qualsiasi" };
+      schermoSfoglia();
+    };
     sw.appendChild(b);
   });
   testa.appendChild(sw);
   schermo.appendChild(testa);
 
-  // ------------------------------------------------ generi e sottogeneri
+  // --------------------------------------------------------- generi
   const fasciaGeneri = el("div", "generi");
   schermo.appendChild(fasciaGeneri);
-  schermo.appendChild(fasciaChip(
-    [{ etichetta: "Tutti i sottogeneri", valore: "" },
-     ...SOTTOGENERI.map(k => ({ etichetta: k.n, valore: k.k }))],
-    F.keyword, v => { F.keyword = v; schermoSfoglia(); }));
 
   const zonaFiltri = el("div");
   schermo.appendChild(zonaFiltri);
@@ -1240,6 +1480,7 @@ async function schermoSfoglia() {
   }
 
   // Cache valida: rimetto quello che c'era e torno dove eri.
+  if (mia !== generazione) return;
   if (cache.chiave === chiaveFiltri() && cache.elementi.length) {
     disegnaGriglia(contenitore);
     requestAnimationFrame(() => window.scrollTo(0, cache.scroll));
@@ -1249,16 +1490,18 @@ async function schermoSfoglia() {
   cache = { chiave: chiaveFiltri(), elementi: [], pagina: 0, pagine: 1, totale: 0, scroll: 0 };
   window.scrollTo(0, 0);
   contenitore.innerHTML = '<div class="caricamento"><div class="giro"></div></div>';
-  await prossimaPagina(contenitore, true);
+  await prossimaPagina(contenitore, true, mia);
 }
 
 let sto_caricando = false;
 
-async function prossimaPagina(contenitore, prima = false) {
+async function prossimaPagina(contenitore, prima = false, gen = generazione) {
+  if (gen !== generazione) return;
   if (sto_caricando || (!prima && cache.pagina >= cache.pagine)) return;
   sto_caricando = true;
   try {
     const r = await sfoglia(F, cache.pagina + 1);
+    if (gen !== generazione) return;   // arrivata tardi: la schermata e' cambiata
     cache.pagina += 1;
     cache.pagine = r.pagine;
     cache.totale = r.totale;
@@ -1269,9 +1512,10 @@ async function prossimaPagina(contenitore, prima = false) {
     disegnaGriglia(contenitore);
     if (!prima) window.scrollTo(0, dov_ero);
   } catch (e) {
-    contenitore.innerHTML = '<p class="vuoto">' + esc(e.message) + "</p>";
+    if (gen === generazione)
+      contenitore.innerHTML = '<p class="vuoto">' + esc(e.message) + "</p>";
   } finally {
-    sto_caricando = false;
+    if (gen === generazione) sto_caricando = false;
   }
 }
 
@@ -1316,6 +1560,126 @@ function disegnaGriglia(contenitore) {
   } else if (cache.elementi.length > 20) {
     contenitore.appendChild(el("p", "altri", "Finiti: " + cache.elementi.length + " titoli."));
   }
+}
+
+// Lo stato di "Stasera" e' suo: non voglio che toccare qui cambi
+// i filtri di Sfoglia, e viceversa.
+// Si chiama STASERA e non ST perche' ST e' l'URL di SmartThings.
+let STASERA = { tipo: "movie", durata: "Qualsiasi", genere: "" };
+
+async function schermoStasera() {
+  window.scrollTo(0, 0);
+  schermo.innerHTML = "";
+
+  const su = el("button", "indietro", "← Sfoglia");
+  su.onclick = () => vai("sfoglia");
+  schermo.appendChild(su);
+
+  const pad = el("div", "pad");
+  pad.appendChild(el("h1", "titolone", "Stasera"));
+  schermo.appendChild(pad);
+
+  if (!chiavi.servizi.length) {
+    pad.appendChild(el("p", "nota", "Prima scegli gli abbonamenti in Opzioni."));
+    return;
+  }
+
+  const sw = el("div", "interruttore");
+  [["movie", "Film"], ["tv", "Serie"]].forEach(([v, etichetta]) => {
+    const b = el("button", null, etichetta);
+    b.setAttribute("aria-pressed", String(STASERA.tipo === v));
+    b.onclick = () => { STASERA = { ...STASERA, tipo: v, durata: "Qualsiasi", genere: "" }; schermoStasera(); };
+    sw.appendChild(b);
+  });
+  pad.appendChild(sw);
+
+  const fascia = valori => fasciaChip(valori.voci, valori.attuale, valori.scegli);
+  schermo.appendChild(el("p", "sezione pad", "Quanto tempo hai"));
+  schermo.appendChild(fascia({
+    voci: (DURATE[STASERA.tipo] || []).map(t => ({ etichetta: t.n, valore: t.n })),
+    attuale: STASERA.durata,
+    scegli: v => { STASERA.durata = v; schermoStasera(); },
+  }));
+
+  const zonaGeneri = el("div");
+  schermo.appendChild(el("p", "sezione pad", "Di che genere"));
+  schermo.appendChild(zonaGeneri);
+  generi(STASERA.tipo).then(lista => {
+    zonaGeneri.appendChild(fascia({
+      voci: [{ etichetta: "Qualsiasi", valore: "" },
+             ...lista.map(g => ({ etichetta: g.name, valore: String(g.id) }))],
+      attuale: STASERA.genere,
+      scegli: v => { STASERA.genere = v; schermoStasera(); },
+    }));
+  }).catch(() => {});
+
+  const risultato = el("div", "pescato");
+  const pulsante = el("button", "stasera");
+  pulsante.style.marginTop = "18px";
+  pulsante.innerHTML =
+    '<svg viewBox="0 0 24 24"><path d="M12 3l2.4 5.6 6 .5-4.6 4 1.4 5.9L12 15.9 6.8 19l1.4-5.9-4.6-4 6-.5z"/></svg>' +
+    "Pescane uno";
+  schermo.appendChild(pulsante);
+  schermo.appendChild(risultato);
+
+  async function pesca() {
+    pulsante.disabled = true;
+    pulsante.textContent = "Pesco…";
+    risultato.innerHTML = '<div class="caricamento"><div class="giro"></div></div>';
+    const f = { tipo: STASERA.tipo, genere: STASERA.genere, keyword: "",
+                ordine: "popularity.desc", servizio: "",
+                decennio: "Tutti", durata: STASERA.durata };
+    try {
+      const v = await pescaUno(f);
+      if (!v) {
+        risultato.innerHTML = '<p class="nota">Niente con questi criteri. Allarga il tiro.</p>';
+        return;
+      }
+      await mostraPescato(risultato, v, pesca);
+    } catch (e) {
+      risultato.innerHTML = '<p class="nota">' + esc(e.message) + "</p>";
+    } finally {
+      pulsante.disabled = false;
+      pulsante.innerHTML =
+        '<svg viewBox="0 0 24 24"><path d="M12 3l2.4 5.6 6 .5-4.6 4 1.4 5.9L12 15.9 6.8 19l1.4-5.9-4.6-4 6-.5z"/></svg>' +
+        "Pescane un altro";
+    }
+  }
+  pulsante.onclick = pesca;
+}
+
+// Il pescato: locandina, dati, e i pulsanti per aprirlo sulla TV
+// subito. Tutto cio' che esce da qui e' per costruzione fra i tuoi
+// abbonamenti, quindi il verdetto non serve ridirlo.
+async function mostraPescato(dove, v, ripesca) {
+  let d = null;
+  try { d = await scheda(v.tipo, v.id); } catch (e) { /* si vive anche senza */ }
+
+  dove.innerHTML = "";
+  const grande = el("div", "grande");
+  const meta = [
+    v.tipo === "tv" ? "Serie" : "Film",
+    v.anno,
+    d && d.durata ? d.durata : "",
+    v.voto ? "★ " + v.voto.toFixed(1) : "",
+  ].filter(Boolean).join(" · ");
+  grande.innerHTML =
+    '<div class="locandina">' + locandina(v.locandina, "w342") + "</div>" +
+    '<div class="dentro"><h2>' + esc(v.titolo) + "</h2>" +
+    '<div class="meta">' + esc(meta) + "</div>" +
+    (d && d.compresi.length
+      ? '<div class="meta" style="margin-top:6px">Su <b>' +
+        d.compresi.map(i => esc(i.nome)).join(", ") + "</b></div>" : "") +
+    "</div>";
+  dove.appendChild(grande);
+
+  if (d) (d.compresi || []).filter(i => i.app).forEach(i => {
+    dove.appendChild(pulsanteLancio(i, d));
+  });
+
+  const apri = el("button", "ancora", "Apri la scheda");
+  apri.onclick = () => schermoDettaglio(v.tipo, v.id, () => schermoStasera());
+  dove.appendChild(apri);
 }
 
 function schermoCerca() {
@@ -1375,8 +1739,65 @@ function schermoCerca() {
   input.focus();
 }
 
-async function schermoDettaglio(tipo, id) {
+// Il pulsante "Apri X sulla TV". Estratto perche' serve sia nella
+// scheda sia nel pescato di Stasera.
+function pulsanteLancio(i, d) {
+  const b = el("button", "apri");
+  b.innerHTML =
+    (i.logo ? '<img class="logo" src="' + IMG + "/w92" + i.logo + '" alt="">' : '<span class="logo"></span>') +
+    '<span class="etichetta">Apri ' + esc(i.nome) + " sulla TV<small>Poi cerca il titolo col telecomando</small></span>";
+  b.onclick = async () => {
+    b.disabled = true;
+    b.querySelector(".etichetta").innerHTML = "Apro " + esc(i.nome) + "…<small>Controllo che si apra davvero</small>";
+    try {
+      if (await lancia(i.app)) {
+        b.className = "apri fatto";
+        const p = await provaPonte();
+        b.querySelector(".etichetta").innerHTML = esc(i.nome) + " è aperta<small>" +
+          (p ? "Apri la ricerca nell'app, poi scrivi il titolo qui sotto"
+             : "Ora cerca «" + esc(d.titolo) + "»") + "</small>";
+        // Il ponte locale c'e': posso scrivere il titolo io, invece
+        // di farglielo battere col telecomando.
+        if (p && !b.parentElement.querySelector(".scriviTitolo")) {
+          const sb = el("button", "apri scriviTitolo");
+          sb.innerHTML = '<span class="logo"></span><span class="etichetta">Scrivi «' +
+            esc(d.titolo) + '» sulla TV<small>Prima metti a fuoco il campo di ricerca</small></span>';
+          sb.onclick = async () => {
+            sb.disabled = true;
+            const et = sb.querySelector(".etichetta");
+            et.innerHTML = "Scrivo…";
+            try {
+              await scriviSullaTv(d.titolo);
+              sb.className = "apri fatto scriviTitolo";
+              et.innerHTML = "Scritto<small>Se sulla TV non si vede, il campo non era a fuoco</small>";
+            } catch (e) {
+              sb.className = "apri male scriviTitolo";
+              et.innerHTML = esc(e.message) + "<small>Tocca per riprovare</small>";
+            }
+            sb.disabled = false;
+          };
+          b.after(sb);
+        }
+      } else {
+        b.className = "apri male";
+        b.disabled = false;
+        b.querySelector(".etichetta").innerHTML =
+          "La TV non ha aperto l'app<small>È accesa? Tocca per riprovare</small>";
+      }
+    } catch (e) {
+      b.className = "apri male";
+      b.disabled = false;
+      b.querySelector(".etichetta").innerHTML = esc(e.message) + "<small>Tocca per riprovare</small>";
+    }
+  };
+  // l'append lo fa chi chiama: questa funzione serve sia alla scheda
+  // sia al pescato di Stasera
+  return b;
+}
+
+async function schermoDettaglio(tipo, id, torna) {
   window.scrollTo(0, 0);
+  scriviIndirizzo(A_PAROLA[tipo] || "film", id);
   girello();
   let d;
   try { d = await scheda(tipo, id); }
@@ -1386,7 +1807,7 @@ async function schermoDettaglio(tipo, id) {
 
   const barraSu = el("div", "testaAzioni");
   const su = el("button", "indietro", "← Indietro");
-  su.onclick = () => vai(scheda_attiva);
+  su.onclick = torna || (() => vai(scheda_attiva));
   barraSu.appendChild(su);
 
   const cuore = el("button", "cuore");
@@ -1404,7 +1825,25 @@ async function schermoDettaglio(tipo, id) {
     disegnaCuore();
   };
   disegnaCuore();
-  barraSu.appendChild(cuore);
+
+  const gruppoAzioni = el("div");
+  gruppoAzioni.style.cssText = "display:flex;gap:9px;align-items:center";
+  const spartisci = el("button", "condividi");
+  spartisci.setAttribute("aria-label", "Condividi");
+  spartisci.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 15V3"/><path d="M8.5 6.5L12 3l3.5 3.5"/><path d="M5 13v6a2 2 0 002 2h10a2 2 0 002-2v-6"/></svg>';
+  spartisci.onclick = async () => {
+    const esito = await condividi(d.titolo, indirizzoDi(d.tipo, d.id), pad);
+    if (esito === "copiato") {
+      spartisci.setAttribute("aria-label", "Indirizzo copiato");
+      const p = el("p", "nota", "Indirizzo copiato.");
+      p.style.margin = "8px 0 0";
+      pad.appendChild(p);
+      setTimeout(() => p.remove(), 2200);
+    }
+  };
+  gruppoAzioni.appendChild(spartisci);
+  gruppoAzioni.appendChild(cuore);
+  barraSu.appendChild(gruppoAzioni);
   schermo.appendChild(barraSu);
 
   const sfondo = el("div", "sfondo" + (d.sfondo ? "" : " senza"));
@@ -1441,57 +1880,7 @@ async function schermoDettaglio(tipo, id) {
   }
   pad.appendChild(box);
 
-  d.compresi.filter(i => i.app).forEach(i => {
-    const b = el("button", "apri");
-    b.innerHTML =
-      (i.logo ? '<img class="logo" src="' + IMG + "/w92" + i.logo + '" alt="">' : '<span class="logo"></span>') +
-      '<span class="etichetta">Apri ' + esc(i.nome) + " sulla TV<small>Poi cerca il titolo col telecomando</small></span>";
-    b.onclick = async () => {
-      b.disabled = true;
-      b.querySelector(".etichetta").innerHTML = "Apro " + esc(i.nome) + "…<small>Controllo che si apra davvero</small>";
-      try {
-        if (await lancia(i.app)) {
-          b.className = "apri fatto";
-          const p = await provaPonte();
-          b.querySelector(".etichetta").innerHTML = esc(i.nome) + " è aperta<small>" +
-            (p ? "Apri la ricerca nell'app, poi scrivi il titolo qui sotto"
-               : "Ora cerca «" + esc(d.titolo) + "»") + "</small>";
-          // Il ponte locale c'e': posso scrivere il titolo io, invece
-          // di farglielo battere col telecomando.
-          if (p && !b.parentElement.querySelector(".scriviTitolo")) {
-            const sb = el("button", "apri scriviTitolo");
-            sb.innerHTML = '<span class="logo"></span><span class="etichetta">Scrivi «' +
-              esc(d.titolo) + '» sulla TV<small>Prima metti a fuoco il campo di ricerca</small></span>';
-            sb.onclick = async () => {
-              sb.disabled = true;
-              const et = sb.querySelector(".etichetta");
-              et.innerHTML = "Scrivo…";
-              try {
-                await scriviSullaTv(d.titolo);
-                sb.className = "apri fatto scriviTitolo";
-                et.innerHTML = "Scritto<small>Se sulla TV non si vede, il campo non era a fuoco</small>";
-              } catch (e) {
-                sb.className = "apri male scriviTitolo";
-                et.innerHTML = esc(e.message) + "<small>Tocca per riprovare</small>";
-              }
-              sb.disabled = false;
-            };
-            b.after(sb);
-          }
-        } else {
-          b.className = "apri male";
-          b.disabled = false;
-          b.querySelector(".etichetta").innerHTML =
-            "La TV non ha aperto l'app<small>È accesa? Tocca per riprovare</small>";
-        }
-      } catch (e) {
-        b.className = "apri male";
-        b.disabled = false;
-        b.querySelector(".etichetta").innerHTML = esc(e.message) + "<small>Tocca per riprovare</small>";
-      }
-    };
-    pad.appendChild(b);
-  });
+  d.compresi.filter(i => i.app).forEach(i => pad.appendChild(pulsanteLancio(i, d)));
 
   const senza = d.compresi.filter(i => !i.app).map(i => i.nome);
   if (senza.length)
@@ -1642,6 +2031,7 @@ async function schermoStagione(serie, stagione) {
 // Attori e registi: la stessa schermata serve per entrambi.
 async function schermoPersona(id, torna) {
   window.scrollTo(0, 0);
+  scriviIndirizzo("persona", id);
   girello();
   let p;
   try { p = await personaDati(id); }
@@ -1694,6 +2084,35 @@ const ICONE = {
   acceso:'<svg viewBox="0 0 24 24"><path d="M12 3v9"/><path d="M6.8 7.2a7.5 7.5 0 1010.4 0"/></svg>',
 };
 
+// Le serie della lista: quando escono i prossimi episodi.
+// Una chiamata per serie, in parallelo. Il risultato resta in
+// sessionStorage per non rifarle a ogni apertura della scheda Lista.
+async function inArrivo(voci) {
+  const serie = voci.filter(v => v.tipo === "tv");
+  if (!serie.length) return [];
+
+  const memoria = "arrivo_" + serie.map(v => v.id).sort().join(",");
+  const salvato = sessionStorage.getItem(memoria);
+  if (salvato) { try { return JSON.parse(salvato); } catch (e) { /* si rifa' */ } }
+
+  const esiti = await Promise.all(serie.map(async v => {
+    try {
+      const d = await tmdb("/tv/" + v.id, { language: LINGUA });
+      const p = d.next_episode_to_air;
+      if (!p || !p.air_date) return null;
+      return {
+        id: v.id, titolo: v.titolo, locandina: v.locandina,
+        stagione: p.season_number, episodio: p.episode_number,
+        nome: p.name || "", data: p.air_date,
+      };
+    } catch (e) { return null; }
+  }));
+
+  const lista = esiti.filter(Boolean).sort((a, b) => a.data.localeCompare(b.data));
+  sessionStorage.setItem(memoria, JSON.stringify(lista));
+  return lista;
+}
+
 function schermoLista() {
   schermo.innerHTML = "";
   const pad = el("div", "pad");
@@ -1707,11 +2126,36 @@ function schermoLista() {
     return;
   }
 
+  // In arrivo: si popola dopo, senza far aspettare la griglia.
+  const zonaArrivo = el("div");
+  schermo.appendChild(zonaArrivo);
+
   const intestazione = el("p", "sezione pad");
   intestazione.innerHTML = voci.length + (voci.length === 1 ? " titolo" : " titoli") +
     ' <span class="conteggio">· i più recenti in cima</span>';
   schermo.appendChild(intestazione);
   schermo.appendChild(grigliaDi(voci));
+
+  inArrivo(voci).then(prossimi => {
+    if (!prossimi.length) return;
+    const oggi = new Date(); oggi.setHours(0, 0, 0, 0);
+    zonaArrivo.appendChild(el("p", "sezione pad",
+      prossimi.length === 1 ? "In arrivo" : "In arrivo · " + prossimi.length + " episodi"));
+    const pad2 = el("div", "pad");
+    prossimi.forEach(p => {
+      const giorni = Math.round((new Date(p.data + "T00:00:00") - oggi) / 86400000);
+      const b = el("button", "arrivo");
+      b.innerHTML =
+        '<div class="mini">' + locandina(p.locandina, "w154") + "</div>" +
+        '<div class="dati"><b>' + esc(p.titolo) + "</b><span>S" + p.stagione + "E" + p.episodio +
+        (p.nome ? " · " + esc(p.nome) : "") + "</span></div>" +
+        '<span class="fra' + (giorni <= 0 ? " oggi" : "") + '">' +
+        (giorni <= 0 ? "oggi" : giorni === 1 ? "domani" : "fra " + giorni + "g") + "</span>";
+      b.onclick = () => { cache.scroll = window.scrollY; schermoDettaglio("tv", p.id); };
+      pad2.appendChild(b);
+    });
+    zonaArrivo.appendChild(pad2);
+  }).catch(() => {});
 
   const b = el("button", "svuota", "Svuota la lista");
   b.onclick = () => {
@@ -1878,6 +2322,9 @@ function schermoTelecomando() {
   const zonaIngressi = el("div");
   corpoTel.appendChild(zonaIngressi);
 
+  const zonaModi = el("div");
+  corpoTel.appendChild(zonaModi);
+
   // ------------------------------------------------------------ stato
   async function aggiorna() {
     try {
@@ -1895,6 +2342,33 @@ function schermoTelecomando() {
         st.accesa ? "Spegni" : "Accendi", ICONE.acceso,
         async () => { await comando("switch", st.accesa ? "off" : "on"); setTimeout(aggiorna, 2500); },
         st.accesa ? "" : "acceso"));
+
+      zonaModi.innerHTML = "";
+      const modi = (titolo, voci, attuale, capacita, cmd, quale) => {
+        if (!voci.length) return;
+        zonaModi.appendChild(el("p", "sezione", titolo));
+        const sc = el("div", "scelte");
+        voci.forEach(v => {
+          const b = el("button", "chip", esc(v.name || v.id));
+          b.setAttribute("aria-pressed", String(v.name === attuale || v.id === attuale));
+          b.onclick = async () => {
+            sc.querySelectorAll(".chip").forEach(x => { x.disabled = true; });
+            try {
+              const esito = await impostaModo(capacita,
+                m => comando(capacita, cmd, [m]), quale, v);
+              if (esito !== v.name && esito !== v.id)
+                lamenta("La TV non ha cambiato " + titolo.toLowerCase() + ".");
+            } catch (e) { lamenta(e.message); }
+            aggiorna();
+          };
+          sc.appendChild(b);
+        });
+        zonaModi.appendChild(sc);
+      };
+      modi("Immagine", st.immagini, st.immagine,
+           "custom.picturemode", "setPictureMode", "immagine");
+      modi("Suono", st.suoni, st.suono,
+           "custom.soundmode", "setSoundMode", "suono");
 
       zonaIngressi.innerHTML = "";
       if (st.ingressi.length) {
@@ -2053,8 +2527,23 @@ function schermoImpostazioni() {
   pad.appendChild(esito);
 }
 
+// Un indirizzo condiviso apre direttamente quella scheda.
+function apriIndirizzo(dove) {
+  if (!chiavi.tmdb) return vai("impostazioni");
+  if (dove.cosa === "persona") return schermoPersona(dove.id, () => vai("sfoglia"));
+  return schermoDettaglio(A_TIPO[dove.cosa], dove.id, () => vai("sfoglia"));
+}
+
+// Se l'indirizzo cambia mentre l'app e' aperta (link toccato da fuori).
+window.addEventListener("hashchange", () => {
+  const dove = leggiIndirizzo();
+  if (dove) apriIndirizzo(dove);
+});
+
 // Al primo avvio non c'e' niente da mostrare: si comincia dalle chiavi.
-vai(chiavi.tmdb ? "sfoglia" : "impostazioni");
+const arrivo = leggiIndirizzo();
+if (arrivo) apriIndirizzo(arrivo);
+else vai(chiavi.tmdb ? "sfoglia" : "impostazioni");
 </script>
 </body>
 </html>
