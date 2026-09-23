@@ -441,6 +441,32 @@
   .attore { -webkit-touch-callout: none; }
   button.attore { background: none; border: 0; padding: 0; }
 
+  /* ---------------------------------------------------- visto/voto */
+  .visto {
+    margin: 12px 0 0; padding: 14px 16px; border-radius: 13px;
+    background: var(--fondo-alto); border: 1px solid var(--bordo);
+  }
+  .visto .domanda { margin: 0 0 10px; font-size: 14.5px; color: var(--tenue); }
+  .stelle { display: flex; gap: 4px; }
+  .stelle button {
+    width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
+    border-radius: 10px; -webkit-touch-callout: none;
+  }
+  .stelle svg { width: 27px; height: 27px; stroke: var(--debole); stroke-width: 1.5; fill: none; }
+  .stelle button.piena svg { fill: var(--acceso); stroke: var(--acceso); }
+  .stelle button:active { background: var(--piano); }
+  .visto .togli {
+    margin: 10px 0 0; padding: 0; color: var(--tenue);
+    font-size: 13.5px; text-decoration: underline; min-height: 32px;
+  }
+  .visto .esito { margin: 10px 0 0; font-size: 14.5px; font-weight: 550; }
+  .gusto {
+    margin: 10px 16px 0; padding: 12px 14px; border-radius: 12px;
+    background: var(--fondo-alto); border: 1px solid var(--bordo);
+    color: var(--tenue); font-size: 13.5px; line-height: 1.55;
+  }
+  .gusto b { color: var(--testo); font-weight: 600; }
+
   /* ------------------------------------------------- aggiornamento */
   .nuova {
     position: fixed; left: 12px; right: 12px;
@@ -685,6 +711,15 @@ const DURATE = {
   ],
 };
 
+// Il pescaggio scegliendo una pagina fra 500 ignora l'ordinamento:
+// se ordini per voto e poi peschi dalla pagina 400, prendi comunque
+// roba mediocre. Quindi la preferenza restringe anche la PROFONDITA'.
+const PREFERENZE = [
+  { n: "Popolari",   ordine: "popularity.desc",   pagine: 25 },
+  { n: "Voto alto",  ordine: "vote_average.desc", pagine: 10 },
+  { n: "Pesca larga", ordine: "popularity.desc",  pagine: 500 },
+];
+
 const DECENNI = [
   { n: "Tutti", da: "", a: "" },
   { n: "2020 →", da: "2020-01-01", a: "" },
@@ -700,7 +735,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "202609230928";
+const VERSIONE = "202609230952";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -781,7 +816,29 @@ function indirizzoDi(tipo, id) {
 
 function leggiIndirizzo() {
   const m = (location.hash || "").match(/^#\/(film|serie|persona)\/(\d+)$/);
-  return m ? { cosa: m[1], id: Number(m[2]) } : null;
+  if (m) return { cosa: m[1], id: Number(m[2]) };
+  // liste condivise: #/lista/m27205,t1396  e  #/visti/m155:5,t1396:4
+  const l = (location.hash || "").match(/^#\/(lista|visti)\/([mt0-9,:]+)$/);
+  if (l) return { cosa: l[1], voci: decodificaVoci(l[2]) };
+  return null;
+}
+
+// Una lista in un indirizzo: solo tipo e numero, piu' il voto per i
+// visti. Non ci metto titoli e locandine, che si recuperano da TMDB:
+// un indirizzo con trenta titoli dentro diventerebbe illeggibile.
+function codificaVoci(voci, conVoto) {
+  return voci
+    .map(v => (v.tipo === "tv" ? "t" : "m") + v.id + (conVoto && v.mio ? ":" + v.mio : ""))
+    .join(",");
+}
+
+function decodificaVoci(testo) {
+  return (testo || "").split(",").map(p => {
+    const m = p.match(/^([mt])(\d+)(?::([1-5]))?$/);
+    if (!m) return null;
+    return { tipo: m[1] === "t" ? "tv" : "movie", id: Number(m[2]),
+             mio: m[3] ? Number(m[3]) : 0 };
+  }).filter(Boolean);
 }
 
 function scriviIndirizzo(cosa, id) {
@@ -818,6 +875,45 @@ async function condividi(titolo, url, dove) {
     return "mostrato";
   }
   return "niente";
+}
+
+// I visti, col voto che gli dai da 1 a 5. Salvo anche generi e
+// keyword del titolo: li ho gia' in mano quando lo segni dalla sua
+// scheda, quindi il profilo di gusto si costruisce senza una sola
+// chiamata in piu'.
+const visti = {
+  get tutto() {
+    try {
+      const v = JSON.parse(localStorage.getItem("visti") || "[]");
+      return Array.isArray(v) ? v : [];
+    } catch (e) { return []; }
+  },
+  set tutto(a) { localStorage.setItem("visti", JSON.stringify(a)); },
+  voto(tipo, id) {
+    const v = this.tutto.find(x => x.tipo === tipo && String(x.id) === String(id));
+    return v ? v.mio : 0;
+  },
+  segna(v, mio) {
+    const resto = this.tutto.filter(x => !(x.tipo === v.tipo && String(x.id) === String(v.id)));
+    this.tutto = [{ ...v, mio, quando: Date.now() }, ...resto];
+  },
+  togli(tipo, id) {
+    this.tutto = this.tutto.filter(x => !(x.tipo === tipo && String(x.id) === String(id)));
+  },
+};
+
+// Il gusto: conto generi e keyword dei titoli che hai votato bene,
+// pesando 4 stelle 1 e 5 stelle 2. Non e' magia, e' un conteggio.
+function profiloGusto() {
+  const buoni = visti.tutto.filter(v => (v.mio || 0) >= 4);
+  const generi = {}, keyword = {};
+  buoni.forEach(v => {
+    const peso = v.mio >= 5 ? 2 : 1;
+    (v.generiId || []).forEach(g => { generi[g] = (generi[g] || 0) + peso; });
+    (v.keyword || []).forEach(k => { keyword[k] = (keyword[k] || 0) + peso; });
+  });
+  const cima = o => Object.entries(o).sort((a, b) => b[1] - a[1]).slice(0, 4).map(x => x[0]);
+  return { quanti: buoni.length, generi: cima(generi), keyword: cima(keyword) };
 }
 
 const schermo = document.getElementById("schermo");
@@ -863,8 +959,14 @@ function locandina(percorso, larghezza = "w342") {
 
 async function tmdb(percorso, parametri = {}) {
   if (!chiavi.tmdb) throw new Error("Manca la chiave TMDB: vai in Impostazioni.");
+  // Senza rete la fetch dice solo "Failed to fetch": meglio dirlo
+  // in italiano, e ricordare che la Lista funziona comunque.
+  if (navigator.onLine === false)
+    throw new Error("Sei senza rete. La tua Lista funziona comunque.");
   const url = TMDB + percorso + "?" + new URLSearchParams({ ...parametri, api_key: chiavi.tmdb });
-  const r = await fetch(url);
+  let r;
+  try { r = await fetch(url); }
+  catch (e) { throw new Error("Non riesco a raggiungere TMDB. Controlla la rete."); }
   if (r.status === 401) throw new Error("Chiave TMDB rifiutata.");
   if (!r.ok) throw new Error("TMDB non risponde (HTTP " + r.status + ").");
   return r.json();
@@ -872,6 +974,8 @@ async function tmdb(percorso, parametri = {}) {
 
 async function smartthings(percorso, corpoRichiesta) {
   if (!chiavi.token) throw new Error("Manca il token SmartThings: vai in Impostazioni.");
+  if (navigator.onLine === false)
+    throw new Error("Sei senza rete: la TV si comanda solo online.");
   const r = await fetch(ST + percorso, {
     method: corpoRichiesta ? "POST" : "GET",
     headers: { "Authorization": "Bearer " + chiavi.token, "Content-Type": "application/json" },
@@ -1017,22 +1121,37 @@ async function sfoglia(f, pagina = 1) {
 // Le pagine si fermano a 500 (la 501 risponde errore, verificato).
 const paginePerFiltro = {};
 
-async function pescaUno(f) {
+// Gli ultimi pescati, per non riproporre lo stesso due volte di fila.
+const pescatiDiRecente = [];
+
+async function pescaUno(f, profondita = 500) {
   const chiave = JSON.stringify(f);
   let pagine = paginePerFiltro[chiave];
+  let primaPagina = null;
 
   if (pagine === undefined) {
-    const primo = await sfoglia(f, 1);
-    if (!primo.elementi.length) return null;
-    pagine = Math.min(primo.pagine, 500);
+    primaPagina = await sfoglia(f, 1);
+    if (!primaPagina.elementi.length) return null;
+    pagine = Math.min(primaPagina.pagine, 500);
     paginePerFiltro[chiave] = pagine;
-    if (pagine === 1) return primo.elementi[Math.floor(Math.random() * primo.elementi.length)];
   }
+  const tetto = Math.max(1, Math.min(pagine, profondita));
 
-  const p = 1 + Math.floor(Math.random() * pagine);
-  const r = await sfoglia(f, p);
-  if (!r.elementi.length) return null;
-  return r.elementi[Math.floor(Math.random() * r.elementi.length)];
+  // Fino a 4 tentativi per evitare gli ultimi pescati. Se il bacino e'
+  // piccolo si arrende e ripropone: meglio un doppione che un "niente".
+  for (let giro = 0; giro < 4; giro++) {
+    const p = 1 + Math.floor(Math.random() * tetto);
+    const r = (p === 1 && primaPagina) ? primaPagina : await sfoglia(f, p);
+    const nuovi = r.elementi.filter(v => !pescatiDiRecente.includes(v.tipo + v.id));
+    const scelti = nuovi.length ? nuovi : (giro === 3 ? r.elementi : []);
+    if (scelti.length) {
+      const v = scelti[Math.floor(Math.random() * scelti.length)];
+      pescatiDiRecente.push(v.tipo + v.id);
+      if (pescatiDiRecente.length > 12) pescatiDiRecente.shift();
+      return v;
+    }
+  }
+  return null;
 }
 
 // Un comando qualsiasi alla TV, per il telecomando.
@@ -1331,14 +1450,17 @@ nav.onclick = e => {
   if (b) vai(b.dataset.scheda);
 };
 
-function grigliaDi(elementi) {
+function grigliaDi(elementi, mostraMio = false) {
   const g = el("div", "griglia");
   elementi.forEach(v => {
     const c = el("button", "carta");
+    const distintivo = mostraMio && v.mio
+      ? '<span class="voto">' + "★".repeat(v.mio) + "</span>"
+      : (v.voto ? '<span class="voto">' + v.voto.toFixed(1) + "</span>" : "");
     c.innerHTML =
       '<div class="tela">' +
         (v.locandina ? locandina(v.locandina) : '<div class="manca">' + esc(v.titolo) + "</div>") +
-        (v.voto ? '<span class="voto">' + v.voto.toFixed(1) + "</span>" : "") +
+        distintivo +
       "</div>" +
       "<h3>" + esc(v.titolo) + "</h3>" +
       '<p>' + (v.anno || "—") + "</p>";
@@ -1595,7 +1717,14 @@ function disegnaGriglia(contenitore) {
 // Lo stato di "Stasera" e' suo: non voglio che toccare qui cambi
 // i filtri di Sfoglia, e viceversa.
 // Si chiama STASERA e non ST perche' ST e' l'URL di SmartThings.
-let STASERA = { tipo: "movie", durata: "Qualsiasi", genere: "" };
+let STASERA = { tipo: "movie", durata: "Qualsiasi", genere: "",
+                keyword: "", preferenza: "Popolari", modalita: "scopri" };
+
+const MODALITA = [
+  { v: "scopri",   n: "Scopri" },
+  { v: "gusto",    n: "Sul mio gusto" },
+  { v: "rivedere", n: "Da rivedere" },
+];
 
 async function schermoStasera() {
   window.scrollTo(0, 0);
@@ -1614,34 +1743,90 @@ async function schermoStasera() {
     return;
   }
 
-  const sw = el("div", "interruttore");
-  [["movie", "Film"], ["tv", "Serie"]].forEach(([v, etichetta]) => {
-    const b = el("button", null, etichetta);
-    b.setAttribute("aria-pressed", String(STASERA.tipo === v));
-    b.onclick = () => { STASERA = { ...STASERA, tipo: v, durata: "Qualsiasi", genere: "" }; schermoStasera(); };
-    sw.appendChild(b);
-  });
-  pad.appendChild(sw);
-
   const fascia = valori => fasciaChip(valori.voci, valori.attuale, valori.scegli);
-  schermo.appendChild(el("p", "sezione pad", "Quanto tempo hai"));
+  const gusto = profiloGusto();
+
   schermo.appendChild(fascia({
-    voci: (DURATE[STASERA.tipo] || []).map(t => ({ etichetta: t.n, valore: t.n })),
-    attuale: STASERA.durata,
-    scegli: v => { STASERA.durata = v; schermoStasera(); },
+    voci: MODALITA.map(m => ({ etichetta: m.n, valore: m.v })),
+    attuale: STASERA.modalita,
+    scegli: v => { STASERA.modalita = v; schermoStasera(); },
   }));
 
-  const zonaGeneri = el("div");
-  schermo.appendChild(el("p", "sezione pad", "Di che genere"));
-  schermo.appendChild(zonaGeneri);
-  generi(STASERA.tipo).then(lista => {
-    zonaGeneri.appendChild(fascia({
-      voci: [{ etichetta: "Qualsiasi", valore: "" },
-             ...lista.map(g => ({ etichetta: g.name, valore: String(g.id) }))],
-      attuale: STASERA.genere,
-      scegli: v => { STASERA.genere = v; schermoStasera(); },
+  // Ogni modalita' ha bisogno di controlli diversi: mostrarli tutti
+  // sempre renderebbe la schermata un pannello di comandi.
+  if (STASERA.modalita !== "rivedere") {
+    const sw = el("div", "interruttore");
+    [["movie", "Film"], ["tv", "Serie"]].forEach(([v, etichetta]) => {
+      const b = el("button", null, etichetta);
+      b.setAttribute("aria-pressed", String(STASERA.tipo === v));
+      b.onclick = () => {
+        STASERA = { ...STASERA, tipo: v, durata: "Qualsiasi", genere: "", keyword: "" };
+        schermoStasera();
+      };
+      sw.appendChild(b);
+    });
+    const p2 = el("div", "pad");
+    p2.appendChild(sw);
+    schermo.appendChild(p2);
+
+    schermo.appendChild(el("p", "sezione pad", "Quanto tempo hai"));
+    schermo.appendChild(fascia({
+      voci: (DURATE[STASERA.tipo] || []).map(t => ({ etichetta: t.n, valore: t.n })),
+      attuale: STASERA.durata,
+      scegli: v => { STASERA.durata = v; schermoStasera(); },
     }));
-  }).catch(() => {});
+  }
+
+  if (STASERA.modalita === "scopri") {
+    const zonaGeneri = el("div");
+    schermo.appendChild(el("p", "sezione pad", "Di che genere"));
+    schermo.appendChild(zonaGeneri);
+    generi(STASERA.tipo).then(lista => {
+      zonaGeneri.appendChild(fascia({
+        voci: [{ etichetta: "Qualsiasi", valore: "" },
+               ...lista.map(g => ({ etichetta: g.name, valore: String(g.id) }))],
+        attuale: STASERA.genere,
+        scegli: v => { STASERA.genere = v; schermoStasera(); },
+      }));
+    }).catch(() => {});
+
+    schermo.appendChild(el("p", "sezione pad", "Sottogenere"));
+    schermo.appendChild(fascia({
+      voci: [{ etichetta: "Qualsiasi", valore: "" },
+             ...SOTTOGENERI.map(k => ({ etichetta: k.n, valore: k.k }))],
+      attuale: STASERA.keyword,
+      scegli: v => { STASERA.keyword = v; schermoStasera(); },
+    }));
+
+    schermo.appendChild(el("p", "sezione pad", "Cosa preferisci"));
+    schermo.appendChild(fascia({
+      voci: PREFERENZE.map(p => ({ etichetta: p.n, valore: p.n })),
+      attuale: STASERA.preferenza,
+      scegli: v => { STASERA.preferenza = v; schermoStasera(); },
+    }));
+  }
+
+  if (STASERA.modalita === "gusto") {
+    const nomi = [...gusto.generi.map(nomeGenere), ...gusto.keyword.map(nomeKeyword)]
+      .filter(Boolean).slice(0, 4);
+    const p = el("div", "gusto");
+    p.innerHTML = gusto.quanti >= 3 && nomi.length
+      ? "Pesco fra <b>" + nomi.map(esc).join(", ") + "</b>, da " + gusto.quanti +
+        " titoli che hai votato 4 o 5 stelle."
+      : "Mi servono almeno <b>3 titoli votati 4 o 5 stelle</b> per sapere cosa ti piace. " +
+        "Ne hai " + gusto.quanti + ": vota dalle schede, poi torna qui.";
+    schermo.appendChild(p);
+  }
+
+  if (STASERA.modalita === "rivedere") {
+    const quanti = visti.tutto.filter(v => (v.mio || 0) >= 4).length;
+    const p = el("div", "gusto");
+    p.innerHTML = quanti
+      ? "Pesco fra i <b>" + quanti + "</b> titoli che hai votato 4 o 5 stelle, " +
+        "e ti dico se sono ancora fra i tuoi abbonamenti."
+      : "Non hai ancora votato niente con 4 o 5 stelle.";
+    schermo.appendChild(p);
+  }
 
   const risultato = el("div", "pescato");
   const pulsante = el("button", "stasera");
@@ -1656,15 +1841,55 @@ async function schermoStasera() {
     pulsante.disabled = true;
     pulsante.textContent = "Pesco…";
     risultato.innerHTML = '<div class="caricamento"><div class="giro"></div></div>';
-    const f = { tipo: STASERA.tipo, genere: STASERA.genere, keyword: "",
-                ordine: "popularity.desc", servizio: "",
-                decennio: "Tutti", durata: STASERA.durata };
     try {
-      const v = await pescaUno(f);
-      if (!v) {
-        risultato.innerHTML = '<p class="nota">Niente con questi criteri. Allarga il tiro.</p>';
-        return;
+      let v = null;
+
+      if (STASERA.modalita === "rivedere") {
+        // niente rete: i titoli votati ce li ho gia' qui
+        const buoni = visti.tutto.filter(x => (x.mio || 0) >= 4);
+        if (!buoni.length) {
+          risultato.innerHTML = '<p class="nota">Vota qualcosa con 4 o 5 stelle, poi torna.</p>';
+          return;
+        }
+        const nuovi = buoni.filter(x => !pescatiDiRecente.includes(x.tipo + x.id));
+        const bacino = nuovi.length ? nuovi : buoni;
+        v = bacino[Math.floor(Math.random() * bacino.length)];
+        pescatiDiRecente.push(v.tipo + v.id);
+        if (pescatiDiRecente.length > 12) pescatiDiRecente.shift();
+
+      } else {
+        const pref = PREFERENZE.find(p => p.n === STASERA.preferenza) || PREFERENZE[0];
+        const f = { tipo: STASERA.tipo, genere: STASERA.genere, keyword: STASERA.keyword,
+                    ordine: pref.ordine, servizio: "",
+                    decennio: "Tutti", durata: STASERA.durata };
+
+        if (STASERA.modalita === "gusto") {
+          const g = profiloGusto();
+          const segnali = [...g.generi.map(x => ({ genere: x })),
+                           ...g.keyword.map(x => ({ keyword: x }))];
+          if (g.quanti < 3 || !segnali.length) {
+            risultato.innerHTML = '<p class="nota">Vota almeno 3 titoli con 4 o 5 stelle ' +
+              'e comincio a pescare sul tuo gusto.</p>';
+            return;
+          }
+          // UN segnale per volta, scelto a caso: incrociare generi e
+          // keyword in TMDB e' un AND, e restringerebbe a niente.
+          const scelto = segnali[Math.floor(Math.random() * segnali.length)];
+          f.genere = scelto.genere || "";
+          f.keyword = scelto.keyword || "";
+          // sul gusto preferisco il voto alto: e' roba che dovrebbe piacerti
+          f.ordine = "vote_average.desc";
+          v = await pescaUno(f, 10);
+        } else {
+          v = await pescaUno(f, pref.pagine);
+        }
+
+        if (!v) {
+          risultato.innerHTML = '<p class="nota">Niente con questi criteri. Allarga il tiro.</p>';
+          return;
+        }
       }
+
       await mostraPescato(risultato, v, pesca);
     } catch (e) {
       risultato.innerHTML = '<p class="nota">' + esc(e.message) + "</p>";
@@ -1686,6 +1911,7 @@ async function mostraPescato(dove, v, ripesca) {
   try { d = await scheda(v.tipo, v.id); } catch (e) { /* si vive anche senza */ }
 
   dove.innerHTML = "";
+  const mio = visti.voto(v.tipo, v.id);
   const grande = el("div", "grande");
   const meta = [
     v.tipo === "tv" ? "Serie" : "Film",
@@ -1697,9 +1923,12 @@ async function mostraPescato(dove, v, ripesca) {
     '<div class="locandina">' + locandina(v.locandina, "w342") + "</div>" +
     '<div class="dentro"><h2>' + esc(v.titolo) + "</h2>" +
     '<div class="meta">' + esc(meta) + "</div>" +
+    (mio ? '<div class="meta" style="margin-top:6px">Il tuo voto: <b>' +
+           "★".repeat(mio) + "</b></div>" : "") +
     (d && d.compresi.length
       ? '<div class="meta" style="margin-top:6px">Su <b>' +
-        d.compresi.map(i => esc(i.nome)).join(", ") + "</b></div>" : "") +
+        d.compresi.map(i => esc(i.nome)).join(", ") + "</b></div>"
+      : d ? '<div class="meta" style="margin-top:6px">Non è più fra i tuoi abbonamenti</div>' : "") +
     "</div>";
   dove.appendChild(grande);
 
@@ -1711,6 +1940,10 @@ async function mostraPescato(dove, v, ripesca) {
   apri.onclick = () => schermoDettaglio(v.tipo, v.id, () => schermoStasera());
   dove.appendChild(apri);
 }
+
+// Cerca si ricordava niente: cercavi, aprivi un film, tornavi, e
+// dovevi riscrivere. Sfoglia la cache l'aveva, qui no.
+let ultimaRicerca = { q: "", risultati: [], scroll: 0 };
 
 function schermoCerca() {
   schermo.innerHTML = "";
@@ -1730,34 +1963,55 @@ function schermoCerca() {
 
   const esiti = el("div");
   schermo.appendChild(esiti);
-  esiti.appendChild(el("p", "vuoto", "Scrivi un titolo.\nTi dico se lo paghi già."));
 
   let ultima = 0;
+
+  function disegnaEsiti(risultati) {
+    esiti.innerHTML = "";
+    if (!risultati.length) {
+      esiti.appendChild(el("p", "vuoto", "Nessun titolo con questo nome.\nProva a scriverlo diversamente."));
+      return;
+    }
+    const lista = el("div", "pad");
+    risultati.forEach(v => {
+      const r = el("button", "riga");
+      r.innerHTML =
+        '<div class="mini">' + locandina(v.locandina, "w154") + "</div>" +
+        '<div class="dati"><b>' + esc(v.titolo) + "</b><span>" +
+        (v.tipo === "tv" ? "Serie" : "Film") + (v.anno ? " · " + v.anno : "") +
+        (v.voto ? " · " + v.voto.toFixed(1) : "") + "</span></div>";
+      r.onclick = () => {
+        ultimaRicerca.scroll = window.scrollY;
+        schermoDettaglio(v.tipo, v.id, () => vai("cerca"));
+      };
+      lista.appendChild(r);
+    });
+    esiti.appendChild(lista);
+  }
+
+  // rientrando, rimetto quello che c'era
+  if (ultimaRicerca.q) {
+    input.value = ultimaRicerca.q;
+    disegnaEsiti(ultimaRicerca.risultati);
+    requestAnimationFrame(() => window.scrollTo(0, ultimaRicerca.scroll));
+  } else {
+    esiti.appendChild(el("p", "vuoto", "Scrivi un titolo.\nTi dico se lo paghi già."));
+  }
+
   const lancia_ricerca = async () => {
     const q = input.value.trim();
-    if (!q) { esiti.innerHTML = '<p class="vuoto">Scrivi un titolo.</p>'; return; }
+    if (!q) {
+      ultimaRicerca = { q: "", risultati: [], scroll: 0 };
+      esiti.innerHTML = '<p class="vuoto">Scrivi un titolo.</p>';
+      return;
+    }
     const mio = ++ultima;
     esiti.innerHTML = '<div class="caricamento"><div class="giro"></div></div>';
     try {
       const risultati = await cercaTitoli(q);
       if (mio !== ultima) return;            // digitazione piu' recente
-      esiti.innerHTML = "";
-      if (!risultati.length) {
-        esiti.appendChild(el("p", "vuoto", "Nessun titolo con questo nome.\nProva a scriverlo diversamente."));
-        return;
-      }
-      const lista = el("div", "pad");
-      risultati.forEach(v => {
-        const r = el("button", "riga");
-        r.innerHTML =
-          '<div class="mini">' + locandina(v.locandina, "w154") + "</div>" +
-          '<div class="dati"><b>' + esc(v.titolo) + "</b><span>" +
-          (v.tipo === "tv" ? "Serie" : "Film") + (v.anno ? " · " + v.anno : "") +
-          (v.voto ? " · " + v.voto.toFixed(1) : "") + "</span></div>";
-        r.onclick = () => schermoDettaglio(v.tipo, v.id);
-        lista.appendChild(r);
-      });
-      esiti.appendChild(lista);
+      ultimaRicerca = { q, risultati, scroll: 0 };
+      disegnaEsiti(risultati);
     } catch (e) {
       if (mio === ultima) esiti.innerHTML = '<p class="vuoto">' + esc(e.message) + "</p>";
     }
@@ -1766,7 +2020,8 @@ function schermoCerca() {
   let attesa;
   input.oninput = () => { clearTimeout(attesa); attesa = setTimeout(lancia_ricerca, 420); };
   input.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); clearTimeout(attesa); input.blur(); lancia_ricerca(); } };
-  input.focus();
+  // se sto rimettendo una ricerca vecchia non apro la tastiera in faccia
+  if (!ultimaRicerca.q) input.focus();
 }
 
 // Il pulsante "Apri X sulla TV". Estratto perche' serve sia nella
@@ -1842,7 +2097,8 @@ async function schermoDettaglio(tipo, id, torna) {
 
   const cuore = el("button", "cuore");
   cuore.setAttribute("aria-label", "Metti fra i titoli da guardare");
-  const disegnaCuore = () => {
+  let disegnaCuore;
+  disegnaCuore = () => {
     const dentro = lista.ha(d.tipo, d.id);
     cuore.setAttribute("aria-pressed", String(dentro));
     cuore.setAttribute("title", dentro ? "Togli dalla lista" : "Metti nella lista");
@@ -1937,6 +2193,40 @@ async function schermoDettaglio(tipo, id, torna) {
   }
 
   // Serie: quando esce il prossimo, e le stagioni.
+  // ------------------------------------------------- visto e voto
+  const blocco = el("div", "visto");
+  const rifaiVisto = () => {
+    const mio = visti.voto(d.tipo, d.id);
+    blocco.innerHTML = '<p class="domanda">' +
+      (mio ? "L'hai visto. Quanto ti è piaciuto?" : "L'hai già visto? Dai un voto.") + "</p>";
+    const fila = el("div", "stelle");
+    for (let n = 1; n <= 5; n++) {
+      const b = el("button");
+      b.className = n <= mio ? "piena" : "";
+      b.setAttribute("aria-label", n + (n === 1 ? " stella" : " stelle"));
+      b.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.7 6.2.6-4.7 4.2 1.4 6.1L12 16.9l-5.5 3.2 1.4-6.1L3.2 9.8l6.2-.6z"/></svg>';
+      b.onclick = () => {
+        visti.segna({
+          tipo: d.tipo, id: d.id, titolo: d.titolo, anno: d.anno,
+          voto: d.voto, locandina: d.locandina,
+          generiId: d.generiId, keyword: d.keyword,
+        }, n);
+        // segnato come visto: dalla lista "da guardare" non serve piu'
+        if (lista.ha(d.tipo, d.id)) { lista.togli(d.tipo, d.id); disegnaCuore(); }
+        rifaiVisto();
+      };
+      fila.appendChild(b);
+    }
+    blocco.appendChild(fila);
+    if (mio) {
+      const t = el("button", "togli", "Non l'ho visto");
+      t.onclick = () => { visti.togli(d.tipo, d.id); rifaiVisto(); };
+      blocco.appendChild(t);
+    }
+  };
+  rifaiVisto();
+  pad.appendChild(blocco);
+
   if (d.tipo === "tv") {
     const box = el("div", "prossimo");
     if (d.prossimo) {
@@ -2147,11 +2437,41 @@ async function inArrivo(voci) {
   return lista;
 }
 
+// I nomi dei generi stanno in sessionStorage da quando hai sfogliato:
+// se non ci sono ancora, mostro l'id invece di fare una chiamata.
+function nomeGenere(id) {
+  for (const tipo of ["movie", "tv"]) {
+    try {
+      const l = JSON.parse(sessionStorage.getItem("generi_" + tipo) || "[]");
+      const g = l.find(x => String(x.id) === String(id));
+      if (g) return g.name;
+    } catch (e) { /* pazienza */ }
+  }
+  return null;
+}
+function nomeKeyword(k) {
+  const v = SOTTOGENERI.find(x => x.k === String(k));
+  return v ? v.n : null;
+}
+
+let vistaLista = "da guardare";
+
 function schermoLista() {
   schermo.innerHTML = "";
   const pad = el("div", "pad");
-  pad.appendChild(el("h1", "titolone", "Da guardare"));
+  pad.appendChild(el("h1", "titolone", "La tua lista"));
+
+  const sw = el("div", "interruttore");
+  [["da guardare", "Da guardare"], ["visti", "Visti"]].forEach(([v, etichetta]) => {
+    const b = el("button", null, etichetta);
+    b.setAttribute("aria-pressed", String(vistaLista === v));
+    b.onclick = () => { vistaLista = v; schermoLista(); };
+    sw.appendChild(b);
+  });
+  pad.appendChild(sw);
   schermo.appendChild(pad);
+
+  if (vistaLista === "visti") return parteVisti();
 
   const voci = lista.tutto;
   if (!voci.length) {
@@ -2191,6 +2511,8 @@ function schermoLista() {
     zonaArrivo.appendChild(pad2);
   }).catch(() => {});
 
+  schermo.appendChild(pulsanteManda(voci, false));
+
   const b = el("button", "svuota", "Svuota la lista");
   b.onclick = () => {
     // niente conferme a vuoto: il secondo tocco e' la conferma
@@ -2203,6 +2525,122 @@ function schermoLista() {
     schermoLista();
   };
   schermo.appendChild(b);
+}
+
+function parteVisti() {
+  const voci = visti.tutto;
+  if (!voci.length) {
+    schermo.appendChild(el("p", "vuoto",
+      "Qui finiscono i titoli che hai votato.\nDalla scheda di un film, tocca le stelle.\nPiù ne voti, meglio «Stasera» ti conosce."));
+    return;
+  }
+
+  const g = profiloGusto();
+  if (g.quanti >= 3) {
+    const nomi = [...g.generi.map(nomeGenere), ...g.keyword.map(nomeKeyword)]
+      .filter(Boolean).slice(0, 4);
+    if (nomi.length) {
+      const p = el("div", "gusto");
+      p.innerHTML = "Da " + g.quanti + " titoli che hai votato 4 o 5 stelle, ti piacciono " +
+        "<b>" + nomi.map(esc).join(", ") + "</b>. " +
+        "«Stasera → Sul mio gusto» pesca da qui.";
+      schermo.appendChild(p);
+    }
+  } else {
+    const p = el("div", "gusto");
+    p.innerHTML = "Vota almeno <b>3 titoli con 4 o 5 stelle</b> e «Stasera» " +
+      "comincia a pescare sul tuo gusto. Ne hai " + g.quanti + ".";
+    schermo.appendChild(p);
+  }
+
+  const conteggio = el("p", "sezione pad");
+  conteggio.innerHTML = voci.length + (voci.length === 1 ? " titolo votato" : " titoli votati") +
+    ' <span class="conteggio">· gli ultimi in cima</span>';
+  schermo.appendChild(conteggio);
+  schermo.appendChild(grigliaDi(voci, true));
+  schermo.appendChild(pulsanteManda(voci, true));
+}
+
+// Manda la lista a qualcuno: l'indirizzo contiene solo numeri, quindi
+// nessun segreto e nessun server. Chi lo apre vede cosa gli stai
+// mandando PRIMA di aggiungerlo.
+function pulsanteManda(voci, sonoVisti) {
+  const etichetta = sonoVisti ? "Manda i titoli votati" : "Manda la lista";
+  const b = el("button", "svuota", etichetta);
+  b.onclick = async () => {
+    const url = location.origin + location.pathname +
+      "#/" + (sonoVisti ? "visti" : "lista") + "/" + codificaVoci(voci, sonoVisti);
+    const esito = await condividi(etichetta, url, b.parentElement);
+    if (esito === "copiato") {
+      b.textContent = "Indirizzo copiato";
+      setTimeout(() => { b.textContent = etichetta; }, 2200);
+    }
+  };
+  return b;
+}
+
+// Ricevere una lista da qualcuno. I titoli arrivano come numeri:
+// i dati li prendo da TMDB, e per i visti prendo anche generi e
+// keyword, altrimenti i titoli importati non contribuirebbero al
+// profilo di gusto.
+async function schermoPrendi(quale, voci) {
+  window.scrollTo(0, 0);
+  if (!voci.length) return vuoto("Questo indirizzo non contiene nessun titolo.");
+  girello();
+
+  const pieni = (await Promise.all(voci.slice(0, 60).map(async v => {
+    try {
+      const d = await tmdb("/" + v.tipo + "/" + v.id,
+                           { language: LINGUA, append_to_response: "keywords" });
+      return {
+        tipo: v.tipo, id: v.id, mio: v.mio,
+        titolo: d.title || d.name || "?",
+        anno: (d.release_date || d.first_air_date || "").slice(0, 4),
+        voto: d.vote_average || 0,
+        locandina: d.poster_path,
+        generiId: (d.genres || []).map(g => String(g.id)),
+        keyword: (((d.keywords || {}).keywords) || ((d.keywords || {}).results) || [])
+          .slice(0, 3).map(k => String(k.id)),
+      };
+    } catch (e) { return null; }
+  }))).filter(Boolean);
+
+  schermo.innerHTML = "";
+  const su = el("button", "indietro", "← Chiudi");
+  su.onclick = () => vai("lista");
+  schermo.appendChild(su);
+
+  const pad = el("div", "pad");
+  pad.appendChild(el("h1", "titolone",
+    quale === "visti" ? "Titoli votati" : "Titoli da guardare"));
+  schermo.appendChild(pad);
+
+  if (!pieni.length) return void pad.appendChild(el("p", "nota",
+    "Non riesco a recuperare nessuno di questi titoli."));
+
+  const gia = pieni.filter(v => quale === "visti"
+    ? visti.voto(v.tipo, v.id) : lista.ha(v.tipo, v.id)).length;
+  const p = el("div", "gusto");
+  p.innerHTML = "Ti hanno mandato <b>" + pieni.length +
+    (pieni.length === 1 ? " titolo" : " titoli") + "</b>." +
+    (gia ? " " + gia + " ce li hai già: non li duplico." : "");
+  schermo.appendChild(p);
+
+  const b = el("button", "primario", "Aggiungi ai miei");
+  b.style.cssText = "width:calc(100% - 32px);margin:14px 16px 0";
+  b.onclick = () => {
+    pieni.forEach(v => {
+      if (quale === "visti") visti.segna(v, v.mio || 3);
+      else lista.aggiungi(v);
+    });
+    b.disabled = true;
+    b.textContent = "Aggiunti";
+    if (quale === "visti") vistaLista = "visti";
+    setTimeout(() => vai("lista"), 900);
+  };
+  schermo.appendChild(b);
+
+  schermo.appendChild(grigliaDi(pieni, quale === "visti"));
 }
 
 function schermoTelecomando() {
@@ -2240,6 +2678,42 @@ function schermoTelecomando() {
   }
   const key = v => () => comando("samsungvd.remoteControl", "send", [v, "PRESS_AND_RELEASED"]);
 
+  // Tasto tenuto premuto = ripetizione. Uso PRESS_AND_RELEASED
+  // ripetuto e non PRESSED+RELEASED per due motivi: e' l'unica forma
+  // verificata su questa TV, e soprattutto non puo' lasciare un tasto
+  // incastrato se il rilascio non arriva mai (app in background,
+  // rete che cade, dito che esce dal pulsante).
+  const ATTESA_PRIMA = 450, OGNI = 320;
+  function ripetibile(b, valore) {
+    let ritardo = null, battito = null;
+    const manda = () => comando("samsungvd.remoteControl", "send",
+                                [valore, "PRESS_AND_RELEASED"]).catch(e => {
+      ferma();
+      lamenta(e.message);
+    });
+    const ferma = () => {
+      clearTimeout(ritardo); clearInterval(battito);
+      ritardo = battito = null;
+      b.classList.remove("acceso");
+    };
+    b.addEventListener("pointerdown", e => {
+      if (e.button) return;
+      // setPointerCapture solleva NotFoundError se il pointerId non e'
+      // attivo, e stando prima dell'invio lascerebbe il pulsante
+      // inerte in silenzio. La cattura serve solo a non perdere gli
+      // eventi se il dito scivola: se non si puo' avere, pazienza.
+      try { b.setPointerCapture(e.pointerId); } catch (err) { /* pazienza */ }
+      b.classList.add("acceso");
+      manda();
+      ritardo = setTimeout(() => { battito = setInterval(manda, OGNI); }, ATTESA_PRIMA);
+    });
+    ["pointerup", "pointercancel", "pointerleave"].forEach(ev =>
+      b.addEventListener(ev, ferma));
+    // se l'app va in background mentre tieni premuto
+    document.addEventListener("visibilitychange", () => { if (document.hidden) ferma(); });
+    return b;
+  }
+
   function fila(...tasti) {
     const f = el("div", "fila");
     tasti.forEach(t => f.appendChild(t));
@@ -2247,12 +2721,20 @@ function schermoTelecomando() {
   }
 
   // ------------------------------------------------------------- croce
+  // Le direzioni si ripetono se le tieni premute; OK no, sarebbe un
+  // modo di premere invio venti volte per sbaglio.
+  const direzione = (icona, valore, classe) => {
+    const b = el("button", "tasto " + classe);
+    b.innerHTML = icona;
+    b.setAttribute("aria-label", valore);
+    return ripetibile(b, valore);
+  };
   const croce = el("div", "croce");
-  croce.appendChild(tasto("", ICONE.su, key("UP"), "su"));
-  croce.appendChild(tasto("", ICONE.sx, key("LEFT"), "sx"));
+  croce.appendChild(direzione(ICONE.su, "UP", "su"));
+  croce.appendChild(direzione(ICONE.sx, "LEFT", "sx"));
   croce.appendChild(tasto("OK", "", key("OK"), "ok"));
-  croce.appendChild(tasto("", ICONE.dx, key("RIGHT"), "dx"));
-  croce.appendChild(tasto("", ICONE.giu, key("DOWN"), "giu"));
+  croce.appendChild(direzione(ICONE.dx, "RIGHT", "dx"));
+  croce.appendChild(direzione(ICONE.giu, "DOWN", "giu"));
   corpoTel.appendChild(croce);
 
   corpoTel.appendChild(fila(
@@ -2267,9 +2749,30 @@ function schermoTelecomando() {
   ));
 
   corpoTel.appendChild(el("p", "sezione", "Volume"));
+  const volume = (icona, etichetta, cmd) => {
+    const b = el("button", "tasto");
+    b.innerHTML = icona + "<span>" + etichetta + "</span>";
+    let ritardo = null, battito = null;
+    const manda = () => comando("audioVolume", cmd).catch(e => { ferma(); lamenta(e.message); });
+    const ferma = () => { clearTimeout(ritardo); clearInterval(battito); b.classList.remove("acceso"); };
+    b.addEventListener("pointerdown", e => {
+      if (e.button) return;
+      // setPointerCapture solleva NotFoundError se il pointerId non e'
+      // attivo, e stando prima dell'invio lascerebbe il pulsante
+      // inerte in silenzio. La cattura serve solo a non perdere gli
+      // eventi se il dito scivola: se non si puo' avere, pazienza.
+      try { b.setPointerCapture(e.pointerId); } catch (err) { /* pazienza */ }
+      b.classList.add("acceso");
+      manda();
+      ritardo = setTimeout(() => { battito = setInterval(manda, OGNI); }, ATTESA_PRIMA);
+    });
+    ["pointerup", "pointercancel", "pointerleave"].forEach(ev => b.addEventListener(ev, ferma));
+    document.addEventListener("visibilitychange", () => { if (document.hidden) ferma(); });
+    return b;
+  };
   corpoTel.appendChild(fila(
-    tasto("Giù", ICONE.meno, () => comando("audioVolume", "volumeDown")),
-    tasto("Su", ICONE.piu, () => comando("audioVolume", "volumeUp")),
+    volume(ICONE.meno, "Giù", "volumeDown"),
+    volume(ICONE.piu, "Su", "volumeUp"),
   ));
 
   corpoTel.appendChild(el("p", "sezione", "Riproduzione"));
@@ -2591,6 +3094,8 @@ async function controllaVersione() {
 // Un indirizzo condiviso apre direttamente quella scheda.
 function apriIndirizzo(dove) {
   if (!chiavi.tmdb) return vai("impostazioni");
+  if (dove.cosa === "lista" || dove.cosa === "visti")
+    return schermoPrendi(dove.cosa, dove.voci);
   if (dove.cosa === "persona") return schermoPersona(dove.id, () => vai("sfoglia"));
   return schermoDettaglio(A_TIPO[dove.cosa], dove.id, () => vai("sfoglia"));
 }
@@ -2605,6 +3110,12 @@ window.addEventListener("hashchange", () => {
 const arrivo = leggiIndirizzo();
 if (arrivo) apriIndirizzo(arrivo);
 else vai(chiavi.tmdb ? "sfoglia" : "impostazioni");
+
+// Il service worker serve solo a far aprire l'app senza rete: vedi
+// sw.js. Se la registrazione fallisce (contesto non sicuro, o
+// browser che non lo supporta) l'app funziona come prima.
+if ("serviceWorker" in navigator)
+  navigator.serviceWorker.register("sw.js").catch(() => {});
 
 controllaVersione();
 </script>
