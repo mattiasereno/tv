@@ -107,6 +107,7 @@
     font-size: 10.5px; font-weight: 560; letter-spacing: .02em;
     border-radius: 11px;
     min-height: 44px;   /* minimo tocco comodo secondo Apple */
+    overflow: hidden; white-space: nowrap;
   }
   nav button svg { width: 23px; height: 23px; fill: none;
     stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
@@ -354,6 +355,91 @@
   .stato .quale { color: var(--tenue); }
   .stato button { margin-left: auto; color: var(--tenue); font-size: 13px; text-decoration: underline; }
 
+  /* ----------------------------------------------- stagioni/episodi */
+  .prossimo {
+    margin: 14px 0 0; padding: 14px 16px; border-radius: 13px;
+    background: var(--fondo-alto); border: 1px solid var(--bordo);
+  }
+  .prossimo .quando { font-size: 12px; font-weight: 640; letter-spacing: .06em;
+                      text-transform: uppercase; color: var(--verde); margin: 0 0 5px; }
+  .prossimo.finita .quando { color: var(--debole); }
+  .prossimo .cosa { margin: 0; font-size: 15.5px; font-weight: 550; }
+  .prossimo .data { margin: 4px 0 0; font-size: 13.5px; color: var(--tenue); }
+
+  .episodio {
+    display: flex; gap: 12px; width: 100%; text-align: left;
+    padding: 11px 0; border-bottom: 1px solid var(--bordo);
+  }
+  .episodio .fermo {
+    flex: 0 0 96px; aspect-ratio: 16/9; border-radius: 8px;
+    overflow: hidden; background: var(--piano);
+  }
+  .episodio .fermo img { width: 100%; height: 100%; object-fit: cover; }
+  .episodio .dati { flex: 1; min-width: 0; align-self: center; }
+  .episodio b { display: block; font-size: 14.5px; font-weight: 550; line-height: 1.3; }
+  .episodio span { font-size: 12.5px; color: var(--debole); }
+  .episodio .trama2 {
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden; font-size: 12.5px; color: var(--tenue); margin-top: 3px;
+  }
+  .futuro { opacity: .55; }
+
+  /* -------------------------------------------------------- persona */
+  .capoPersona { display: flex; gap: 15px; align-items: center; padding: 6px 16px 4px; }
+  .capoPersona .ritratto {
+    flex: 0 0 82px; width: 82px; height: 82px; border-radius: 50%;
+    overflow: hidden; background: var(--piano);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--debole); font-size: 26px; font-weight: 600;
+  }
+  .capoPersona .ritratto img { width: 100%; height: 100%; object-fit: cover; }
+  .capoPersona h1 { font-size: 23px; font-weight: 660; letter-spacing: -.018em; margin: 0 0 3px; line-height: 1.15; }
+  .attore { -webkit-touch-callout: none; }
+  button.attore { background: none; border: 0; padding: 0; }
+
+  /* --------------------------------------------------- da guardare */
+  .testaAzioni { display: flex; align-items: center; justify-content: space-between; padding-right: 12px; }
+  .cuore {
+    display: flex; align-items: center; justify-content: center;
+    width: 44px; height: 44px; border-radius: 50%;
+    background: var(--piano); border: 1px solid var(--bordo);
+    -webkit-touch-callout: none;
+  }
+  .cuore svg { width: 21px; height: 21px; fill: none; stroke: var(--tenue);
+               stroke-width: 1.8; stroke-linejoin: round; }
+  .cuore[aria-pressed=true] { background: var(--acceso); border-color: var(--acceso); }
+  .cuore[aria-pressed=true] svg { fill: var(--acceso-testo); stroke: var(--acceso-testo); }
+  .cuore:active { transform: scale(.92); }
+  .svuota {
+    display: block; margin: 20px 16px 0; padding: 12px; width: calc(100% - 32px);
+    border: 1px solid var(--bordo); border-radius: 12px;
+    color: var(--tenue); font-size: 14.5px;
+  }
+
+  /* ---------------------------------------------------- abbonamenti */
+  .servizi { display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+             gap: 10px; margin: 10px 0 0; }
+  .servizio {
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    padding: 10px 6px; border-radius: 13px;
+    background: var(--piano); border: 1px solid var(--bordo);
+    font-size: 11px; line-height: 1.25; text-align: center; color: var(--tenue);
+    min-height: 44px;
+  }
+  .servizio img { width: 38px; height: 38px; border-radius: 9px; }
+  .servizio[aria-pressed=true] {
+    background: var(--acceso); border-color: var(--acceso); color: var(--acceso-testo);
+    font-weight: 600;
+  }
+  .servizio .senzaApp { font-size: 9.5px; opacity: .8; }
+  .cerca-servizio {
+    width: 100%; margin: 14px 0 0; background: var(--piano);
+    border: 1px solid var(--bordo); border-radius: 12px; color: var(--testo);
+    font: 400 16.5px system-ui, sans-serif; padding: 12px 14px;
+    -webkit-appearance: none; appearance: none;
+  }
+  .cerca-servizio::placeholder { color: var(--debole); }
+
   /* -------------------------------------------------------- trailer */
   .trailer { position: relative; margin: 10px 0 0; border-radius: 13px; overflow: hidden;
              background: var(--piano); aspect-ratio: 16/9; }
@@ -429,13 +515,17 @@
     <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.9-3.9"/></svg>
     Cerca
   </button>
+  <button data-scheda="lista" aria-selected="false">
+    <svg viewBox="0 0 24 24"><path d="M12 20.5s-7.5-4.6-7.5-9.7A4.3 4.3 0 0112 8.4a4.3 4.3 0 017.5 2.4c0 5.1-7.5 9.7-7.5 9.7z"/></svg>
+    Lista
+  </button>
   <button data-scheda="telecomando" aria-selected="false">
     <svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="3"/><circle cx="12" cy="8" r="1.6"/><path d="M10 13h4M10 16.5h4"/></svg>
-    Telecomando
+    Comandi
   </button>
   <button data-scheda="impostazioni" aria-selected="false">
     <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-2.9 1.2V21a2 2 0 11-4 0v-.1A1.7 1.7 0 007 19.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1A1.7 1.7 0 003 13.6H3a2 2 0 110-4h.1A1.7 1.7 0 004.7 7l-.1-.1a2 2 0 112.8-2.8l.1.1A1.7 1.7 0 0010.4 3h.2a2 2 0 114 0v.1a1.7 1.7 0 002.9 1.2l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 001.2 2.9H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>
-    Impostazioni
+    Opzioni
   </button>
 </nav>
 
@@ -457,9 +547,13 @@ const MAPPA = {
   "110":  { nome: "Infinity+",         app: "g3zzYA7yO8.InfinityNew" },
 };
 
-// Solo quelli che paghi davvero. Una voce di troppo qui non da'
-// errore: da' una risposta sbagliata.
-const SERVIZI = ["8", "119", "337", "1899", "39", "359", "584"];
+// Gli abbonamenti NON sono piu' una costante: si scelgono in
+// Impostazioni e stanno in localStorage. Erano scritti sia qui sia
+// in miei_servizi.json del repo, e le due liste sono divergite una
+// volta: Infinity+ c'era qui e l'abbonamento no, e il risultato non
+// era un errore ma un verdetto sbagliato.
+// Questi valgono solo al primo avvio, finche' non scegli.
+const SERVIZI_PREDEFINITI = ["8", "119", "337", "1899", "39", "359", "584"];
 
 // Sottogeneri veri: sono le keyword di TMDB, non i generi. Gli id
 // li ho cercati una volta con /search/keyword e verificati uno per
@@ -511,6 +605,53 @@ const chiavi = {
   set token(v) { localStorage.setItem("st_token", v.trim()); },
   get tv()     { return localStorage.getItem("st_device") || ""; },
   set tv(v)    { localStorage.setItem("st_device", v); },
+
+  // Distinguo "non ho mai scelto" (chiave assente -> predefiniti) da
+  // "ho scelto niente" (lista vuota -> nessun filtro possibile, e
+  // l'app lo dice invece di mostrarti tutto lo scibile).
+  get servizi() {
+    const grezzo = localStorage.getItem("servizi");
+    if (grezzo === null) return SERVIZI_PREDEFINITI.slice();
+    try {
+      const v = JSON.parse(grezzo);
+      return Array.isArray(v) ? v.map(String) : SERVIZI_PREDEFINITI.slice();
+    } catch (e) { return SERVIZI_PREDEFINITI.slice(); }
+  },
+  set servizi(a) { localStorage.setItem("servizi", JSON.stringify(a.map(String))); },
+};
+
+// I provider italiani: nome e logo per ogni id. Vengono da TMDB una
+// volta e restano in localStorage, perche' servono anche in modo
+// sincrono (per scrivere il nome di un servizio in un'etichetta).
+let PROVIDER = {};
+try { PROVIDER = JSON.parse(localStorage.getItem("provider") || "{}"); } catch (e) { PROVIDER = {}; }
+
+function nomeProvider(pid) {
+  return (PROVIDER[pid] || {}).nome || (MAPPA[pid] || {}).nome || pid;
+}
+function logoProvider(pid) {
+  return (PROVIDER[pid] || {}).logo || null;
+}
+
+// La lista "da guardare" vive nel telefono: niente server, quindi
+// niente sincronizzazione fra dispositivi. Ognuno ha la sua.
+const lista = {
+  get tutto() {
+    try {
+      const v = JSON.parse(localStorage.getItem("lista") || "[]");
+      return Array.isArray(v) ? v : [];
+    } catch (e) { return []; }
+  },
+  set tutto(a) { localStorage.setItem("lista", JSON.stringify(a)); },
+  ha(tipo, id) { return this.tutto.some(x => x.tipo === tipo && String(x.id) === String(id)); },
+  aggiungi(v) {
+    if (this.ha(v.tipo, v.id)) return;
+    // i piu' recenti in cima: e' l'ordine in cui li cerchi
+    this.tutto = [{ ...v, quando: Date.now() }, ...this.tutto];
+  },
+  togli(tipo, id) {
+    this.tutto = this.tutto.filter(x => !(x.tipo === tipo && String(x.id) === String(id)));
+  },
 };
 
 const schermo = document.getElementById("schermo");
@@ -532,6 +673,21 @@ function girello() {
 function vuoto(testo) {
   schermo.innerHTML = '<p class="vuoto">' + esc(testo) + "</p>";
 }
+// "oggi", "domani", "fra 5 giorni", oppure la data scritta.
+function quandoEsce(iso) {
+  if (!iso) return "";
+  const oggi = new Date(); oggi.setHours(0, 0, 0, 0);
+  const d = new Date(iso + "T00:00:00");
+  const giorni = Math.round((d - oggi) / 86400000);
+  const scritta = d.toLocaleDateString("it-IT",
+    { weekday: "long", day: "numeric", month: "long" });
+  if (giorni === 0) return "oggi · " + scritta;
+  if (giorni === 1) return "domani · " + scritta;
+  if (giorni > 1) return "fra " + giorni + " giorni · " + scritta;
+  if (giorni === -1) return "ieri · " + scritta;
+  return scritta + (d.getFullYear() !== oggi.getFullYear() ? " " + d.getFullYear() : "");
+}
+
 function locandina(percorso, larghezza = "w342") {
   return percorso ? '<img loading="lazy" src="' + IMG + "/" + larghezza + percorso + '" alt="">' : "";
 }
@@ -638,7 +794,7 @@ async function sfoglia(f, pagina = 1) {
     language: LINGUA,
     watch_region: PAESE,
     // un solo servizio se l'hai scelto, altrimenti tutti i tuoi
-    with_watch_providers: f.servizio || SERVIZI.join("|"),
+    with_watch_providers: f.servizio || chiavi.servizi.join("|"),
     with_watch_monetization_types: COMPRESI.join("|"),
     sort_by: f.ordine === "data.desc" ? campoData + ".desc" : f.ordine,
     include_adult: "false",
@@ -685,6 +841,26 @@ async function statoTv() {
   };
 }
 
+// Film e serie hanno due liste diverse (92 e 67): le unisco, perche'
+// un abbonamento vale per entrambi.
+async function caricaProvider(forza = false) {
+  if (!forza && Object.keys(PROVIDER).length) return PROVIDER;
+  const unione = {};
+  for (const tipo of ["movie", "tv"]) {
+    const d = await tmdb("/watch/providers/" + tipo,
+                         { language: LINGUA, watch_region: PAESE });
+    (d.results || []).forEach(p => {
+      const id = String(p.provider_id);
+      const pri = p.display_priority === undefined ? 999 : p.display_priority;
+      if (!unione[id] || pri < unione[id].pri)
+        unione[id] = { nome: p.provider_name, logo: p.logo_path, pri };
+    });
+  }
+  PROVIDER = unione;
+  localStorage.setItem("provider", JSON.stringify(PROVIDER));
+  return PROVIDER;
+}
+
 async function generi(tipo) {
   const memoria = "generi_" + tipo;
   const salvati = sessionStorage.getItem(memoria);
@@ -720,15 +896,16 @@ async function cercaTitoli(query) {
 async function scheda(tipo, id) {
   const d = await tmdb("/" + tipo + "/" + id, {
     language: LINGUA,
-    append_to_response: "credits,watch/providers,videos",
+    append_to_response: "credits,watch/providers,videos,keywords",
   });
   const italia = ((d["watch/providers"] || {}).results || {})[PAESE] || {};
 
+  const miei = chiavi.servizi;
   const compresi = [], visti = new Set();
   for (const t of COMPRESI)
     for (const p of italia[t] || []) {
       const pid = String(p.provider_id);
-      if (SERVIZI.includes(pid) && !visti.has(pid)) {
+      if (miei.includes(pid) && !visti.has(pid)) {
         visti.add(pid);
         compresi.push({
           pid, come: TIPI[t], logo: p.logo_path,
@@ -739,7 +916,7 @@ async function scheda(tipo, id) {
     }
 
   const altrove = [...new Set(COMPRESI.flatMap(t =>
-    (italia[t] || []).filter(p => !SERVIZI.includes(String(p.provider_id)))
+    (italia[t] || []).filter(p => !miei.includes(String(p.provider_id)))
                      .map(p => p.provider_name)))].sort();
   const pagando = [...new Set(PAGANDO.flatMap(t =>
     (italia[t] || []).map(p => p.provider_name)))].sort().slice(0, 5);
@@ -777,13 +954,106 @@ async function scheda(tipo, id) {
     locandina: d.poster_path,
     sfondo: d.backdrop_path,
     cast: ((d.credits || {}).cast || []).slice(0, 10).map(a => ({
-      nome: a.name, ruolo: a.character, foto: a.profile_path,
+      id: a.id, nome: a.name, ruolo: a.character, foto: a.profile_path,
     })),
+    // Il regista: per i film sta nella crew, per le serie in created_by.
+    regia: tipo === "movie"
+      ? ((d.credits || {}).crew || [])
+          .filter(c => c.job === "Director")
+          .map(c => ({ id: c.id, nome: c.name, foto: c.profile_path }))
+      : (d.created_by || []).map(c => ({ id: c.id, nome: c.name, foto: c.profile_path })),
+    // Le keyword servono per i titoli simili: piu' precise dei generi.
+    keyword: (((d.keywords || {}).keywords) || ((d.keywords || {}).results) || [])
+      .slice(0, 3).map(k => String(k.id)),
+    generiId: (d.genres || []).map(g => String(g.id)),
     compresi, altrove, pagando,
     niente: !Object.keys(italia).length,
+    // solo per le serie
+    stato: d.status || "",
+    prossimo: d.next_episode_to_air || null,
+    ultimo: d.last_episode_to_air || null,
+    quantiEpisodi: d.number_of_episodes || 0,
+    stagioni: (d.seasons || [])
+      // la stagione 0 sono gli speciali: la tengo solo se ha episodi
+      .filter(x => x.season_number > 0 || x.episode_count > 0)
+      .map(x => ({
+        numero: x.season_number, nome: x.name,
+        quanti: x.episode_count, anno: (x.air_date || "").slice(0, 4),
+        locandina: x.poster_path,
+      })),
   };
 }
 
+
+// Una persona: film filtrati da TMDB, serie no.
+// /discover/movie accetta with_cast e with_crew. /discover/tv li
+// IGNORA in silenzio (verificato: restituisce lo stesso totale che
+// senza filtro), quindi per le serie prendo i crediti della persona
+// e controllo la disponibilita' una per una.
+async function personaDati(id) {
+  const miei = chiavi.servizi;
+  const comuni = {
+    language: LINGUA, watch_region: PAESE,
+    with_watch_providers: miei.join("|"),
+    with_watch_monetization_types: COMPRESI.join("|"),
+    sort_by: "popularity.desc", include_adult: "false",
+  };
+
+  const [p, comeAttore, comeRegista] = await Promise.all([
+    tmdb("/person/" + id, { language: LINGUA, append_to_response: "combined_credits" }),
+    tmdb("/discover/movie", { ...comuni, with_cast: id }),
+    tmdb("/discover/movie", { ...comuni, with_crew: id }),
+  ]);
+
+  const crediti = [...((p.combined_credits || {}).cast || []),
+                   ...((p.combined_credits || {}).crew || [])];
+  const visteSerie = new Set();
+  const candidate = crediti
+    .filter(c => c.media_type === "tv" && !visteSerie.has(c.id) && visteSerie.add(c.id))
+    .sort((a, b) => (b.popularity || 0) - (a.popularity || 0))
+    .slice(0, 12);
+
+  // 12 chiamate in parallelo: piu' lente di una, ma e' l'unico modo
+  // di sapere se una serie e' fra i tuoi abbonamenti.
+  const serie = (await Promise.all(candidate.map(async c => {
+    try {
+      const d = await tmdb("/tv/" + c.id + "/watch/providers");
+      const italia = (d.results || {})[PAESE] || {};
+      const dentro = COMPRESI.some(t =>
+        (italia[t] || []).some(x => miei.includes(String(x.provider_id))));
+      return dentro ? normalizza(c, "tv") : null;
+    } catch (e) { return null; }
+  }))).filter(Boolean);
+
+  return {
+    nome: p.name,
+    foto: p.profile_path,
+    mestiere: p.known_for_department === "Directing" ? "Regia" :
+              p.known_for_department === "Acting" ? "Interprete" : (p.known_for_department || ""),
+    film: (comeAttore.results || []).map(v => normalizza(v, "movie")),
+    regia: (comeRegista.results || []).map(v => normalizza(v, "movie")),
+    serie,
+  };
+}
+
+// Simili: uso le keyword del titolo, che sono piu' precise dei generi,
+// e ripiego sui generi se non ce ne sono. Filtrato sui tuoi servizi.
+async function simili(d) {
+  const p = {
+    language: LINGUA, watch_region: PAESE,
+    with_watch_providers: chiavi.servizi.join("|"),
+    with_watch_monetization_types: COMPRESI.join("|"),
+    sort_by: "popularity.desc", include_adult: "false",
+  };
+  if (d.keyword.length) p.with_keywords = d.keyword.join("|");
+  else if (d.generiId.length) p.with_genres = d.generiId.slice(0, 2).join(",");
+  else return [];
+  const r = await tmdb("/discover/" + d.tipo, p);
+  return (r.results || [])
+    .filter(v => String(v.id) !== String(d.id))
+    .slice(0, 12)
+    .map(v => normalizza(v, d.tipo));
+}
 
 /* --------------------------------------------------------------- schermi */
 
@@ -811,6 +1081,7 @@ function vai(nome) {
   if (nome !== "sfoglia") window.scrollTo(0, 0);
   if (nome === "sfoglia") schermoSfoglia();
   else if (nome === "cerca") schermoCerca();
+  else if (nome === "lista") schermoLista();
   else if (nome === "telecomando") schermoTelecomando();
   else schermoImpostazioni();
 }
@@ -870,7 +1141,8 @@ function pannelloFiltri() {
 
   p.appendChild(gruppo("Servizio",
     [{ etichetta: "Tutti i miei", valore: "" },
-     ...SERVIZI.map(pid => ({ etichetta: (MAPPA[pid] || {}).nome || pid, valore: pid }))],
+     ...chiavi.servizi.map(pid => ({
+       etichetta: (MAPPA[pid] || {}).nome || nomeProvider(pid), valore: pid }))],
     F.servizio, v => { F.servizio = v; schermoSfoglia(); }));
 
   p.appendChild(gruppo("Anni",
@@ -892,6 +1164,24 @@ async function schermoSfoglia() {
   if (!chiavi.tmdb) return vai("impostazioni");
   if (osservatore) { osservatore.disconnect(); osservatore = null; }
   schermo.innerHTML = "";
+
+  // Senza abbonamenti selezionati /discover non filtrerebbe niente e ti
+  // mostrerebbe lo scibile: meglio dirlo che fingere.
+  if (!chiavi.servizi.length) {
+    const p = el("div", "pad");
+    p.appendChild(el("h1", "titolone", "TV"));
+    p.appendChild(el("p", "nota",
+      "Non hai selezionato nessun abbonamento, quindi non posso dirti " +
+      "cosa paghi già."));
+    const b = el("button", "primario", "Scegli gli abbonamenti");
+    b.onclick = () => vai("impostazioni");
+    p.appendChild(b);
+    schermo.appendChild(p);
+    return;
+  }
+
+  // I nomi dei servizi nel pannello dei filtri vengono da qui.
+  if (!Object.keys(PROVIDER).length) caricaProvider().catch(() => {});
 
   // ------------------------------------------------------------- capo
   const testa = el("div", "pad");
@@ -1094,9 +1384,28 @@ async function schermoDettaglio(tipo, id) {
 
   schermo.innerHTML = "";
 
+  const barraSu = el("div", "testaAzioni");
   const su = el("button", "indietro", "← Indietro");
   su.onclick = () => vai(scheda_attiva);
-  schermo.appendChild(su);
+  barraSu.appendChild(su);
+
+  const cuore = el("button", "cuore");
+  cuore.setAttribute("aria-label", "Metti fra i titoli da guardare");
+  const disegnaCuore = () => {
+    const dentro = lista.ha(d.tipo, d.id);
+    cuore.setAttribute("aria-pressed", String(dentro));
+    cuore.setAttribute("title", dentro ? "Togli dalla lista" : "Metti nella lista");
+    cuore.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 20.5s-7.5-4.6-7.5-9.7A4.3 4.3 0 0112 8.4a4.3 4.3 0 017.5 2.4c0 5.1-7.5 9.7-7.5 9.7z"/></svg>';
+  };
+  cuore.onclick = () => {
+    if (lista.ha(d.tipo, d.id)) lista.togli(d.tipo, d.id);
+    else lista.aggiungi({ tipo: d.tipo, id: d.id, titolo: d.titolo, anno: d.anno,
+                          voto: d.voto, locandina: d.locandina });
+    disegnaCuore();
+  };
+  disegnaCuore();
+  barraSu.appendChild(cuore);
+  schermo.appendChild(barraSu);
 
   const sfondo = el("div", "sfondo" + (d.sfondo ? "" : " senza"));
   if (d.sfondo) sfondo.innerHTML = '<img src="' + IMG + "/w780" + d.sfondo + '" alt="">';
@@ -1204,6 +1513,58 @@ async function schermoDettaglio(tipo, id) {
     pad.appendChild(t);
   }
 
+  // Serie: quando esce il prossimo, e le stagioni.
+  if (d.tipo === "tv") {
+    const box = el("div", "prossimo");
+    if (d.prossimo) {
+      box.innerHTML =
+        '<p class="quando">Prossimo episodio</p>' +
+        '<p class="cosa">S' + d.prossimo.season_number + "E" + d.prossimo.episode_number +
+        (d.prossimo.name ? " · " + esc(d.prossimo.name) : "") + "</p>" +
+        '<p class="data">' + esc(quandoEsce(d.prossimo.air_date)) + "</p>";
+    } else {
+      box.className = "prossimo finita";
+      const finita = d.stato === "Ended" || d.stato === "Canceled";
+      box.innerHTML =
+        '<p class="quando">' + (finita ? "Serie conclusa" : "Nessuna data annunciata") + "</p>" +
+        '<p class="cosa">' + d.stagioni.length +
+        (d.stagioni.length === 1 ? " stagione" : " stagioni") +
+        (d.quantiEpisodi ? " · " + d.quantiEpisodi + " episodi" : "") + "</p>" +
+        (d.ultimo ? '<p class="data">Ultimo: S' + d.ultimo.season_number + "E" +
+          d.ultimo.episode_number + " · " + esc(quandoEsce(d.ultimo.air_date)) + "</p>" : "");
+    }
+    pad.appendChild(box);
+
+    if (d.stagioni.length) {
+      pad.appendChild(el("p", "sezione", "Stagioni"));
+      d.stagioni.forEach(st => {
+        const r = el("button", "riga");
+        r.innerHTML =
+          '<div class="mini">' + locandina(st.locandina, "w154") + "</div>" +
+          '<div class="dati"><b>' + esc(st.nome) + "</b><span>" +
+          st.quanti + (st.quanti === 1 ? " episodio" : " episodi") +
+          (st.anno ? " · " + st.anno : "") + "</span></div>";
+        r.onclick = () => schermoStagione(d, st);
+        pad.appendChild(r);
+      });
+    }
+  }
+
+  if (d.regia.length) {
+    pad.appendChild(el("p", "sezione", d.regia.length > 1 ? "Regia" : "Regia"));
+    const fila = el("div", "cast");
+    fila.style.padding = "2px 0 6px";
+    d.regia.forEach(r => {
+      const x = el("button", "attore");
+      x.innerHTML =
+        '<div class="faccia">' + (r.foto ? locandina(r.foto, "w185") : esc((r.nome || "?")[0])) + "</div>" +
+        "<b>" + esc(r.nome) + "</b>";
+      x.onclick = () => schermoPersona(r.id, () => schermoDettaglio(d.tipo, d.id));
+      fila.appendChild(x);
+    });
+    pad.appendChild(fila);
+  }
+
   if (d.generi.length) {
     pad.appendChild(el("p", "sezione", "Generi"));
     pad.appendChild(el("p", "meta", esc(d.generi.join(" · "))));
@@ -1216,14 +1577,100 @@ async function schermoDettaglio(tipo, id) {
     schermo.appendChild(el("p", "sezione pad", "Cast"));
     const fila = el("div", "cast");
     d.cast.forEach(a => {
-      const x = el("div", "attore");
+      const x = el("button", "attore");
       x.innerHTML =
         '<div class="faccia">' + (a.foto ? locandina(a.foto, "w185") : esc((a.nome || "?")[0])) + "</div>" +
         "<b>" + esc(a.nome) + "</b>" + (a.ruolo ? "<span>" + esc(a.ruolo) + "</span>" : "");
+      x.onclick = () => schermoPersona(a.id, () => schermoDettaglio(d.tipo, d.id));
       fila.appendChild(x);
     });
     schermo.appendChild(fila);
   }
+
+  // Simili: arriva dopo, senza far aspettare il resto della scheda.
+  const zonaSimili = el("div");
+  schermo.appendChild(zonaSimili);
+  simili(d).then(altri => {
+    if (!altri.length) return;
+    zonaSimili.appendChild(el("p", "sezione pad",
+      d.keyword.length ? "Simili, e li paghi già" : "Dello stesso genere, e li paghi già"));
+    zonaSimili.appendChild(grigliaDi(altri));
+  }).catch(() => {});
+}
+
+async function schermoStagione(serie, stagione) {
+  window.scrollTo(0, 0);
+  girello();
+  let dati;
+  try {
+    dati = await tmdb("/tv/" + serie.id + "/season/" + stagione.numero, { language: LINGUA });
+  } catch (e) { return vuoto(e.message); }
+
+  schermo.innerHTML = "";
+  const su = el("button", "indietro", "← " + esc(serie.titolo));
+  su.onclick = () => schermoDettaglio(serie.tipo, serie.id);
+  schermo.appendChild(su);
+
+  const pad = el("div", "pad");
+  pad.appendChild(el("h1", "titolone", esc(stagione.nome)));
+  schermo.appendChild(pad);
+
+  const episodi = dati.episodes || [];
+  if (!episodi.length) {
+    pad.appendChild(el("p", "nota", "Nessun episodio elencato per questa stagione."));
+    return;
+  }
+
+  const oggi = new Date().toISOString().slice(0, 10);
+  episodi.forEach(e => {
+    const futuro = e.air_date && e.air_date > oggi;
+    const r = el("div", "episodio" + (futuro ? " futuro" : ""));
+    r.innerHTML =
+      '<div class="fermo">' +
+        (e.still_path ? '<img loading="lazy" src="' + IMG + "/w300" + e.still_path + '" alt="">' : "") +
+      "</div>" +
+      '<div class="dati"><b>' + e.episode_number + ". " + esc(e.name || "") + "</b>" +
+      "<span>" + esc(quandoEsce(e.air_date)) +
+      (e.runtime ? " · " + e.runtime + " min" : "") +
+      (e.vote_average ? " · ★ " + e.vote_average.toFixed(1) : "") + "</span>" +
+      (e.overview ? '<div class="trama2">' + esc(e.overview) + "</div>" : "") +
+      "</div>";
+    pad.appendChild(r);
+  });
+}
+
+// Attori e registi: la stessa schermata serve per entrambi.
+async function schermoPersona(id, torna) {
+  window.scrollTo(0, 0);
+  girello();
+  let p;
+  try { p = await personaDati(id); }
+  catch (e) { return vuoto(e.message); }
+
+  schermo.innerHTML = "";
+  const su = el("button", "indietro", "← Indietro");
+  su.onclick = torna || (() => vai(scheda_attiva));
+  schermo.appendChild(su);
+
+  const capo = el("div", "capoPersona");
+  capo.innerHTML =
+    '<div class="ritratto">' +
+      (p.foto ? locandina(p.foto, "w185") : esc((p.nome || "?")[0])) + "</div>" +
+    "<div><h1>" + esc(p.nome) + '</h1><div class="meta">' + esc(p.mestiere) + "</div></div>";
+  schermo.appendChild(capo);
+
+  const sezione = (titolo, elementi) => {
+    if (!elementi.length) return;
+    schermo.appendChild(el("p", "sezione pad", titolo));
+    schermo.appendChild(grigliaDi(elementi));
+  };
+  sezione("Da regista, e li paghi già", p.regia);
+  sezione("Film, e li paghi già", p.film);
+  sezione("Serie, e le paghi già", p.serie);
+
+  if (!p.regia.length && !p.film.length && !p.serie.length)
+    schermo.appendChild(el("p", "vuoto",
+      "Niente di suo fra i tuoi abbonamenti."));
 }
 
 const ICONE = {
@@ -1246,6 +1693,39 @@ const ICONE = {
   avan:  '<svg viewBox="0 0 24 24"><path d="M12 6v12l8-6zM4 6v12l8-6z"/></svg>',
   acceso:'<svg viewBox="0 0 24 24"><path d="M12 3v9"/><path d="M6.8 7.2a7.5 7.5 0 1010.4 0"/></svg>',
 };
+
+function schermoLista() {
+  schermo.innerHTML = "";
+  const pad = el("div", "pad");
+  pad.appendChild(el("h1", "titolone", "Da guardare"));
+  schermo.appendChild(pad);
+
+  const voci = lista.tutto;
+  if (!voci.length) {
+    schermo.appendChild(el("p", "vuoto",
+      "Qui finiscono i titoli che segni col cuore.\nCosì non li perdi quando li trovi e non hai tempo."));
+    return;
+  }
+
+  const intestazione = el("p", "sezione pad");
+  intestazione.innerHTML = voci.length + (voci.length === 1 ? " titolo" : " titoli") +
+    ' <span class="conteggio">· i più recenti in cima</span>';
+  schermo.appendChild(intestazione);
+  schermo.appendChild(grigliaDi(voci));
+
+  const b = el("button", "svuota", "Svuota la lista");
+  b.onclick = () => {
+    // niente conferme a vuoto: il secondo tocco e' la conferma
+    if (b.dataset.sicuro !== "1") {
+      b.dataset.sicuro = "1";
+      b.textContent = "Tocca di nuovo per svuotare davvero";
+      return;
+    }
+    lista.tutto = [];
+    schermoLista();
+  };
+  schermo.appendChild(b);
+}
 
 function schermoTelecomando() {
   schermo.innerHTML = "";
@@ -1445,11 +1925,93 @@ function schermoTelecomando() {
   aggiorna();
 }
 
+function bloccoAbbonamenti(pad) {
+  pad.appendChild(el("p", "sezione", "I tuoi abbonamenti"));
+  const spiega = el("p", "nota",
+    "Tocca per aggiungere o togliere. Il verdetto «Lo paghi già» dipende " +
+    "solo da questa lista: una voce di troppo non dà errore, dà una risposta sbagliata.");
+  spiega.style.margin = "0 0 4px";
+  pad.appendChild(spiega);
+
+  const scelti = el("div", "servizi");
+  pad.appendChild(scelti);
+
+  const cerca = el("input", "cerca-servizio");
+  cerca.type = "search";
+  cerca.placeholder = "Aggiungi un servizio";
+  cerca.autocomplete = "off";
+  cerca.setAttribute("aria-label", "Cerca un servizio da aggiungere");
+  pad.appendChild(cerca);
+
+  const altri = el("div", "servizi");
+  pad.appendChild(altri);
+
+  function riquadro(pid, attivo) {
+    const b = el("button", "servizio");
+    b.setAttribute("aria-pressed", String(attivo));
+    const logo = logoProvider(pid);
+    const lanciabile = (MAPPA[pid] || {}).app;
+    b.innerHTML =
+      // se il logo non si carica sparisce, invece di lasciare
+      // l'icona di immagine rotta
+      (logo ? '<img src="' + IMG + "/w92" + logo +
+              '" alt="" onerror="this.style.display=\'none\'">'
+            : "") +
+      "<span>" + esc(nomeProvider(pid)) + "</span>" +
+      (attivo && !lanciabile
+        ? '<span class="senzaApp">non la apro sulla TV</span>' : "");
+    b.onclick = () => {
+      const ora = chiavi.servizi;
+      chiavi.servizi = attivo ? ora.filter(x => x !== pid) : [...ora, pid];
+      cerca.value = "";
+      disegna();
+    };
+    return b;
+  }
+
+  function disegna() {
+    const miei = chiavi.servizi;
+    scelti.innerHTML = "";
+    if (!miei.length) {
+      const p = el("p", "nota", "Nessun servizio selezionato: senza almeno uno non posso dirti niente.");
+      p.style.margin = "4px 0 0";
+      scelti.appendChild(p);
+    }
+    miei.forEach(pid => scelti.appendChild(riquadro(pid, true)));
+
+    const filtro = cerca.value.trim().toLowerCase();
+    altri.innerHTML = "";
+    if (!filtro) return;
+    Object.keys(PROVIDER)
+      .filter(pid => !miei.includes(pid) &&
+                     nomeProvider(pid).toLowerCase().includes(filtro))
+      .sort((a, b) => PROVIDER[a].pri - PROVIDER[b].pri)
+      .slice(0, 12)
+      .forEach(pid => altri.appendChild(riquadro(pid, false)));
+    if (!altri.children.length)
+      altri.appendChild(el("p", "nota", "Nessun servizio con questo nome."));
+  }
+
+  cerca.oninput = disegna;
+  disegna();
+
+  // La lista completa arriva da TMDB: se non c'e' ancora, i nomi
+  // vengono dalla mappa delle app e la ricerca non trova nulla.
+  if (!Object.keys(PROVIDER).length && chiavi.tmdb)
+    caricaProvider().then(disegna).catch(() => {});
+}
+
 function schermoImpostazioni() {
   schermo.innerHTML = "";
   const pad = el("div", "pad");
   pad.appendChild(el("h1", "titolone", "Impostazioni"));
-  pad.innerHTML +=
+  schermo.appendChild(pad);
+  bloccoAbbonamenti(pad);
+
+  const chiaviPad = el("div");
+  pad.appendChild(el("p", "sezione", "Chiavi"));
+  pad.appendChild(chiaviPad);
+  chiaviPad.innerHTML =
     '<div class="campo"><label for="k1">Chiave TMDB</label>' +
     '<textarea id="k1" rows="2" autocapitalize="off" autocomplete="off" spellcheck="false"></textarea>' +
     "<p>themoviedb.org → il tuo profilo → Impostazioni → API</p></div>" +
@@ -1457,7 +2019,6 @@ function schermoImpostazioni() {
     '<textarea id="k2" rows="3" autocapitalize="off" autocomplete="off" spellcheck="false"></textarea>' +
     "<p>account.smartthings.com/tokens, con i permessi sui dispositivi. " +
     "Resta su questo telefono: non è nel codice dell'app e non passa da nessun server.</p></div>";
-  schermo.appendChild(pad);
 
   document.getElementById("k1").value = chiavi.tmdb;
   document.getElementById("k2").value = chiavi.token;
@@ -1472,8 +2033,13 @@ function schermoImpostazioni() {
     salva.textContent = "Provo…";
     esito.innerHTML = "";
     const righe = [];
-    try { await tmdb("/configuration"); righe.push('<div class="ok">TMDB: chiave buona</div>'); }
-    catch (e) { righe.push('<div class="ko">' + esc(e.message) + "</div>"); }
+    try {
+      await tmdb("/configuration");
+      righe.push('<div class="ok">TMDB: chiave buona</div>');
+      await caricaProvider(true);
+      righe.push('<div class="ok">' + Object.keys(PROVIDER).length +
+                 " servizi italiani caricati</div>");
+    } catch (e) { righe.push('<div class="ko">' + esc(e.message) + "</div>"); }
     try {
       await trovaTv();
       const app = await appInPrimoPiano();
