@@ -441,6 +441,22 @@
   .attore { -webkit-touch-callout: none; }
   button.attore { background: none; border: 0; padding: 0; }
 
+  /* -------------------------------------------------- scorciatoie */
+  .scorciatoie { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 10px; margin: 10px 0 0; }
+  .scorciatoia {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 7px; min-height: 76px; padding: 11px 6px; border-radius: 13px;
+    background: var(--piano); border: 1px solid var(--bordo);
+    font-size: 11.5px; font-weight: 550; color: var(--tenue); text-align: center;
+    -webkit-touch-callout: none;
+  }
+  .scorciatoia img { width: 36px; height: 36px; border-radius: 9px; }
+  .scorciatoia:active { background: var(--piano-alto); }
+  .scorciatoia.acceso, .scorciatoia[aria-pressed=true] {
+    background: var(--acceso); border-color: var(--acceso); color: var(--acceso-testo);
+  }
+  .scorciatoia:disabled { opacity: .6; }
+
   /* --------------------------------------------------------- saga */
   .carta.nonTua { opacity: .42; }
   .carta.questo .tela { outline: 2px solid var(--acceso); outline-offset: 2px; }
@@ -710,6 +726,14 @@ const SOTTOGENERI = [
   { n: "Dinosauri", k: "12616" },       { n: "Natale", k: "207317" },
 ];
 
+// App che hanno un id verificato sulla TV ma non sono "provider" per
+// TMDB, quindi non comparirebbero mai da nessuna parte nell'app.
+// Gli id vengono da app_trovate.json del repo.
+const APP_EXTRA = [
+  { nome: "YouTube", app: "111299001912" },
+  { nome: "Spotify", app: "3201606009684" },
+];
+
 const ORDINI = [
   { n: "Popolari", v: "popularity.desc" },
   { n: "Voto più alto", v: "vote_average.desc" },
@@ -756,7 +780,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "202609231027";
+const VERSIONE = "202609231034";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -2861,6 +2885,53 @@ function schermoTelecomando() {
     tasto("Sorgente", ICONE.fonte, key("SOURCE")),
     tasto("Muto", ICONE.muto, () => comando("audioMute", "mute")),
   ));
+
+  // ------------------------------------------------- scorciatoie
+  // I pulsanti di lancio esistevano solo dentro la scheda di un
+  // titolo: per aprire Netflix e sfogliare da li' non c'era modo.
+  corpoTel.appendChild(el("p", "sezione", "Apri un'app"));
+  const zonaScorciatoie = el("div", "scorciatoie");
+  corpoTel.appendChild(zonaScorciatoie);
+
+  const daAprire = [
+    ...chiavi.servizi
+      .map(pid => ({ pid, ...(MAPPA[pid] || {}) }))
+      .filter(x => x.app)
+      .map(x => ({ nome: x.nome || nomeProvider(x.pid), app: x.app, logo: logoProvider(x.pid) })),
+    ...APP_EXTRA,
+  ];
+  // lo stesso id due volte (Mediaset Infinity e Infinity+) sarebbe
+  // due pulsanti identici
+  const vistiApp = new Set();
+  daAprire.filter(x => !vistiApp.has(x.app) && vistiApp.add(x.app)).forEach(x => {
+    const b = el("button", "scorciatoia");
+    b.innerHTML = (x.logo ? '<img src="' + IMG + "/w92" + x.logo +
+        '" alt="" onerror="this.style.display=\'none\'">' : "") +
+      "<span>" + esc(x.nome) + "</span>";
+    b.onclick = async () => {
+      b.disabled = true;
+      const etichetta = b.querySelector("span");
+      const prima = etichetta.textContent;
+      etichetta.textContent = "Apro…";
+      try {
+        if (await lancia(x.app)) {
+          b.classList.add("acceso");
+          etichetta.textContent = "Aperta";
+          setTimeout(() => { b.classList.remove("acceso"); etichetta.textContent = prima; }, 2500);
+          aggiorna();
+        } else {
+          etichetta.textContent = prima;
+          lamenta("La TV non ha aperto " + x.nome + ".");
+        }
+      } catch (e) { etichetta.textContent = prima; lamenta(e.message); }
+      b.disabled = false;
+    };
+    zonaScorciatoie.appendChild(b);
+  });
+
+  if (!zonaScorciatoie.children.length)
+    corpoTel.appendChild(el("div", "avvisoPonte",
+      "Scegli gli abbonamenti in Opzioni e qui compaiono le scorciatoie."));
 
   corpoTel.appendChild(el("p", "sezione", "Volume"));
   const volume = (icona, etichetta, cmd) => {
