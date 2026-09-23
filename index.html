@@ -700,7 +700,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "202609230921";
+const VERSIONE = "202609230928";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -1121,23 +1121,34 @@ async function scheda(tipo, id) {
   const italia = ((d["watch/providers"] || {}).results || {})[PAESE] || {};
 
   const miei = chiavi.servizi;
+
+  // flatrate vuole l'abbonamento. free e ads NO, per definizione: se
+  // un titolo e' gratis su Plex o Rai Play lo puoi guardare adesso,
+  // anche se Plex non e' fra i tuoi servizi. Prima chiedevo
+  // l'abbonamento anche per quelli e rispondevo "non e' nei tuoi
+  // abbonamenti" su roba guardabile subito e gratis.
   const compresi = [], visti = new Set();
+  let cePaga = false;
   for (const t of COMPRESI)
     for (const p of italia[t] || []) {
       const pid = String(p.provider_id);
-      if (miei.includes(pid) && !visti.has(pid)) {
+      const vale = t === "flatrate" ? miei.includes(pid) : true;
+      if (vale && !visti.has(pid)) {
         visti.add(pid);
+        if (t === "flatrate") cePaga = true;
         compresi.push({
-          pid, come: TIPI[t], logo: p.logo_path,
+          pid, come: TIPI[t], gratis: t !== "flatrate", logo: p.logo_path,
           nome: (MAPPA[pid] || {}).nome || p.provider_name,
           app: (MAPPA[pid] || {}).app || null,
         });
       }
     }
 
-  const altrove = [...new Set(COMPRESI.flatMap(t =>
-    (italia[t] || []).filter(p => !miei.includes(String(p.provider_id)))
-                     .map(p => p.provider_name)))].sort();
+  // "altrove" e' solo l'abbonamento che non hai: il gratis non e'
+  // altrove, e' qui.
+  const altrove = [...new Set((italia.flatrate || [])
+    .filter(p => !miei.includes(String(p.provider_id)))
+    .map(p => p.provider_name))].sort();
   const pagando = [...new Set(PAGANDO.flatMap(t =>
     (italia[t] || []).map(p => p.provider_name)))].sort().slice(0, 5);
 
@@ -1186,7 +1197,7 @@ async function scheda(tipo, id) {
     keyword: (((d.keywords || {}).keywords) || ((d.keywords || {}).results) || [])
       .slice(0, 3).map(k => String(k.id)),
     generiId: (d.genres || []).map(g => String(g.id)),
-    compresi, altrove, pagando,
+    compresi, altrove, pagando, cePaga,
     niente: !Object.keys(italia).length,
     // solo per le serie
     stato: d.status || "",
@@ -1888,8 +1899,12 @@ async function schermoDettaglio(tipo, id, torna) {
   const ha = d.compresi.length > 0;
   const box = el("div", "verdetto " + (ha ? "si" : "no"));
   if (ha) {
-    box.innerHTML = '<p class="risposta">Lo paghi già</p><p class="dove">Su ' +
-      d.compresi.map(i => esc(i.nome) + (i.come !== "nell'abbonamento" ? " (" + esc(i.come) + ")" : "")).join(", ") + "</p>";
+    // se non c'e' nulla in abbonamento ma e' gratis, il verdetto
+    // giusto e' "e' gratis", non "lo paghi gia'"
+    box.innerHTML = '<p class="risposta">' +
+      (d.cePaga ? "Lo paghi già" : "È gratis") + '</p><p class="dove">Su ' +
+      d.compresi.map(i => esc(i.nome) +
+        (i.come !== "nell'abbonamento" ? " (" + esc(i.come) + ")" : "")).join(", ") + "</p>";
   } else if (d.niente) {
     box.innerHTML = '<p class="risposta">Non risulta disponibile in Italia</p>';
   } else {
