@@ -442,7 +442,11 @@ ULTIMO_TOKEN = ""
 APP = os.environ.get("TV_APP", "netflix")
 
 
-DA_DOVE = "https://mattiasereno.github.io/tv/tastiere.py"
+# Da dove prendere le disposizioni dei tasti. Si puo' puntare a un
+# file locale con TV_TASTIERE, che serve alle prove e a fissare una
+# versione se un giorno serve.
+DA_DOVE = os.environ.get(
+    "TV_TASTIERE", "https://mattiasereno.github.io/tv/tastiere.py")
 
 
 # Questo script puo' girare anche SENZA essere un file su disco:
@@ -467,54 +471,78 @@ def mio_nome():
         return "scrivi_telefono.py"
 
 
-def carica_tastiere():
-    """tastiere.py sta accanto a questo script, non nella cartella da
-    cui lo lanci: su a-Shell si parte sempre dalla home.
-
-    Se manca, se lo scarica da se'. Non e' pigrizia: due file da
-    tenere allineati a mano su un telefono sono due occasioni di
-    sbagliare, e scaricarne uno da a-Shell si e' rivelato tutt'altro
-    che ovvio. Cosi' il file da gestire e' uno solo."""
-    sys.path.insert(0, mia_cartella())
+def sono_un_file():
+    """Se questo script e' un file su disco o e' stato eseguito al
+    volo. Cambia dove cercare le disposizioni dei tasti, e non e' un
+    dettaglio: vedi carica_tastiere."""
     try:
-        import tastiere
-        return tastiere
-    except ImportError:
-        pass
-    print("  manca tastiere.py (le disposizioni dei tasti), lo scarico")
-    print("  da " + DA_DOVE)
+        __file__
+        return True
+    except NameError:
+        return False
+
+
+def carica_tastiere():
+    """Le disposizioni dei tasti, da accanto allo script o dalla rete.
+
+    LA REGOLA, e il perche' conta:
+
+    Se questo script E' un file (sul computer, dentro il repo), le
+    disposizioni si prendono da accanto: quello e' il sorgente, ed e'
+    giusto che comandi.
+
+    Se invece e' stato eseguito AL VOLO - il caso del telefono - le
+    disposizioni si scaricano OGNI VOLTA e si tengono in memoria,
+    senza mai salvarle su disco. Prima venivano scaricate solo se
+    mancavano, e il risultato e' stato che il telefono ha continuato a
+    usare un tastiere.py vecchio mentre il difetto era gia' corretto e
+    pubblicato: la traccia dell'errore indicava righe che non
+    esistevano piu'. Un file salvato una volta non si aggiorna mai, ed
+    e' la stessa classe di guasti che il "niente file" doveva
+    eliminare."""
+    if sono_un_file():
+        sys.path.insert(0, mia_cartella())
+        try:
+            import tastiere
+            return tastiere
+        except ImportError:
+            pass          # manca accanto: si scarica come sul telefono
+
+    if not DA_DOVE.startswith("http"):
+        with open(DA_DOVE) as f:
+            testo = f.read()
+        return esegui_tastiere(testo)
+
+    print("  prendo le disposizioni dei tasti da " + DA_DOVE)
     import urllib.request
     try:
         with urllib.request.urlopen(DA_DOVE, timeout=20) as risposta:
             testo = risposta.read().decode("utf-8")
     except Exception as e:
         raise ConnectionError(
-            f"non riesco a scaricarlo ({e.__class__.__name__}).\n"
-            "  Serve internet. A mano:\n"
-            "     curl -O " + DA_DOVE)
-    # Che sia davvero il file e non una pagina d'errore travestita da
-    # 200: scrivere spazzatura con l'estensione giusta sarebbe peggio
-    # che non scrivere niente.
+            f"non riesco a scaricarle ({e.__class__.__name__}).\n"
+            "  Serve internet. Oppure indica un file locale:\n"
+            "     TV_TASTIERE=./tastiere.py ...")
+    return esegui_tastiere(testo)
+
+
+def esegui_tastiere(testo):
+    """Trasforma il testo scaricato in un modulo, in memoria.
+
+    Il controllo sul contenuto non e' una formalita': una pagina
+    d'errore travestita da 200 diventerebbe un modulo vuoto, e il
+    messaggio che ne segue parlerebbe di tutt'altro."""
     if "DISPOSIZIONI" not in testo or "def digita" not in testo:
         raise ConnectionError(
-            "quello che e' arrivato non e' tastiere.py "
+            "quello che e' arrivato non sono le disposizioni "
             f"({len(testo)} byte).\n  Forse l'indirizzo e' cambiato: "
             + DA_DOVE)
-    # Prima accanto allo script, e se quella cartella non si scrive,
-    # nella cartella corrente: su iOS i permessi sono imprevedibili.
-    ultimo = None
-    for cartella in (mia_cartella(), os.getcwd()):
-        try:
-            strada = os.path.join(cartella, "tastiere.py")
-            with open(strada, "w") as f:
-                f.write(testo)
-            print(f"  salvato in {strada}")
-            sys.path.insert(0, cartella)
-            import tastiere
-            return tastiere
-        except OSError as e:
-            ultimo = e
-    raise ConnectionError(f"scaricato ma non riesco a salvarlo: {ultimo}")
+    import types
+    modulo = types.ModuleType("tastiere")
+    modulo.__file__ = DA_DOVE
+    exec(compile(testo, DA_DOVE, "exec"), modulo.__dict__)
+    sys.modules["tastiere"] = modulo
+    return modulo
 
 
 def separa_app(argomenti, tastiere):
