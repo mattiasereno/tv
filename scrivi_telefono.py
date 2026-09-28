@@ -162,7 +162,10 @@ def manda(comando):
             benvenuto = json.loads(carico.decode() or "{}")
             if benvenuto.get("event") == "ms.channel.connect":
                 s.sendall(inquadra(json.dumps(comando).encode()))
-                return benvenuto.get("data", {}).get("token")
+                nuovo = str(benvenuto.get("data", {}).get("token") or "")
+                if nuovo and nuovo != token:
+                    salva_token(nuovo)
+                return nuovo
             raise ConnectionError("canale non pronto: " + str(benvenuto)[:120])
         raise ConnectionError("nessun evento di connessione dalla TV")
     finally:
@@ -170,6 +173,24 @@ def manda(comando):
             s.close()
         except Exception:
             pass
+
+
+DOVE_TOKEN = None      # il file da cui il token e' stato letto
+
+
+def salva_token(nuovo):
+    """La TV emette un token nuovo quando accetti il popup, dentro
+    l'evento ms.channel.connect. Se non lo si salva, la volta dopo ci
+    si presenta col token vecchio e la TV richiede il permesso da
+    capo: era esattamente il sintomo "me lo chiede ogni volta"."""
+    percorso = DOVE_TOKEN or os.path.join(os.getcwd(), "token.txt")
+    try:
+        with open(percorso, "w") as f:
+            f.write(nuovo + "\n")
+        print(f"  (token aggiornato in {percorso})")
+    except OSError as e:
+        print(f"  Non riesco a salvare il token nuovo in {percorso}: {e}")
+        print(f"  Salvalo a mano:  echo {nuovo} > token.txt")
 
 
 def leggi_token():
@@ -190,6 +211,8 @@ def leggi_token():
             # 403 nessuno indovina che il problema e' un carattere.
             t = re.sub(r"\D", "", open(p).read())
             if t:
+                global DOVE_TOKEN
+                DOVE_TOKEN = p
                 return t
     print("Non trovo il token. L'ho cercato in:")
     for p in candidati:
