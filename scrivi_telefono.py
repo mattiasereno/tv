@@ -329,8 +329,9 @@ def leggi_token():
     print("Mettilo in uno di quei file, oppure passalo cosi':")
     print('  TV_TOKEN=12345678 python3 scrivi_telefono.py "the bear"')
     print()
-    print("Si ottiene una volta sola dal computer, con:")
-    print("  venv/bin/python3 tastiera.py collega")
+    print("Per averlo, con un nome nuovo:")
+    print(f'  python3 {mio_nome()} --nome=iPhone --token')
+    print("  poi accetta il permesso sulla TV: lo script te lo dice.")
     sys.exit(1)
 
 
@@ -1155,8 +1156,9 @@ def main():
             spiega_rete(e)
         print("  " + str(e))
         if "unauthorized" in str(e):
-            print("  Il token non e' valido per questa TV. Rifallo dal computer:")
-            print("    venv/bin/python3 tastiera.py collega")
+            print("  Il token non e' valido per questa TV. Per rifarlo:")
+            print(f"    python3 {mio_nome()} --token")
+            print("    e accetta il permesso sulla TV.")
         sys.exit(1)
     except OSError as e:
         spiega_rete(e)

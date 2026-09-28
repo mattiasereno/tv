@@ -688,7 +688,10 @@
 "use strict";
 
 /* ---------------------------------------------------- dati non segreti
-   Tenuti allineati a mappa_app.json e miei_servizi.json del repo.    */
+   Un tempo erano tenuti allineati a mano con dei file JSON nel repo.
+   Quei file non ci sono piu': l'app e' l'unica fonte, e non c'e' piu'
+   niente da tenere d'accordo. Le due liste erano DIVERGITE una volta,
+   e il risultato non era un errore ma un verdetto sbagliato.        */
 
 const MAPPA = {
   "8":    { nome: "Netflix",           app: "3201907018807" },
@@ -703,9 +706,9 @@ const MAPPA = {
 };
 
 // Gli abbonamenti NON sono piu' una costante: si scelgono in
-// Impostazioni e stanno in localStorage. Erano scritti sia qui sia
-// in miei_servizi.json del repo, e le due liste sono divergite una
-// volta: Infinity+ c'era qui e l'abbonamento no, e il risultato non
+// Impostazioni e stanno in localStorage. Erano scritti anche in un
+// file del repo, e le due liste sono divergite una volta: Infinity+
+// c'era qui e l'abbonamento no, e il risultato non
 // era un errore ma un verdetto sbagliato.
 // Questi valgono solo al primo avvio, finche' non scegli.
 const SERVIZI_PREDEFINITI = ["8", "119", "337", "1899", "39", "359", "584"];
@@ -804,7 +807,8 @@ function nomeApp(pacchetto) {
 
 // App che hanno un id verificato sulla TV ma non sono "provider" per
 // TMDB, quindi non comparirebbero mai da nessuna parte nell'app.
-// Gli id vengono da app_trovate.json del repo.
+// Gli id sono stati verificati sulla TV una per una, leggendo
+// tvChannelName con l'app aperta.
 const APP_EXTRA = [
   { nome: "YouTube", app: "111299001912" },
   { nome: "Spotify", app: "3201606009684" },
@@ -856,7 +860,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20260928174005";
+const VERSIONE = "20260928192855";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -1413,37 +1417,6 @@ async function smartthings(percorso, corpoRichiesta, riprovato = false) {
   return r.status === 204 ? {} : r.json();
 }
 
-// Il ponte locale esiste solo se l'app e' servita da server.py in
-// rete di casa. Da GitHub Pages questa fetch fallisce, e va bene:
-// SmartThings non sa mandare testo, quindi la tastiera non c'e'.
-let ponte = undefined;   // undefined = non ancora chiesto
-async function provaPonte() {
-  if (ponte !== undefined) return ponte;
-  try {
-    const r = await fetch("/api/ponte", { cache: "no-store" });
-    const d = await r.json();
-    ponte = d.ok ? d : null;
-  } catch (e) { ponte = null; }
-  return ponte;
-}
-
-async function scriviSullaTv(testo) {
-  const r = await fetch("/api/scrivi", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ testo }),
-  });
-  const d = await r.json().catch(() => ({}));
-  if (!r.ok || !d.ok) throw new Error(d.errore || "Il ponte non risponde.");
-}
-
-async function tastoLocale(nome) {
-  const r = await fetch("/api/tasto", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ tasto: nome }),
-  });
-  const d = await r.json().catch(() => ({}));
-  if (!r.ok || !d.ok) throw new Error(d.errore || "Il ponte non risponde.");
-}
 
 async function trovaTv() {
   if (chiavi.tv) return chiavi.tv;
@@ -1545,6 +1518,14 @@ async function sfoglia(f, pagina = 1) {
   };
   if (f.genere) parametri.with_genres = f.genere;
   if (f.keyword) parametri.with_keywords = f.keyword;
+  // Escludere generi, non solo chiederli: serve a "Per dormire", dove
+  // la cosa importante non e' cosa vuoi ma cosa NON vuoi.
+  if (f.senzaGenere) parametri.without_genres = f.senzaGenere;
+  // Un tetto ai minuti, senza passare dalle durate con un nome: quelle
+  // predefinite hanno tutte anche un minimo, e "90-120" avrebbe
+  // buttato via i film sotto l'ora e mezza - che per dormire vanno
+  // benissimo. Qui serve solo non incappare in tre ore di epica.
+  if (f.maxMinuti) parametri["with_runtime.lte"] = f.maxMinuti;
 
   // Senza una soglia di voti, "voto più alto" restituisce cose con
   // tre voti da 10: tecnicamente giusto, inutile in pratica.
@@ -2201,10 +2182,31 @@ function disegnaGriglia(contenitore) {
 let STASERA = { tipo: "movie", durata: "Qualsiasi", genere: "",
                 keyword: "", preferenza: "Popolari", modalita: "scopri" };
 
+// Per addormentarsi serve il contrario di quello che tiene attaccati
+// allo schermo. Questi sono gli id dei generi di TMDB.
+//
+// Non e' una classifica di qualita': un thriller bellissimo e' un
+// pessimo film per dormire. E il criterio piu' forte non e' il genere
+// ma il RIVISTO: un film che conosci a memoria non ti obbliga a
+// seguirlo, e puoi addormentarti a metа senza perdere niente. Per
+// questo si pesca prima fra i tuoi visti e solo dopo fra i titoli
+// nuovi.
+const DORMIRE = {
+  // Alzano il battito: azione, thriller, horror, crime, guerra,
+  // mistero, e "War & Politics" che e' il corrispettivo per le serie.
+  sveglia: [28, 53, 27, 80, 10752, 9648, 10768],
+  // Commedia, famiglia, animazione, romantico, documentario, musica.
+  calmano: [35, 10751, 16, 10749, 99, 10402],
+  // Tre stelle bastano: per dormire conta la familiarita', non che sia
+  // un capolavoro. Sotto le tre, se l'hai votato male, non lo rivuoi.
+  votoMinimo: 3,
+};
+
 const MODALITA = [
   { v: "scopri",   n: "Scopri" },
   { v: "gusto",    n: "Sul mio gusto" },
   { v: "rivedere", n: "Da rivedere" },
+  { v: "dormire",  n: "Per dormire" },
 ];
 
 async function schermoStasera() {
@@ -2235,7 +2237,7 @@ async function schermoStasera() {
 
   // Ogni modalita' ha bisogno di controlli diversi: mostrarli tutti
   // sempre renderebbe la schermata un pannello di comandi.
-  if (STASERA.modalita !== "rivedere") {
+  if (STASERA.modalita !== "rivedere" && STASERA.modalita !== "dormire") {
     const sw = el("div", "interruttore");
     [["movie", "Film"], ["tv", "Serie"]].forEach(([v, etichetta]) => {
       const b = el("button", null, etichetta);
@@ -2309,6 +2311,20 @@ async function schermoStasera() {
     schermo.appendChild(p);
   }
 
+  if (STASERA.modalita === "dormire") {
+    const b = bacinoPerDormire();
+    const p = el("div", "gusto");
+    p.innerHTML = b.length
+      ? "Pesco fra <b>" + b.length + "</b> titoli che hai gi\u00e0 visto e votato, " +
+        "togliendo azione, thriller, horror, crime, guerra e mistero.<br>" +
+        "Il criterio pi\u00f9 forte non \u00e8 il genere ma il <b>rivisto</b>: " +
+        "un film che conosci non ti obbliga a seguirlo."
+      : "Non hai ancora visti abbastanza tranquilli in archivio, quindi pesco " +
+        "fra i titoli dei tuoi abbonamenti scegliendo generi calmi. " +
+        "Man mano che voti, comincer\u00f2 a pescare da quello che conosci gi\u00e0.";
+    schermo.appendChild(p);
+  }
+
   const risultato = el("div", "pescato");
   const pulsante = el("button", "stasera");
   pulsante.style.marginTop = "18px";
@@ -2325,7 +2341,33 @@ async function schermoStasera() {
     try {
       let v = null;
 
-      if (STASERA.modalita === "rivedere") {
+      if (STASERA.modalita === "dormire") {
+        const b = bacinoPerDormire();
+        if (b.length) {
+          // Niente rete: i visti ce li ho in mano, generi compresi.
+          const nuovi = b.filter(x => !pescatiDiRecente.includes(x.tipo + x.id));
+          const bacino = nuovi.length ? nuovi : b;
+          // Fra i piu' calmi, a caso - non il primo. Prendo la meta'
+          // piu' tranquilla (almeno cinque titoli, se ci sono):
+          // pescare sempre il massimo darebbe sempre lo stesso film.
+          const testa = bacino.slice(0, Math.max(5, Math.ceil(bacino.length / 2)));
+          v = testa[Math.floor(Math.random() * testa.length)];
+          pescatiDiRecente.push(v.tipo + v.id);
+          if (pescatiDiRecente.length > 12) pescatiDiRecente.shift();
+        } else {
+          // Archivio ancora magro: si pesca fra i titoli che paghi,
+          // con gli stessi criteri. Film e non serie, e non troppo
+          // lunghi: per addormentarsi tre ore sono un impegno.
+          v = await pescaUno(filtroPerDormire(), 10);
+          if (!v) {
+            risultato.innerHTML = '<p class="nota">Non trovo niente di ' +
+              'tranquillo fra i tuoi abbonamenti. Provane un altro in ' +
+              'Opzioni, o vota qualche titolo che hai gi\u00e0 visto.</p>';
+            return;
+          }
+        }
+
+      } else if (STASERA.modalita === "rivedere") {
         // niente rete: i titoli votati ce li ho gia' qui
         const buoni = visti.tutto.filter(x => (x.mio || 0) >= 4);
         if (!buoni.length) {
@@ -2382,6 +2424,47 @@ async function schermoStasera() {
     }
   }
   pulsante.onclick = pesca;
+}
+
+// I titoli gia' visti che vanno bene per addormentarsi. Nessuna
+// chiamata di rete: quando segni un titolo l'app salva anche i suoi
+// generi, proprio per poter fare conti come questo a costo zero.
+//
+// Ordinati per quanto calmano: prima quelli che hanno un genere
+// tranquillo, poi gli altri. Non e' un filtro, e' una preferenza -
+// togliere del tutto quelli senza genere calmo svuoterebbe il bacino
+// di chi ha votato pochi titoli.
+// Il filtro per il ripiego, quando l'archivio dei visti e' ancora
+// magro. In una funzione perche' le prove devono poter usare QUESTO e
+// non una copia scritta a mano: una prova che ricostruisce il filtro
+// non si accorge se quello vero cambia.
+function filtroPerDormire() {
+  return {
+    tipo: "movie",
+    genere: DORMIRE.calmano.join("|"),
+    senzaGenere: DORMIRE.sveglia.join(","),
+    keyword: "",
+    ordine: "vote_average.desc",
+    servizio: "",
+    decennio: "Tutti",
+    // Nessun minimo di minuti: i film corti per dormire vanno
+    // benissimo. Solo un tetto, e per questo non passa dalle durate
+    // predefinite, che hanno tutte anche un minimo.
+    durata: "Qualsiasi",
+    maxMinuti: 125,
+  };
+}
+
+function bacinoPerDormire() {
+  const sveglia = new Set(DORMIRE.sveglia.map(String));
+  const calmano = new Set(DORMIRE.calmano.map(String));
+  const buoni = visti.tutto.filter(v => {
+    if ((v.mio || 0) < DORMIRE.votoMinimo) return false;
+    return !(v.generiId || []).some(g => sveglia.has(String(g)));
+  });
+  const punteggio = v =>
+    (v.generiId || []).filter(g => calmano.has(String(g))).length;
+  return buoni.slice().sort((a, b) => punteggio(b) - punteggio(a));
 }
 
 // Il pescato: locandina, dati, e i pulsanti per aprirlo sulla TV
@@ -2539,32 +2622,8 @@ function pulsanteLancio(i, d) {
           scriviConScorciatoia(tastiera + " " + d.titolo);
           return;
         }
-        const p = await provaPonte();
-        b.querySelector(".etichetta").innerHTML = esc(i.nome) + " è aperta<small>" +
-          (p ? "Apri la ricerca nell'app, poi scrivi il titolo qui sotto"
-             : "Ora cerca «" + esc(d.titolo) + "»") + "</small>";
-        // Il ponte locale c'e': posso scrivere il titolo io, invece
-        // di farglielo battere col telecomando.
-        if (p && !b.parentElement.querySelector(".scriviTitolo")) {
-          const sb = el("button", "apri scriviTitolo");
-          sb.innerHTML = '<span class="logo"></span><span class="etichetta">Scrivi «' +
-            esc(d.titolo) + '» sulla TV<small>Prima metti a fuoco il campo di ricerca</small></span>';
-          sb.onclick = async () => {
-            sb.disabled = true;
-            const et = sb.querySelector(".etichetta");
-            et.innerHTML = "Scrivo…";
-            try {
-              await scriviSullaTv(d.titolo);
-              sb.className = "apri fatto scriviTitolo";
-              et.innerHTML = "Scritto<small>Se sulla TV non si vede, il campo non era a fuoco</small>";
-            } catch (e) {
-              sb.className = "apri male scriviTitolo";
-              et.innerHTML = esc(e.message) + "<small>Tocca per riprovare</small>";
-            }
-            sb.disabled = false;
-          };
-          b.after(sb);
-        }
+        b.querySelector(".etichetta").innerHTML = esc(i.nome) +
+          " è aperta<small>Ora cerca «" + esc(d.titolo) + "»</small>";
       } else {
         b.className = "apri male";
         b.disabled = false;
@@ -3369,48 +3428,12 @@ function schermoTelecomando() {
   const zonaTastiera = el("div", "tastiera");
   corpoTel.appendChild(zonaTastiera);
 
-  (async () => {
-    const p = await provaPonte();
-    if (!p) {
-      // Se c'e' la Scorciatoia, il telefono stesso fa da ponte e la
-      // tastiera funziona senza nessun computer.
-      if (chiavi.scorciatoia) {
-        const riga = el("div", "campo2");
-        const campo = el("input");
-        campo.type = "text";
-        campo.placeholder = "Testo da scrivere sulla TV";
-        campo.autocomplete = "off";
-        campo.enterKeyHint = "send";
-        const manda = el("button", "manda", "Invia");
-        const invia = () => {
-          if (!campo.value.trim()) return campo.focus();
-          scriviConScorciatoia(campo.value);
-        };
-        manda.onclick = invia;
-        campo.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); invia(); } };
-        riga.appendChild(campo);
-        riga.appendChild(manda);
-        zonaTastiera.appendChild(riga);
-        zonaTastiera.appendChild(el("div", "avvisoPonte",
-          "Passa dalla Scorciatoia «" + esc(chiavi.scorciatoia) + "», " +
-          "quindi funziona solo in casa. Metti a fuoco il campo di ricerca " +
-          "sulla TV prima di inviare."));
-        return;
-      }
-      zonaTastiera.appendChild(el("div", "avvisoPonte",
-        "Non disponibile da qui. SmartThings non ha nessun comando per il testo, " +
-        "e una pagina https non può parlare con la TV in rete locale. Servono " +
-        "una Scorciatoia iOS (si configura in Opzioni) oppure un computer in casa."));
-      return;
-    }
-    if (!p.token) {
-      zonaTastiera.appendChild(el("div", "avvisoPonte",
-        "Manca la prima autorizzazione. Una volta sola, dal Mac:<br>" +
-        "<code>venv/bin/python3 tastiera.py collega</code><br>" +
-        "poi accetta il popup che compare sulla TV."));
-      return;
-    }
-
+  // Il testo passa SOLO dalla Scorciatoia iOS: SmartThings non ha
+  // nessun comando per il testo, e una pagina https non puo' aprire un
+  // WebSocket verso la TV (il suo certificato vale solo per se
+  // stessa). Il ponte via server locale c'era e non c'e' piu': faceva
+  // le stesse cose e andava tenuto allineato a mano.
+  if (chiavi.scorciatoia) {
     const riga = el("div", "campo2");
     const campo = el("input");
     campo.type = "text";
@@ -3418,43 +3441,25 @@ function schermoTelecomando() {
     campo.autocomplete = "off";
     campo.enterKeyHint = "send";
     const manda = el("button", "manda", "Invia");
-    riga.appendChild(campo);
-    riga.appendChild(manda);
-    zonaTastiera.appendChild(riga);
-
-    const esito = el("div", "avvisoPonte");
-    esito.innerHTML = "Metti a fuoco il campo di ricerca sulla TV, poi invia. " +
-      "Se non c'è un campo a fuoco la TV ignora il testo senza dirlo.";
-    zonaTastiera.appendChild(esito);
-
-    const invia = async () => {
-      const testo = campo.value;
-      if (!testo.trim()) return campo.focus();
-      manda.disabled = true;
-      manda.textContent = "…";
-      try {
-        await scriviSullaTv(testo);
-        esito.textContent = 'Scritto: «' + testo + '»';
-      } catch (e) { esito.textContent = e.message; }
-      manda.disabled = false;
-      manda.textContent = "Invia";
+    const invia = () => {
+      if (!campo.value.trim()) return campo.focus();
+      scriviConScorciatoia(campo.value);
     };
     manda.onclick = invia;
     campo.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); invia(); } };
+    riga.appendChild(campo);
+    riga.appendChild(manda);
+    zonaTastiera.appendChild(riga);
+    zonaTastiera.appendChild(el("div", "avvisoPonte",
+      "Passa dalla Scorciatoia «" + esc(chiavi.scorciatoia) + "», " +
+      "quindi funziona solo in casa. Metti a fuoco il campo di ricerca " +
+      "sulla TV prima di inviare."));
+  } else {
+    zonaTastiera.appendChild(el("div", "avvisoPonte",
+      "Non disponibile da qui. Serve una Scorciatoia iOS: si configura " +
+      "in Opzioni, e da lì il telefono stesso fa da ponte verso la TV."));
+  }
 
-    // Cifre e Invio: il WebSocket locale le ha, il cloud no.
-    const cifre = el("div", "cifre");
-    ["1","2","3","4","5","6","7","8","9","0"].forEach(c => {
-      const b = el("button", "tasto", "<span>" + c + "</span>");
-      b.onclick = async () => {
-        b.classList.add("acceso");
-        setTimeout(() => b.classList.remove("acceso"), 160);
-        try { await tastoLocale("KEY_" + c); } catch (e) { esito.textContent = e.message; }
-      };
-      cifre.appendChild(b);
-    });
-    zonaTastiera.appendChild(cifre);
-  })();
 
   corpoTel.appendChild(el("p", "sezione", "Accensione"));
   const accensione = el("div", "fila");
