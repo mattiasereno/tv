@@ -444,6 +444,13 @@ def digita_in_app(testo, app=None, azzera=0, passo=None):
     return tasti, saltati
 
 
+# I comandi che questa copia conosce. Serve a rifiutare un "--"
+# sconosciuto invece di DIGITARLO sulla TV: e' successo con --ascolta
+# su una copia vecchia del telefono, che non avendolo fra i comandi
+# l'ha scritto nel campo di ricerca come se fosse un titolo.
+COMANDI = ("--cerca", "--tasto", "--digita", "--percorso",
+           "--taratura", "--ascolta", "--testo")
+
 PROTOCOLLO = """  MISURARE LA TASTIERA DI UN'APP CHE NON CONOSCO
 
   Non serve una foto: si fa scrivere all'app la propria tastiera
@@ -610,10 +617,26 @@ def main():
             if saltati:
                 print("  fuori tastiera, saltati: " + "".join(saltati))
             return
+        if sys.argv[1].startswith("-") and sys.argv[1] not in COMANDI:
+            raise ConnectionError(
+                f'"{sys.argv[1]}" non e\' un comando che conosco, e non lo\n'
+                "  scrivo sulla TV per sicurezza: un comando digitato per\n"
+                "  sbaglio nel campo di ricerca non si vede arrivare.\n"
+                "  Questa copia conosce: " + " ".join(COMANDI) + "\n"
+                "  Se quel comando dovrebbe esistere, la copia che hai e'\n"
+                "  vecchia. Riscaricala:\n"
+                "     curl -O https://mattiasereno.github.io/tv/"
+                + os.path.basename(__file__) + "\n"
+                "     curl -O https://mattiasereno.github.io/tv/tastiere.py\n"
+                "  Per scrivere davvero un testo che comincia per meno:\n"
+                f'     python3 {os.path.basename(__file__)} --testo '
+                f'"{sys.argv[1]}"')
         if sys.argv[1] == "--tasto":
             tasto(sys.argv[2])
             print(f"  mandato {sys.argv[2]}")
         else:
+            if sys.argv[1] == "--testo":
+                del sys.argv[1]
             testo = " ".join(sys.argv[1:])
             eventi = scrivi(testo)
             print(f'  mandato "{testo}"')
