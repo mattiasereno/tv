@@ -4,6 +4,7 @@ Scrive testo sulla TV usando SOLO la libreria standard di Python.
 
     python3 scrivi_telefono.py "the bear"
     python3 scrivi_telefono.py --tasto KEY_HOME
+    python3 scrivi_telefono.py --ascolta                che tastiera ha
     python3 scrivi_telefono.py --digita "the bear"      dentro l'app
     python3 scrivi_telefono.py --percorso "the bear"    solo i tasti
 
@@ -449,11 +450,12 @@ PROTOCOLLO = """  MISURARE LA TASTIERA DI UN'APP CHE NON CONOSCO
   dentro il suo campo di ricerca, e tu la leggi dalla TV.
 
   PRIMA DI TUTTO, la domanda che conta: quell'app usa la tastiera
-  della TV o una sua? Apri la ricerca dell'app, mettiti nel campo, e:
-       python3 scrivi_telefono.py "prova"
-  Se dice che l'inserimento e' arrivato, hai finito: quell'app non ha
-  bisogno di nessuna macro, il testo si scrive diretto.
-  Se non segnala nessuna tastiera aperta, ha una tastiera sua, e
+  della TV o una sua? Si scopre SENZA mandare niente:
+       python3 scrivi_telefono.py --ascolta
+  poi apri la ricerca dell'app e mettiti nel campo. Se l'app usa
+  l'IME di Tizen la TV annuncia imeStart da sola, e allora hai
+  finito: il testo si scrive diretto, nessuna macro.
+  Se in ascolto non arriva niente, l'app ha una tastiera sua, e
   allora si misura cosi', col cursore su una lettera:
 
     1.  --taratura angolo         va nell'angolo in alto a sinistra e
@@ -503,6 +505,37 @@ def main():
             else:
                 print("  La TV non ha risposto niente: la ricerca non si e' aperta.")
                 print(f"  La strada e' {STRADA_RICERCA}, si cambia con TV_STRADA.")
+            return
+        if sys.argv[1] == "--ascolta":
+            secondi = float(sys.argv[2]) if len(sys.argv) > 2 else 25.0
+            print(f"  in ascolto per {secondi:.0f} secondi, senza mandare")
+            print("  niente. Adesso apri la ricerca dell'app sulla TV e")
+            print("  mettiti nel campo di testo.")
+            # Non manda nessun comando: se l'app usa l'IME di Tizen, la
+            # TV annuncia imeStart da sola appena il campo va a fuoco.
+            # Cosi' si sa che tastiera ha un'app senza toccare lo
+            # schermo, che e' l'unico modo di saperlo senza rischi.
+            eventi = manda([], ascolta=secondi)
+            if not eventi:
+                print("\n  La TV non ha detto niente in tutto quel tempo.")
+                print("  Vuol dire che l'app ha una tastiera SUA: il testo")
+                print("  non si puo' iniettare, e serve la taratura.")
+                print("     python3 scrivi_telefono.py --taratura")
+                return
+            print()
+            for e in eventi:
+                nome = e.get("event") or "?"
+                dati = e.get("data")
+                print(f"  {nome}" + (f"   {dati}" if dati else ""))
+            nomi = " ".join(e.get("event") or "" for e in eventi)
+            if "ime" in nomi.lower():
+                print("\n  C'E' UN IME DI TIZEN: questa app usa la tastiera")
+                print("  della TV, quindi il testo si scrive DIRETTO e non")
+                print("  serve nessuna macro:")
+                print('     python3 scrivi_telefono.py "the bear"')
+            else:
+                print("\n  Eventi si', ma nessuno di tastiera: l'app ha una")
+                print("  tastiera sua. Serve la taratura.")
             return
         if sys.argv[1] == "--taratura":
             tastiere = carica_tastiere()
