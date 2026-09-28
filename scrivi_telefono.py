@@ -4,6 +4,7 @@ Scrive testo sulla TV usando SOLO la libreria standard di Python.
 
     python3 scrivi_telefono.py "the bear"
     python3 scrivi_telefono.py --tasto KEY_HOME
+    python3 scrivi_telefono.py --token                  il token della TV
     python3 scrivi_telefono.py --ascolta                che tastiera ha
     python3 scrivi_telefono.py --digita "the bear"      dentro l'app
     python3 scrivi_telefono.py --apri "the bear"        strada + scrittura
@@ -180,6 +181,8 @@ def manda(comandi, ascolta=0.0, scadenza=None, eco=False):
                         continue
                     s.sendall(inquadra(json.dumps(c).encode()))
                 nuovo = str(benvenuto.get("data", {}).get("token") or "")
+                global ULTIMO_TOKEN
+                ULTIMO_TOKEN = nuovo
                 if nuovo and nuovo != token:
                     salva_token(nuovo)
                 if ascolta <= 0:
@@ -422,6 +425,20 @@ PASSO = float(os.environ.get("TV_PASSO", "0.15"))
 # Quanto aspettare che la tastiera COMPAIA dopo aver aperto la
 # ricerca. Diverso dal passo: qui c'e' una schermata da disegnare.
 ATTESA_TASTIERA = float(os.environ.get("TV_TASTIERA", "3"))
+# La pausa fra i tasti di NAVIGAZIONE (i BACK della normalizzazione, i
+# passi sulla barra). Separata dal passo di scrittura, e non piu'
+# ricavata da quello: erano legate come PASSO*4, e abbassando il passo
+# di scrittura da 0,3 a 0,15 la navigazione e' passata da 1,2s a 0,6s
+# senza che fosse una decisione. Cambiare schermata dentro un'app
+# costa piu' che spostarsi di una casella sulla tastiera, e le due
+# cose non hanno motivo di muoversi insieme.
+PASSO_NAVIGA = float(os.environ.get("TV_NAVIGA", "1.2"))
+
+# Il token che la TV ha consegnato nell'ultimo collegamento. Serve a
+# --token per poterlo DIRE: sul telefono non c'e' nessun file dove
+# salvarlo, quindi l'unico modo di conservarlo e' che una persona lo
+# legga e lo metta nelle Opzioni dell'app.
+ULTIMO_TOKEN = ""
 APP = os.environ.get("TV_APP", "netflix")
 
 
@@ -573,7 +590,7 @@ def digita_in_app(testo, app=None, azzera=0, passo=None):
 # l'ha scritto nel campo di ricerca come se fosse un titolo.
 COMANDI = ("--cerca", "--tasto", "--tasti", "--digita",
            "--percorso", "--apri", "--taratura", "--ascolta",
-           "--testo")
+           "--token", "--testo")
 
 PROTOCOLLO = """  MISURARE LA TASTIERA DI UN'APP CHE NON CONOSCO
 
@@ -618,14 +635,28 @@ def spiega_rete(e):
     ConnectionError) o come altri OSError, e dare la spiegazione solo
     a uno dei due lasciava l'altro con "[Errno 61] Connection
     refused" e nient'altro."""
+    rifiutata = isinstance(e, ConnectionRefusedError)
     print(f"  Non completo il collegamento a {TV}:{PORTA} "
           f"({e.__class__.__name__}).")
     print()
-    print("  Tre cause possibili, in ordine di probabilita':")
+    # Rifiutata e senza risposta sono due cose diverse, e dire le
+    # stesse cause per entrambe manda a cercare nel posto sbagliato:
+    # e' costato mezz'ora a cercare un problema di token mentre la TV
+    # era semplicemente in standby.
+    if rifiutata:
+        print("  RIFIUTATA vuol dire che qualcuno ha risposto «no»: la TV")
+        print("  e' in rete ma i suoi servizi sono spenti. Succede quando")
+        print("  la TV e' in STANDBY - la rete resta viva per SmartThings,")
+        print("  il resto no.")
+        print("  Accendi la TV e riprova. Se e' accesa, l'indirizzo e' di")
+        print("  qualcos'altro:")
+        print(f'       TV_IP=192.168.0.x python3 {mio_nome()} "the bear"')
+        return
+    print("  NESSUNA RISPOSTA (non un rifiuto), e le cause sono altre:")
     print("  1. GUARDA LA TV: con un token non valido la TV non")
     print("     rifiuta, mostra il popup di autorizzazione e aspetta.")
     print("     Se c'e', accettalo. Se non lo accetti, e' questo timeout.")
-    print("  2. Non sei sulla rete di casa, o la TV e' spenta.")
+    print("  2. Non sei sulla rete di casa.")
     print("  3. L'indirizzo e' cambiato. In quel caso:")
     print(f'       TV_IP=192.168.0.x python3 {mio_nome()} "the bear"')
 
@@ -656,6 +687,37 @@ def main():
             else:
                 print("  La TV non ha risposto niente: la ricerca non si e' aperta.")
                 print(f"  La strada e' {STRADA_RICERCA}, si cambia con TV_STRADA.")
+            return
+        if sys.argv[1] == "--token":
+            # Il token e' legato al NOME con cui ci si presenta: due
+            # dispositivi con lo stesso nome si rubano il permesso a
+            # vicenda, e il sintomo e' "me lo chiede ogni volta".
+            # Percio' il telefono conviene che abbia un nome suo.
+            usato = re.sub(r"\D", "", os.environ.get("TV_TOKEN", "")) \
+                or leggi_token()
+            print(f"  mi presento alla TV come «{NOME}»")
+            print(f"  col token {'che hai passato' if usato else 'NESSUNO'}"
+                  + (f" ({len(usato)} cifre)" if usato else ""))
+            print("  Se la TV chiede il permesso, ACCETTALO adesso.")
+            manda([], ascolta=1.0)
+            print()
+            if not ULTIMO_TOKEN:
+                print("  La TV non ha consegnato nessun token.")
+                print("  Succede quando il collegamento non arriva a")
+                print("  completarsi: guarda se c'e' un popup da accettare.")
+                return
+            if ULTIMO_TOKEN == usato:
+                print(f"  TOKEN: {ULTIMO_TOKEN}")
+                print("  E' lo stesso che stavi usando: la TV ti conosce e")
+                print("  non dovrebbe chiedere piu' niente con questo nome.")
+            else:
+                print(f"  TOKEN NUOVO: {ULTIMO_TOKEN}")
+                print("  Diverso da quello che stavi usando, ed e' questo il")
+                print("  motivo per cui la TV chiedeva il permesso ogni volta.")
+            print()
+            print("  Mettilo nell'app: Opzioni -> Token della TV, salva,")
+            print("  poi ricopia il comando (contiene il token) e reincollalo")
+            print("  nella Scorciatoia.")
             return
         if sys.argv[1] == "--tasti":
             # Sonde corte scritte a mano, per misurare una tastiera un
@@ -835,7 +897,7 @@ def main():
             for t in normalizza + strada:
                 seq.append(cmd_tasto(TASTI_VERI.get(
                     t, t if t.startswith("KEY_") else "KEY_" + t)))
-                seq.append(("pausa", PASSO * 4))   # la navigazione e' lenta
+                seq.append(("pausa", PASSO_NAVIGA))
             seq.append(("pausa", ATTESA_TASTIERA))
             for t in tasti:
                 seq.append(cmd_tasto(TASTI_VERI[t]))

@@ -248,10 +248,16 @@ def percorso_largo(griglia, da, ch, bordi="fermano"):
     riga_larga = dove[ch][0]
     a, b = campata(griglia, riga_larga, dove[ch][1])
     colonna = (a + b) // 2
-    if da[0] == riga_larga:
-        raise ValueError("dalla riga dei tasti larghi non si naviga di "
-                         "lato: prima si scende")
     passi, pos = [], da
+    if pos[0] == riga_larga:
+        # Si arriva qui con due tasti larghi di fila: "Amori &
+        # incantesimi" ha due spazi vicini, perche' la & non e' sulla
+        # tastiera e viene saltata. Dopo il primo spazio il cursore e'
+        # sulla riga larga, e di lato non ci si muove - quindi si
+        # scende, e da sotto si risale come sempre. Prima questo caso
+        # era un errore, e un titolo vero l'ha trovato subito.
+        passi.append("DOWN")
+        pos = muovi(griglia, pos, "DOWN", bordi)
     # orizzontale PRIMA, sulla riga delle lettere dove contare e' sicuro
     for _ in range(len(griglia[da[0]]) + 1):
         if pos[1] == colonna:
@@ -294,6 +300,25 @@ def digita(testo, app="netflix", azzera=0):
     pos = tuple(d["partenza"])
     tasti, saltati = [], []
 
+    # Prima si toglie quello che non si puo' scrivere, POI si
+    # accorpano gli spazi rimasti. Senza questo, "Amori & incantesimi"
+    # diventava "amori  incantesimi" con due spazi: due pressioni
+    # sprecate e una ricerca meno pulita. I caratteri togliti si
+    # dichiarano comunque, in `saltati`.
+    pulito = []
+    for ch in testo.lower():
+        if ch in dove and ch != CANCELLA:
+            if ch == SPAZIO and (not pulito or pulito[-1] == SPAZIO):
+                continue                # niente spazi doppi ne' in testa
+            pulito.append(ch)
+        else:
+            saltati.append(ch)
+            if pulito and pulito[-1] != SPAZIO:
+                pulito.append(SPAZIO)   # un buco resta un buco
+    while pulito and pulito[-1] == SPAZIO:
+        pulito.pop()                    # niente spazio in coda
+    testo = "".join(pulito)
+
     def vai(carattere):
         """I passi fino a un carattere, per la via giusta secondo che
         sia un tasto largo o una lettera."""
@@ -307,10 +332,7 @@ def digita(testo, app="netflix", azzera=0):
         passi, pos = vai(CANCELLA)
         tasti += passi + ["OK"] * azzera
 
-    for ch in testo.lower():
-        if ch not in dove or ch == CANCELLA:
-            saltati.append(ch)
-            continue
+    for ch in testo:
         passi, pos = vai(ch)
         tasti += passi + ["OK"]
 
