@@ -808,7 +808,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20260928111052";
+const VERSIONE = "20260928121713";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -838,6 +838,12 @@ const chiavi = {
     } catch (e) { return SERVIZI_PREDEFINITI.slice(); }
   },
   set servizi(a) { localStorage.setItem("servizi", JSON.stringify(a.map(String))); },
+
+  // Il nome della Scorciatoia iOS che scrive sulla TV. Vuoto = non
+  // ce l'hai, e il pulsante non compare: meglio niente che un
+  // pulsante che apre Scorciatoie e dice "non trovata".
+  get scorciatoia() { return localStorage.getItem("scorciatoia") || ""; },
+  set scorciatoia(v) { localStorage.setItem("scorciatoia", (v || "").trim()); },
 };
 
 // I provider italiani: nome e logo per ogni id. Vengono da TMDB una
@@ -1197,6 +1203,26 @@ async function rinnovaSeServe(forza = false) {
       .finally(() => { rinnovoInCorso = null; });
   }
   return rinnovoInCorso;
+}
+
+// Scrivere sulla TV: il browser non puo' (pagina https, e il
+// certificato della TV vale solo per 127.0.0.1), ma una Scorciatoia
+// iOS puo', perche' e' nativa. Quindi l'app non scrive: passa il
+// testo alla Scorciatoia, che chiama a-Shell, che apre il WebSocket.
+//
+// Funziona solo in casa: e' un indirizzo di rete locale.
+function urlScorciatoia(nome, testo) {
+  // Le virgolette romperebbero il comando dentro a-Shell, e i
+  // caratteri di controllo non servono a niente.
+  const pulito = String(testo).replace(/["\\]/g, "").replace(/[\u0000-\u001f]/g, " ").trim();
+  return "shortcuts://run-shortcut?name=" + encodeURIComponent(nome) +
+         "&input=text&text=" + encodeURIComponent(pulito);
+}
+
+function scriviConScorciatoia(testo) {
+  if (!chiavi.scorciatoia) return false;
+  location.href = urlScorciatoia(chiavi.scorciatoia, testo);
+  return true;
 }
 
 const schermo = document.getElementById("schermo");
@@ -2552,6 +2578,18 @@ async function schermoDettaglio(tipo, id, torna) {
 
   d.compresi.filter(i => i.app).forEach(i => pad.appendChild(pulsanteLancio(i, d)));
 
+  // Scrivere il titolo sulla TV passando per la Scorciatoia iOS.
+  // Compare solo se hai detto in Opzioni di averla: un pulsante che
+  // apre Scorciatoie per dire "non trovata" non aiuta nessuno.
+  if (chiavi.scorciatoia) {
+    const sb = el("button", "apri");
+    sb.innerHTML = '<span class="logo"></span><span class="etichetta">Cerca «' +
+      esc(d.titolo) + '» sulla TV<small>Apre la ricerca della TV e scrive il ' +
+      "titolo. Poi scegli il risultato con la croce in Comandi.</small></span>";
+    sb.onclick = () => scriviConScorciatoia(d.titolo);
+    pad.appendChild(sb);
+  }
+
   const senza = d.compresi.filter(i => !i.app).map(i => i.nome);
   if (senza.length)
     pad.appendChild(el("p", "nota", senza.join(" e ") + ": apri col telecomando, non so lanciarla."));
@@ -3237,11 +3275,35 @@ function schermoTelecomando() {
   (async () => {
     const p = await provaPonte();
     if (!p) {
+      // Se c'e' la Scorciatoia, il telefono stesso fa da ponte e la
+      // tastiera funziona senza nessun computer.
+      if (chiavi.scorciatoia) {
+        const riga = el("div", "campo2");
+        const campo = el("input");
+        campo.type = "text";
+        campo.placeholder = "Testo da scrivere sulla TV";
+        campo.autocomplete = "off";
+        campo.enterKeyHint = "send";
+        const manda = el("button", "manda", "Invia");
+        const invia = () => {
+          if (!campo.value.trim()) return campo.focus();
+          scriviConScorciatoia(campo.value);
+        };
+        manda.onclick = invia;
+        campo.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); invia(); } };
+        riga.appendChild(campo);
+        riga.appendChild(manda);
+        zonaTastiera.appendChild(riga);
+        zonaTastiera.appendChild(el("div", "avvisoPonte",
+          "Passa dalla Scorciatoia «" + esc(chiavi.scorciatoia) + "», " +
+          "quindi funziona solo in casa. Metti a fuoco il campo di ricerca " +
+          "sulla TV prima di inviare."));
+        return;
+      }
       zonaTastiera.appendChild(el("div", "avvisoPonte",
-        "Non disponibile da qui. SmartThings non ha nessun comando per il testo: " +
-        "le lettere passano solo dal collegamento diretto alla TV, che richiede un " +
-        "computer sulla rete di casa a fare da ponte. Tutto il resto del telecomando " +
-        "funziona dal cloud, anche fuori casa."));
+        "Non disponibile da qui. SmartThings non ha nessun comando per il testo, " +
+        "e una pagina https non può parlare con la TV in rete locale. Servono " +
+        "una Scorciatoia iOS (si configura in Opzioni) oppure un computer in casa."));
       return;
     }
     if (!p.token) {
@@ -3670,6 +3732,31 @@ function schermoImpostazioni() {
   pad.appendChild(salva);
   pad.appendChild(esito);
 
+  pad.appendChild(el("p", "sezione", "Scrivere sulla TV"));
+  const spiegaSc = el("div", "gusto");
+  spiegaSc.innerHTML =
+    "Una pagina web non può parlare con la TV in rete locale, ma una " +
+    "<b>Scorciatoia</b> di iOS sì. Se ne hai creata una che apre la ricerca " +
+    "della TV, mettine qui il nome esatto e comparirà il pulsante " +
+    "<b>«Cerca sulla TV»</b> nelle schede.<br>Lascia vuoto se non ce l'hai.";
+  pad.appendChild(spiegaSc);
+
+  const campoSc = el("div", "campo");
+  campoSc.innerHTML =
+    '<label for="sc">Nome della Scorciatoia</label>' +
+    '<textarea id="sc" rows="1" autocapitalize="off" autocomplete="off" spellcheck="false"></textarea>';
+  pad.appendChild(campoSc);
+  document.getElementById("sc").value = chiavi.scorciatoia;
+
+  const salvaSc = el("button", "svuota", "Salva il nome");
+  salvaSc.style.cssText = "width:100%;margin:4px 0 0";
+  salvaSc.onclick = () => {
+    chiavi.scorciatoia = document.getElementById("sc").value;
+    salvaSc.textContent = chiavi.scorciatoia ? "Salvato" : "Tolto";
+    setTimeout(() => { salvaSc.textContent = "Salva il nome"; }, 1600);
+  };
+  pad.appendChild(salvaSc);
+
   bloccoDiagnosi(pad);
 }
 
@@ -3700,6 +3787,8 @@ function bloccoDiagnosi(pad) {
   riga("Da guardare", String(lista.tutto.length));
   riga("Titoli votati", String(visti.tutto.length));
   riga("Servizi noti", String(Object.keys(PROVIDER).length));
+  riga("Scorciatoia per scrivere", chiavi.scorciatoia || "non impostata",
+       !!chiavi.scorciatoia);
   riga("Rete", navigator.onLine === false ? "assente" : "presente",
        navigator.onLine !== false);
   riga("Funziona offline", (navigator.serviceWorker && navigator.serviceWorker.controller)
