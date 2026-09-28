@@ -726,6 +726,34 @@ const SOTTOGENERI = [
   { n: "Dinosauri", k: "12616" },       { n: "Natale", k: "207317" },
 ];
 
+// tvChannelName restituisce il NOME PACCHETTO, mentre MAPPA contiene
+// l'id per LANCIARE - che per cinque app e' numerico. Quindi servono
+// due tabelle diverse: questa e' per leggere, MAPPA per scrivere.
+// Raccolti osservando la TV vera.
+const NOMI_PACCHETTO = {
+  "org.tizen.netflix-app": "Netflix",
+  "org.tizen.primevideo": "Prime Video",
+  "MCmYXNxgcu.DisneyPlus": "Disney+",
+  "jcz0WrZYdy.NOWTV": "NOW",
+  "5b8c3eb16b.BeamCTVDev": "HBO Max",
+  "g3zzYA7yO8.InfinityNew": "Mediaset Infinity",
+  "9Ur5IzDKqV.TizenYouTube": "YouTube",
+  "org.tizen.browser": "Browser",
+};
+
+// Per le app che non conosco, un nome leggibile invece della stringa
+// grezza: org.tizen.qualcosa-app -> Qualcosa, xYz123.NomeApp -> NomeApp
+function nomeApp(pacchetto) {
+  if (!pacchetto) return "";
+  if (NOMI_PACCHETTO[pacchetto]) return NOMI_PACCHETTO[pacchetto];
+  const perMappa = Object.values(MAPPA).find(m => m.app === pacchetto);
+  if (perMappa && perMappa.nome) return perMappa.nome;
+  let n = String(pacchetto);
+  n = n.replace(/^org\.tizen\./, "").replace(/^[A-Za-z0-9]{8,}\./, "");
+  n = n.replace(/-app$/, "").replace(/[-_.]+/g, " ").trim();
+  return n ? n.charAt(0).toUpperCase() + n.slice(1) : pacchetto;
+}
+
 // App che hanno un id verificato sulla TV ma non sono "provider" per
 // TMDB, quindi non comparirebbero mai da nessuna parte nell'app.
 // Gli id vengono da app_trovate.json del repo.
@@ -780,7 +808,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "202609280945";
+const VERSIONE = "202609281000";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -1298,24 +1326,49 @@ async function impostaModo(capacita, comando, attributo, voce) {
   return adesso;
 }
 
-async function appInPrimoPiano() {
+// La TV non riporta subito l'app in primo piano: il valore puo'
+// restare vecchio per un po', e su quel valore si basa la verifica dei
+// lanci. La capability refresh le chiede di riportare il suo stato.
+async function chiediAggiornamento() {
+  try { await comando("refresh", "refresh"); } catch (e) { /* non e' fatale */ }
+}
+
+async function appInPrimoPiano(fresco = false) {
+  if (fresco) {
+    await chiediAggiornamento();
+    await new Promise(r => setTimeout(r, 900));
+  }
   const stato = await smartthings("/devices/" + await trovaTv() + "/status");
   return (((stato.components || {}).main || {}).tvChannel || {}).tvChannelName?.value || "";
 }
 
 // COMPLETED vuol dire "comando recapitato", non "app aperta": la
 // prova e' rileggere l'app in primo piano. Per questo verifichiamo.
-async function lancia(appId) {
+async function lancia(appId, nomeAtteso) {
   const ident = await trovaTv();
   const prima = await appInPrimoPiano().catch(() => "");
+
+  // Se e' GIA' aperta il valore non cambiera' mai, e la verifica
+  // fallirebbe per forza. Confronto per NOME e non per id, perche'
+  // l'id per lanciare e' numerico per cinque app mentre la TV riporta
+  // sempre il nome pacchetto.
+  const giaAperta = !!(nomeAtteso && nomeApp(prima) === nomeAtteso);
+
   await smartthings("/devices/" + ident + "/commands", {
     commands: [{ component: "main", capability: "custom.launchapp",
                  command: "launchApp", arguments: [appId] }],
   });
+  if (giaAperta) return true;
+
   for (let i = 0; i < 5; i++) {
-    await new Promise(r => setTimeout(r, 2400));
-    const adesso = await appInPrimoPiano().catch(() => "");
-    if (adesso === appId || (adesso && adesso !== prima)) return true;
+    await new Promise(r => setTimeout(r, 1800));
+    // Letture fresche: senza refresh la TV puo' riportare per un po'
+    // l'app precedente, e un lancio riuscito sembra fallito. E'
+    // successo davvero: NOW aperta e stato fermo su Netflix.
+    const adesso = await appInPrimoPiano(true).catch(() => "");
+    if (adesso === appId) return true;
+    if (nomeAtteso && nomeApp(adesso) === nomeAtteso) return true;
+    if (adesso && adesso !== prima) return true;
   }
   return false;
 }
@@ -2310,7 +2363,7 @@ function pulsanteLancio(i, d) {
     b.disabled = true;
     b.querySelector(".etichetta").innerHTML = "Apro " + esc(i.nome) + "…<small>Controllo che si apra davvero</small>";
     try {
-      if (await lancia(i.app)) {
+      if (await lancia(i.app, i.nome)) {
         b.className = "apri fatto";
         const p = await provaPonte();
         b.querySelector(".etichetta").innerHTML = esc(i.nome) + " è aperta<small>" +
@@ -2342,7 +2395,8 @@ function pulsanteLancio(i, d) {
         b.className = "apri male";
         b.disabled = false;
         b.querySelector(".etichetta").innerHTML =
-          "La TV non ha aperto l'app<small>È accesa? Tocca per riprovare</small>";
+          "Non riesco a confermarlo<small>Il comando è partito ma la TV "
+          + "non ha riportato il cambio: guarda lo schermo.</small>";
       }
     } catch (e) {
       b.className = "apri male";
@@ -3069,14 +3123,14 @@ function schermoTelecomando() {
       const prima = etichetta.textContent;
       etichetta.textContent = "Apro…";
       try {
-        if (await lancia(x.app)) {
+        if (await lancia(x.app, x.nome)) {
           b.classList.add("acceso");
           etichetta.textContent = "Aperta";
           setTimeout(() => { b.classList.remove("acceso"); etichetta.textContent = prima; }, 2500);
           aggiorna();
         } else {
           etichetta.textContent = prima;
-          lamenta("La TV non ha aperto " + x.nome + ".");
+          lamenta("Comando partito, ma la TV non ha confermato. Guarda lo schermo.");
         }
       } catch (e) { etichetta.textContent = prima; lamenta(e.message); }
       b.disabled = false;
@@ -3207,9 +3261,7 @@ function schermoTelecomando() {
     try {
       const st = await statoTv();
       barra.querySelector(".pallina").className = "pallina " + (st.accesa ? "viva" : "");
-      const nome = st.app
-        ? (Object.values(MAPPA).find(m => m.app === st.app) || {}).nome || st.app
-        : "";
+      const nome = nomeApp(st.app);
       barra.querySelector(".quale").textContent = st.accesa
         ? (nome ? "Accesa · " + nome : "Accesa")
         : "Spenta";
