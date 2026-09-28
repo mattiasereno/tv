@@ -6,6 +6,7 @@ Scrive testo sulla TV usando SOLO la libreria standard di Python.
     python3 scrivi_telefono.py --tasto KEY_HOME
     python3 scrivi_telefono.py --ascolta                che tastiera ha
     python3 scrivi_telefono.py --digita "the bear"      dentro l'app
+    python3 scrivi_telefono.py --apri "the bear"        strada + scrittura
     python3 scrivi_telefono.py --percorso "the bear"    solo i tasti
 
 Perche' esiste: il testo sulla TV passa solo da un WebSocket con la
@@ -36,6 +37,7 @@ import re
 import socket
 import struct
 import sys
+import time
 
 TV = os.environ.get("TV_IP", "192.168.0.84")
 # 8002 con TLS, e la verifica del certificato disattivata: quello
@@ -114,7 +116,7 @@ class Lettore:
         return opcode, carico
 
 
-def manda(comandi, ascolta=0.0):
+def manda(comandi, ascolta=0.0, scadenza=None, eco=False):
     """Manda uno o piu' comandi. Con ascolta>0 resta in ascolto per
     quel tempo e restituisce gli eventi che la TV manda: e' l'unico
     modo di sapere qualcosa invece di indovinare."""
@@ -169,7 +171,6 @@ def manda(comandi, ascolta=0.0):
                 continue
             benvenuto = json.loads(carico.decode() or "{}")
             if benvenuto.get("event") == "ms.channel.connect":
-                import time
                 for c in comandi:
                     # una voce puo' essere ("pausa", secondi): la TV ha
                     # bisogno di tempo fra un tasto e il successivo, e
@@ -185,17 +186,40 @@ def manda(comandi, ascolta=0.0):
                     return []
                 # Ascolto: quello che la TV dice vale piu' di quello
                 # che posso supporre io.
+                #
+                # `ascolta` e' quanto SILENZIO aspettare prima di
+                # smettere: va bene per un ascolto breve dopo un
+                # comando. `scadenza` invece e' un tempo TOTALE, e
+                # serve a stare in ascolto a lungo senza dover
+                # indovinare quando succedera' qualcosa. Con `eco` gli
+                # eventi si vedono mentre arrivano, invece che tutti
+                # alla fine.
                 eventi = []
-                s.settimeout(ascolta)
+                fine = None if scadenza is None else time.time() + scadenza
+                s.settimeout(min(2.0, ascolta) if fine else ascolta)
                 try:
                     while True:
-                        op, car = lettore.frame()
+                        if fine and time.time() >= fine:
+                            break
+                        try:
+                            op, car = lettore.frame()
+                        except socket.timeout:
+                            if fine:
+                                continue     # silenzio, ma c'e' tempo
+                            raise
                         if op != 1:
                             continue
                         try:
-                            eventi.append(json.loads(car.decode()))
+                            e = json.loads(car.decode())
                         except ValueError:
-                            pass
+                            continue
+                        eventi.append(e)
+                        if eco:
+                            nome = e.get("event") or "?"
+                            dati = e.get("data")
+                            print(f"  {time.strftime('%H:%M:%S')}  {nome}"
+                                  + (f"   {dati}" if dati else ""),
+                                  flush=True)
                 except (OSError, ConnectionError):
                     pass
                 return eventi
@@ -385,7 +409,19 @@ def cerca(testo, dopo="", pausa=0.7):
 # ricerca Samsung risponde imeUpdate. Pero' quella tastiera si naviga
 # a frecce, e i percorsi si calcolano: li fa tastiere.py.
 
-PASSO = float(os.environ.get("TV_PASSO", "0.12"))
+# Quanto aspettare fra un tasto e il successivo, misurato provando:
+#   0,12s  Netflix PERDE pressioni. "the bear" e' uscito "nbear", e
+#          nessun prefisso perso lo spiega: le saltate erano SPARSE,
+#          che e' la firma del troppo veloce.
+#   0,15s  REGGE l'alfabeto intero, 71 pressioni di fila, che e' la
+#          sequenza piu' densa possibile - le lettere consecutive
+#          stanno a un passo l'una dall'altra.
+# Il margine e' sottile e una lettera persa NON SI VEDE, quindi resta
+# regolabile: se un'app si rivela piu' lenta di Netflix, TV_PASSO.
+PASSO = float(os.environ.get("TV_PASSO", "0.15"))
+# Quanto aspettare che la tastiera COMPAIA dopo aver aperto la
+# ricerca. Diverso dal passo: qui c'e' una schermata da disegnare.
+ATTESA_TASTIERA = float(os.environ.get("TV_TASTIERA", "3"))
 APP = os.environ.get("TV_APP", "netflix")
 
 
@@ -448,8 +484,9 @@ def digita_in_app(testo, app=None, azzera=0, passo=None):
 # sconosciuto invece di DIGITARLO sulla TV: e' successo con --ascolta
 # su una copia vecchia del telefono, che non avendolo fra i comandi
 # l'ha scritto nel campo di ricerca come se fosse un titolo.
-COMANDI = ("--cerca", "--tasto", "--digita", "--percorso",
-           "--taratura", "--ascolta", "--testo")
+COMANDI = ("--cerca", "--tasto", "--tasti", "--digita",
+           "--percorso", "--apri", "--taratura", "--ascolta",
+           "--testo")
 
 PROTOCOLLO = """  MISURARE LA TASTIERA DI UN'APP CHE NON CONOSCO
 
@@ -513,6 +550,31 @@ def main():
                 print("  La TV non ha risposto niente: la ricerca non si e' aperta.")
                 print(f"  La strada e' {STRADA_RICERCA}, si cambia con TV_STRADA.")
             return
+        if sys.argv[1] == "--tasti":
+            # Sonde corte scritte a mano, per misurare una tastiera un
+            # fatto alla volta. Piu' onesto di una sonda lunga: ogni
+            # pressione in piu' e' una supposizione in piu'.
+            nomi = [x.strip().upper()
+                    for x in " ".join(sys.argv[2:]).replace(" ", ",").split(",")
+                    if x.strip()]
+            if not nomi:
+                print("  esempio:  --tasti DOWN,OK")
+                print("  tasti:    " + " ".join(sorted(TASTI_VERI)))
+                return
+            ignoti = [n for n in nomi if n not in TASTI_VERI]
+            if ignoti:
+                raise ConnectionError(
+                    "non conosco " + " ".join(ignoti) + "\n  conosco: "
+                    + " ".join(sorted(TASTI_VERI)))
+            seq = []
+            for n in nomi:
+                seq.append(cmd_tasto(TASTI_VERI[n]))
+                seq.append(("pausa", PASSO))
+            manda(seq)
+            print("  mandate " + str(len(nomi)) + " pressioni: "
+                  + ",".join(nomi))
+            print("  Guarda la TV e dimmi cosa e' cambiato.")
+            return
         if sys.argv[1] == "--ascolta":
             secondi = float(sys.argv[2]) if len(sys.argv) > 2 else 25.0
             print(f"  in ascolto per {secondi:.0f} secondi, senza mandare")
@@ -522,18 +584,60 @@ def main():
             # TV annuncia imeStart da sola appena il campo va a fuoco.
             # Cosi' si sa che tastiera ha un'app senza toccare lo
             # schermo, che e' l'unico modo di saperlo senza rischi.
-            eventi = manda([], ascolta=secondi)
+            # La TV CHIUDE la connessione subito dopo una sessione
+            # IME: e' successo il 28/09 alle 12:38:49, un secondo dopo
+            # gli eventi, e l'ascolto e' morto dopo 20 secondi su 300
+            # dicendo "3 eventi in tutto" come se avesse coperto tutto
+            # il tempo. Un ascolto troncato spacciato per completo fa
+            # concludere il falso: le app aperte dopo sembravano mute.
+            # Percio' adesso si ricollega, e dice quanto ha coperto.
+            inizio = time.time()
+            fine = inizio + secondi
+            eventi, cadute, giri = [], 0, 0
+            while time.time() < fine:
+                resto = fine - time.time()
+                try:
+                    eventi += manda([], ascolta=min(5.0, resto),
+                                    scadenza=resto, eco=True)
+                    giri += 1
+                except OSError as e:
+                    # Al PRIMO collegamento un errore va spiegato per
+                    # bene (TV spenta, token da accettare, IP
+                    # cambiato): ci pensa chi chiama, e quindi rilancio.
+                    # A meta' ascolto invece basta dirlo e fermarsi.
+                    if giri == 0:
+                        raise
+                    print(f"  {time.strftime('%H:%M:%S')}  non mi "
+                          f"ricollego piu' ({e.__class__.__name__})",
+                          flush=True)
+                    break
+                if time.time() < fine:
+                    cadute += 1
+                    print(f"  {time.strftime('%H:%M:%S')}  la TV ha chiuso, "
+                          "mi ricollego", flush=True)
+                    time.sleep(1.0)
+            coperti = time.time() - inizio
+            print(f"\n  ascoltati {coperti:.0f} secondi su {secondi:.0f}"
+                  + (f", con {cadute} riconnessioni" if cadute else ""))
+            if coperti < secondi * 0.9:
+                print("  ATTENZIONE: l'ascolto e' finito prima del tempo.")
+                print("  Quello che hai aperto DOPO non e' stato misurato.")
             if not eventi:
+                # Il silenzio ha DUE spiegazioni e questo script non
+                # puo' distinguerle: l'app ha una tastiera sua, oppure
+                # nessuno e' andato nel campo. Dirne una sola sarebbe
+                # una conclusione inventata.
                 print("\n  La TV non ha detto niente in tutto quel tempo.")
-                print("  Vuol dire che l'app ha una tastiera SUA: il testo")
-                print("  non si puo' iniettare, e serve la taratura.")
-                print("     python3 scrivi_telefono.py --taratura")
+                print("  Due spiegazioni, e da qui non si distinguono:")
+                print("   - l'app ha una tastiera SUA (serve la taratura)")
+                print("   - il campo di testo non e' andato a fuoco")
+                print("  Prima di concludere, fai la PROVA IN BIANCO: un")
+                print("  ascolto mentre apri la ricerca della TV (Home,")
+                print("  poi la lente), che la tastiera di Tizen la usa")
+                print("  di sicuro. Se anche quella tace, il problema e'")
+                print("  nell'ascolto, non nell'app.")
                 return
-            print()
-            for e in eventi:
-                nome = e.get("event") or "?"
-                dati = e.get("data")
-                print(f"  {nome}" + (f"   {dati}" if dati else ""))
+            print(f"  {len(eventi)} eventi in tutto.")
             nomi = " ".join(e.get("event") or "" for e in eventi)
             if "ime" in nomi.lower():
                 print("\n  C'E' UN IME DI TIZEN: questa app usa la tastiera")
@@ -576,6 +680,80 @@ def main():
                 print(f"  menu, sei andato a destra di troppo: rifai con")
                 print(f"     --taratura riga {indice} {max(1, quanti - 2)}")
             print("  Poi svuota il campo a mano prima della prossima sonda.")
+            return
+        if sys.argv[1] == "--apri":
+            # Il pezzo che chiude il cerchio: dall'app appena aperta
+            # al titolo scritto nella sua ricerca.
+            #
+            # Il lancio dell'app NON sta qui e non ci puo' stare:
+            # passa dal cloud SmartThings, e il token vive nel browser
+            # del telefono. Sul WebSocket locale ed.apps.launch non fa
+            # niente, provato. Quindi lancia l'app, e poi chiama
+            # questo per la parte che solo la LAN puo' fare.
+            tastiere = carica_tastiere()
+            testo = " ".join(sys.argv[2:]).strip()
+            app = APP
+            # La prima parola puo' essere il nome dell'app. Si guarda
+            # la PAROLA e non l'argomento, perche' la Scorciatoia iOS
+            # passa tutto in un pezzo unico: "netflix the bear".
+            pezzi = testo.split(None, 1)
+            if pezzi and pezzi[0].lower() in tastiere.DISPOSIZIONI:
+                app = pezzi[0].lower()
+                testo = pezzi[1] if len(pezzi) > 1 else ""
+            elif pezzi and pezzi[0].lower() in tastiere.SENZA_DISPOSIZIONE:
+                raise ConnectionError(
+                    f'della tastiera di "{pezzi[0]}" non ho la '
+                    "disposizione, e non\n  la posso indovinare. Ce l'ho "
+                    "per: " + ", ".join(k for k in tastiere.DISPOSIZIONI
+                                        if k != "prova"))
+            if not testo:
+                print("  e cosa cerco? Esempio:")
+                print(f'     python3 {os.path.basename(__file__)} '
+                      f'--apri "the bear"')
+                return
+            d = tastiere.DISPOSIZIONI[app]
+            # La normalizzazione viene PRIMA della strada e va
+            # sempre: l'app riprende lo stato dove era, e senza
+            # riportarla a un punto noto contare i passi non serve a
+            # niente. Su Netflix e' BACK ripetuto, che sul tasto Home
+            # in alto sbatte senza fare danni.
+            normalizza = list(d.get("normalizza", []))
+            strada = [x.strip().upper() for x in
+                      (os.environ.get("TV_PRIMA", "").split(",")
+                       if os.environ.get("TV_PRIMA") else d.get("strada", []))
+                      if x.strip()]
+            if not strada:
+                raise ConnectionError(
+                    f"la strada dal lancio di {d['nome']} al campo di "
+                    "ricerca non\n  e' ancora misurata, e senza quella "
+                    "--apri scriverebbe alla cieca\n  dove capita. Si "
+                    "misura guardando la TV, oppure si passa a mano:\n"
+                    f'     TV_PRIMA=UP,LEFT,LEFT,OK python3 '
+                    f'{os.path.basename(__file__)} --apri "{testo}"\n'
+                    "  Con la ricerca gia' aperta a mano, invece:\n"
+                    f'     python3 {os.path.basename(__file__)} '
+                    f'--digita "{testo}"')
+            attesa = float(os.environ.get("TV_CARICA", "6"))
+            print(f'  aspetto {attesa:.0f}s che {d["nome"]} finisca di '
+                  "caricare")
+            azzera = int(os.environ.get("TV_AZZERA", "0"))
+            tasti, saltati = tastiere.digita(testo, app, azzera=azzera)
+            seq = [("pausa", attesa)]
+            for t in normalizza + strada:
+                seq.append(cmd_tasto(TASTI_VERI.get(
+                    t, t if t.startswith("KEY_") else "KEY_" + t)))
+                seq.append(("pausa", PASSO * 4))   # la navigazione e' lenta
+            seq.append(("pausa", ATTESA_TASTIERA))
+            for t in tasti:
+                seq.append(cmd_tasto(TASTI_VERI[t]))
+                seq.append(("pausa", PASSO))
+            manda(seq)
+            print(f"  normalizzo: {','.join(normalizza)}")
+            print(f"  strada: {','.join(strada)}")
+            print(f'  poi "{testo}": {len(tasti)} pressioni')
+            print("  Guarda la TV: e' l'unico riscontro che esiste.")
+            if saltati:
+                print("  fuori tastiera, saltati: " + "".join(saltati))
             return
         if sys.argv[1] in ("--digita", "--percorso"):
             solo_vedere = sys.argv[1] == "--percorso"

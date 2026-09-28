@@ -730,6 +730,17 @@ const SOTTOGENERI = [
 // l'id per LANCIARE - che per cinque app e' numerico. Quindi servono
 // due tabelle diverse: questa e' per leggere, MAPPA per scrivere.
 // Raccolti osservando la TV vera.
+// Per quali servizi la tastiera a schermo e' stata MISURATA, e
+// quindi il titolo si puo' scrivere dentro l'app invece di lasciarlo
+// battere col telecomando. Il valore e' il nome della disposizione in
+// tastiere.py, e le due liste devono restare d'accordo: offrire di
+// scrivere su un'app di cui non si conosce la tastiera vorrebbe dire
+// premere frecce alla cieca e scrivere spazzatura, senza che nessuno
+// se ne accorga.
+// Netflix e' misurata: griglia, bordi che girano, tasti larghi,
+// normalizzazione e strada fino al campo di ricerca.
+const TASTIERE = { "8": "netflix" };
+
 const NOMI_PACCHETTO = {
   "org.tizen.netflix-app": "Netflix",
   "org.tizen.primevideo": "Prime Video",
@@ -808,7 +819,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20260928122856";
+const VERSIONE = "20260928133508";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -2433,15 +2444,36 @@ function schermoCerca() {
 // scheda sia nel pescato di Stasera.
 function pulsanteLancio(i, d) {
   const b = el("button", "apri");
+  // Il titolo si puo' scrivere dentro l'app solo se la sua tastiera
+  // e' stata misurata E c'e' la Scorciatoia: la scrittura passa dalla
+  // rete locale, che un browser non puo' aprire (il certificato della
+  // TV vale solo per 127.0.0.1).
+  const tastiera = TASTIERE[i.pid];
+  const cercaDentro = !!(tastiera && chiavi.scorciatoia);
   b.innerHTML =
     (i.logo ? '<img class="logo" src="' + IMG + "/w92" + i.logo + '" alt="">' : '<span class="logo"></span>') +
-    '<span class="etichetta">Apri ' + esc(i.nome) + " sulla TV<small>Poi cerca il titolo col telecomando</small></span>";
+    '<span class="etichetta">' + (cercaDentro
+      ? "Apri " + esc(i.nome) + " e cerca il titolo<small>Apre l'app e scrive «" +
+        esc(d.titolo) + "» nella sua ricerca</small>"
+      : "Apri " + esc(i.nome) + " sulla TV<small>Poi cerca il titolo col telecomando</small>") +
+    "</span>";
   b.onclick = async () => {
     b.disabled = true;
     b.querySelector(".etichetta").innerHTML = "Apro " + esc(i.nome) + "…<small>Controllo che si apra davvero</small>";
     try {
       if (await lancia(i.app, i.nome)) {
         b.className = "apri fatto";
+        if (cercaDentro) {
+          // Qui si chiude il cerchio: l'app e' aperta, e il titolo
+          // va alla Scorciatoia, che dentro a-Shell chiama --apri.
+          // Quello normalizza lo stato dell'app (BACK ripetuti, che
+          // sbattono sul tasto Home in alto senza fare danni), va
+          // sulla ricerca e scrive il titolo lettera per lettera.
+          b.querySelector(".etichetta").innerHTML = esc(i.nome) +
+            " è aperta<small>Passo «" + esc(d.titolo) + "» alla Scorciatoia…</small>";
+          scriviConScorciatoia(tastiera + " " + d.titolo);
+          return;
+        }
         const p = await provaPonte();
         b.querySelector(".etichetta").innerHTML = esc(i.nome) + " è aperta<small>" +
           (p ? "Apri la ricerca nell'app, poi scrivi il titolo qui sotto"
