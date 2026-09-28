@@ -808,7 +808,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "202609281000";
+const VERSIONE = "202609281006";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -1054,6 +1054,47 @@ const oauth = {
   },
 };
 
+// Su iOS un'app aggiunta alla schermata Home ha una memoria SEPARATA
+// da Safari, e non puo' navigare fuori dal proprio ambito: premendo
+// "Collega" iOS apre Safari, il ritorno col codice arriva la', e i
+// token finiscono nella memoria di Safari. L'app installata resta a
+// mani vuote. Succede davvero, ed e' per questo che esiste il
+// trasferimento qui sotto.
+function dentroAppInstallata() {
+  try {
+    if (navigator.standalone === true) return true;               // iOS
+    return window.matchMedia("(display-mode: standalone)").matches;
+  } catch (e) { return false; }
+}
+
+// Il collegamento in una stringa da incollare. Contiene il refresh
+// token e il client secret, quindi resta fra i tuoi dispositivi: non
+// va mandata a nessun altro.
+const SIGILLO = "TV1:";
+
+function impacchettaCollegamento() {
+  return SIGILLO + btoa(JSON.stringify({
+    i: oauth.id, s: oauth.segreto,
+    a: oauth.accesso, r: oauth.rinnovo, e: oauth.scade,
+  }));
+}
+
+function scartaCollegamento(testo) {
+  const t = (testo || "").trim();
+  if (!t.startsWith(SIGILLO)) return false;
+  let d;
+  try { d = JSON.parse(atob(t.slice(SIGILLO.length))); }
+  catch (e) { return false; }
+  if (!d || !d.i || !d.s || !d.r) return false;
+  oauth.id = d.i;
+  oauth.segreto = d.s;
+  if (d.a) localStorage.setItem("oauth_accesso", d.a);
+  localStorage.setItem("oauth_rinnovo", d.r);
+  // la scadenza di chi ce l'ha mandato non vale qui: forzo un rinnovo
+  localStorage.setItem("oauth_scade", "0");
+  return true;
+}
+
 // Il redirect_uri deve combaciare ESATTAMENTE con quello registrato
 // nell'app SmartThings, barra finale compresa.
 function indirizzoDiRitorno() {
@@ -1119,8 +1160,18 @@ async function raccogliCodice() {
   }
   const atteso = localStorage.getItem("oauth_stato");
   localStorage.removeItem("oauth_stato");
-  if (!atteso || stato !== atteso) {
-    registro.aggiungi("OAuth", "state non combacia: richiesta non mia");
+
+  // Distinguo i due casi, perche' hanno cause diverse e uno dei due e'
+  // normale su iPhone: se lo state non c'e' AFFATTO, il collegamento e'
+  // partito da un'altra finestra - tipicamente dall'app installata,
+  // che ha una memoria separata da Safari. Se invece c'e' ma e'
+  // diverso, quello si' e' sospetto.
+  if (!atteso) {
+    registro.aggiungi("OAuth", "nessuno state salvato: partito da un'altra finestra");
+    return { esito: "altraFinestra" };
+  }
+  if (stato !== atteso) {
+    registro.aggiungi("OAuth", "state diverso da quello salvato");
     return { esito: "sospetto" };
   }
   try {
@@ -3414,7 +3465,11 @@ function bloccoCollegamento(pad) {
     const m = {
       collegato: "Collegato. Da ora il permesso si rinnova da solo.",
       negato: "Hai negato l'autorizzazione.",
-      sospetto: "Richiesta non riconosciuta: rifalla da capo, per sicurezza.",
+      altraFinestra: "Il collegamento era partito da un'altra finestra, " +
+        "quindi non posso completarlo qui. Su iPhone succede se lo avvii " +
+        "dall'app installata: fallo da Safari, poi copia il collegamento " +
+        "e incollalo qui.",
+      sospetto: "Lo state non combacia: rifalla da capo, per sicurezza.",
       fallito: "Non sono riuscito a completare: " + (esitoCollegamento.errore || ""),
     }[esitoCollegamento.esito] || "Esito sconosciuto.";
     const e = el("div", "gusto");
@@ -3449,6 +3504,43 @@ function bloccoCollegamento(pad) {
       "volta al mese perché non scada mai.";
     pad.appendChild(spiega);
 
+    // Da app installata l'autorizzazione finisce in Safari, che ha una
+    // memoria separata: il collegamento non tornerebbe mai qui.
+    if (dentroAppInstallata()) {
+      const avvertenza = el("div", "gusto");
+      avvertenza.innerHTML =
+        "<b>Sei nell'app installata.</b> Qui iOS manderebbe " +
+        "l'autorizzazione a Safari, che ha una memoria separata: il " +
+        "collegamento resterebbe là. Fai così:<br><br>" +
+        "1. apri <b>" + esc(indirizzoDiRitorno()) + "</b> in Safari<br>" +
+        "2. collega da lì<br>" +
+        "3. in Safari premi <b>Copia il collegamento</b><br>" +
+        "4. torna qui e incollalo sotto";
+      pad.appendChild(avvertenza);
+
+      const incolla = el("div", "campo");
+      incolla.innerHTML =
+        '<label for="oi">Incolla il collegamento</label>' +
+        '<textarea id="oi" rows="3" autocapitalize="off" autocomplete="off" spellcheck="false"></textarea>';
+      pad.appendChild(incolla);
+
+      const prendi = el("button", "primario", "Usa questo collegamento");
+      const esitoIncolla = el("div", "esito");
+      prendi.onclick = () => {
+        if (scartaCollegamento(document.getElementById("oi").value)) {
+          esitoIncolla.innerHTML = '<div class="ok">Collegato.</div>';
+          setTimeout(schermoImpostazioni, 700);
+        } else {
+          esitoIncolla.innerHTML = '<div class="ko">Non è un collegamento valido: ' +
+            'deve cominciare con TV1: e va copiato tutto.</div>';
+        }
+      };
+      pad.appendChild(prendi);
+      pad.appendChild(esitoIncolla);
+    }
+
+    if (dentroAppInstallata()) return;   // qui il pulsante non funzionerebbe
+
     const campi = el("div");
     campi.innerHTML =
       '<div class="campo"><label for="o1">Client ID</label>' +
@@ -3481,6 +3573,36 @@ function bloccoCollegamento(pad) {
       "nell'app. Dall'indirizzo locale non funziona.";
     pad.appendChild(dove);
   } else {
+    // Da qui si trasferisce nell'app installata, che ha una memoria
+    // separata e non vedrebbe mai questo collegamento.
+    const copia = el("button", "primario", "Copia il collegamento");
+    const esitoCopia = el("div", "esito");
+    copia.onclick = async () => {
+      const pacco = impacchettaCollegamento();
+      const esito = await condividi("Collegamento TV", pacco, null);
+      if (esito === "copiato" || esito === "condiviso") {
+        esitoCopia.innerHTML = '<div class="ok">Copiato. Incollalo ' +
+          "nell'app installata, in questa stessa schermata.</div>";
+      } else {
+        const campo = el("textarea");
+        campo.className = "indirizzo";
+        campo.rows = 4;
+        campo.value = pacco;
+        campo.readOnly = true;
+        esitoCopia.innerHTML = "";
+        esitoCopia.appendChild(campo);
+        campo.focus();
+        campo.setSelectionRange(0, pacco.length);
+      }
+    };
+    pad.appendChild(copia);
+    pad.appendChild(esitoCopia);
+    const nota = el("div", "gusto");
+    nota.innerHTML = "Serve per passare il collegamento all'app " +
+      "installata sulla Home, che ha una memoria separata da Safari. " +
+      "Contiene le tue credenziali: <b>resta fra i tuoi dispositivi</b>.";
+    pad.appendChild(nota);
+
     const stacca = el("button", "svuota", "Scollega");
     stacca.style.cssText = "width:100%;margin:12px 0 0";
     stacca.onclick = () => {
