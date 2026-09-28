@@ -780,7 +780,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "202609231036";
+const VERSIONE = "202609280944";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -988,6 +988,138 @@ window.addEventListener("unhandledrejection", e => {
   registro.aggiungi("promessa", (e.reason && e.reason.message) || e.reason || "?");
 });
 
+// ------------------------------------------------------------ OAuth
+// I Personal Access Token durano 24 ore (politica Samsung dal 30
+// dicembre 2024). Con OAuth l'access token dura 24 ore ma il refresh
+// token dura 30 GIORNI e si rinnova a ogni uso: aprendo l'app almeno
+// una volta al mese non scade piu'.
+//
+// Tutto dal browser, senza server: verificato che
+// POST https://api.smartthings.com/oauth/token risponde con
+// access-control-allow-origin: * e accetta l'header Authorization.
+// (auth-global.api.smartthings.com invece rifiuta il preflight.)
+const ST_AUTORIZZA = "https://api.smartthings.com/oauth/authorize";
+const ST_TOKEN = "https://api.smartthings.com/oauth/token";
+const ST_SCOPE = "r:devices:* x:devices:* r:locations:*";
+
+const oauth = {
+  get id() { return localStorage.getItem("oauth_id") || ""; },
+  set id(v) { localStorage.setItem("oauth_id", (v || "").trim()); },
+  get segreto() { return localStorage.getItem("oauth_segreto") || ""; },
+  set segreto(v) { localStorage.setItem("oauth_segreto", (v || "").trim()); },
+  get accesso() { return localStorage.getItem("oauth_accesso") || ""; },
+  get rinnovo() { return localStorage.getItem("oauth_rinnovo") || ""; },
+  get scade() { return Number(localStorage.getItem("oauth_scade") || 0); },
+  get collegato() { return !!(this.accesso && this.rinnovo); },
+
+  salva(d) {
+    if (d.access_token) localStorage.setItem("oauth_accesso", d.access_token);
+    if (d.refresh_token) localStorage.setItem("oauth_rinnovo", d.refresh_token);
+    // tolgo un minuto di margine, per non usarlo nell'istante in cui scade
+    const durata = Number(d.expires_in || 86400) - 60;
+    localStorage.setItem("oauth_scade", String(Date.now() + durata * 1000));
+  },
+
+  scollega() {
+    ["oauth_accesso", "oauth_rinnovo", "oauth_scade", "oauth_stato"]
+      .forEach(k => localStorage.removeItem(k));
+  },
+};
+
+// Il redirect_uri deve combaciare ESATTAMENTE con quello registrato
+// nell'app SmartThings, barra finale compresa.
+function indirizzoDiRitorno() {
+  return location.origin + location.pathname;
+}
+
+// Separata da avviaCollegamento perche' cosi' si puo' provare senza
+// far navigare il browser.
+function urlAutorizzazione(stato) {
+  return ST_AUTORIZZA + "?" + new URLSearchParams({
+    client_id: oauth.id,
+    response_type: "code",
+    redirect_uri: indirizzoDiRitorno(),
+    scope: ST_SCOPE,
+    state: stato,
+  });
+}
+
+function avviaCollegamento() {
+  const stato = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  localStorage.setItem("oauth_stato", stato);
+  location.href = urlAutorizzazione(stato);
+}
+
+async function chiediToken(campi) {
+  const r = await fetch(ST_TOKEN, {
+    method: "POST",
+    headers: {
+      // Basic auth con client_id:client_secret, come vuole Samsung
+      "Authorization": "Basic " + btoa(oauth.id + ":" + oauth.segreto),
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({ client_id: oauth.id, ...campi }),
+  });
+  const testo = await r.text();
+  if (!r.ok) {
+    registro.aggiungi("OAuth", campi.grant_type + " -> HTTP " + r.status +
+      " " + testo.slice(0, 120));
+    throw new Error("SmartThings ha rifiutato il collegamento (HTTP " + r.status + ").");
+  }
+  let d;
+  try { d = JSON.parse(testo); }
+  catch (e) { throw new Error("Risposta di SmartThings illeggibile."); }
+  oauth.salva(d);
+  return d;
+}
+
+// Al ritorno dall autorizzazione: ?code=... nella query.
+async function raccogliCodice() {
+  const q = new URLSearchParams(location.search);
+  const codice = q.get("code");
+  const errore = q.get("error");
+  const stato = q.get("state");
+  if (!codice && !errore) return null;
+
+  // pulisco subito l indirizzo: il codice non deve restare nella
+  // cronologia del browser ne' in un link condivisibile
+  history.replaceState(null, "", location.pathname + location.hash);
+
+  if (errore) {
+    registro.aggiungi("OAuth", "autorizzazione negata: " + errore);
+    return { esito: "negato", errore };
+  }
+  const atteso = localStorage.getItem("oauth_stato");
+  localStorage.removeItem("oauth_stato");
+  if (!atteso || stato !== atteso) {
+    registro.aggiungi("OAuth", "state non combacia: richiesta non mia");
+    return { esito: "sospetto" };
+  }
+  try {
+    await chiediToken({ grant_type: "authorization_code", code: codice,
+                        redirect_uri: indirizzoDiRitorno() });
+    return { esito: "collegato" };
+  } catch (e) {
+    return { esito: "fallito", errore: e.message };
+  }
+}
+
+let rinnovoInCorso = null;
+async function rinnovaSeServe(forza = false) {
+  if (!oauth.rinnovo) return false;
+  if (!forza && oauth.accesso && Date.now() < oauth.scade) return true;
+  // un solo rinnovo per volta: due chiamate insieme brucerebbero il
+  // refresh token a vicenda
+  if (!rinnovoInCorso) {
+    rinnovoInCorso = chiediToken({ grant_type: "refresh_token",
+                                   refresh_token: oauth.rinnovo })
+      .then(() => true)
+      .catch(e => { registro.aggiungi("OAuth", "rinnovo fallito: " + e.message); return false; })
+      .finally(() => { rinnovoInCorso = null; });
+  }
+  return rinnovoInCorso;
+}
+
 const schermo = document.getElementById("schermo");
 const nav = document.querySelector("nav");
 
@@ -1053,18 +1185,41 @@ async function tmdb(percorso, parametri = {}) {
   return r.json();
 }
 
-async function smartthings(percorso, corpoRichiesta) {
-  if (!chiavi.token) throw new Error("Manca il token SmartThings: vai in Impostazioni.");
+async function smartthings(percorso, corpoRichiesta, riprovato = false) {
+  const conOauth = oauth.collegato;
+  if (!conOauth && !chiavi.token)
+    throw new Error("SmartThings non è collegato: vai in Opzioni.");
   if (navigator.onLine === false)
     throw new Error("Sei senza rete: la TV si comanda solo online.");
+
+  // Con OAuth rinnovo prima di partire, se l'access token e' scaduto.
+  if (conOauth) await rinnovaSeServe();
+  const gettone = conOauth ? oauth.accesso : chiavi.token;
+
   const r = await fetch(ST + percorso, {
     method: corpoRichiesta ? "POST" : "GET",
-    headers: { "Authorization": "Bearer " + chiavi.token, "Content-Type": "application/json" },
+    headers: { "Authorization": "Bearer " + gettone, "Content-Type": "application/json" },
     body: corpoRichiesta ? JSON.stringify(corpoRichiesta) : undefined,
   });
   if (r.status === 401) {
-    registro.aggiungi("SmartThings", "token rifiutato (401): scaduto o revocato");
-    throw new Error("Token SmartThings rifiutato (scaduto o revocato).");
+    // Con OAuth un 401 puo' voler dire solo "access token vecchio":
+    // rinnovo e riprovo UNA volta, poi mi arrendo.
+    if (conOauth && !riprovato) {
+      registro.aggiungi("OAuth", "401: rinnovo e riprovo");
+      if (await rinnovaSeServe(true))
+        return smartthings(percorso, corpoRichiesta, true);
+      throw new Error("Il collegamento a SmartThings è scaduto. " +
+                      "Ricollegalo in Opzioni.");
+    }
+    if (conOauth) {
+      registro.aggiungi("OAuth", "401 anche dopo il rinnovo");
+      throw new Error("Il collegamento a SmartThings non funziona più. " +
+                      "Ricollegalo in Opzioni.");
+    }
+    // Col PAT invece il 401 e' definitivo: durano 24 ore.
+    registro.aggiungi("SmartThings", "401: token scaduto (i PAT durano 24 ore)");
+    throw new Error("Token SmartThings scaduto: i PAT durano 24 ore. " +
+                    "Collega SmartThings in Opzioni e non scadrà più.");
   }
   if (r.status === 403) {
     registro.aggiungi("SmartThings", "403: token senza permessi sui dispositivi");
@@ -3197,11 +3352,104 @@ function bloccoAbbonamenti(pad) {
     caricaProvider().then(disegna).catch(() => {});
 }
 
+// Mostrato una volta al ritorno dall autorizzazione.
+let esitoCollegamento = null;
+
+function bloccoCollegamento(pad) {
+  pad.appendChild(el("p", "sezione", "TV: collegamento"));
+
+  if (esitoCollegamento) {
+    const m = {
+      collegato: "Collegato. Da ora il permesso si rinnova da solo.",
+      negato: "Hai negato l'autorizzazione.",
+      sospetto: "Richiesta non riconosciuta: rifalla da capo, per sicurezza.",
+      fallito: "Non sono riuscito a completare: " + (esitoCollegamento.errore || ""),
+    }[esitoCollegamento.esito] || "Esito sconosciuto.";
+    const e = el("div", "gusto");
+    e.textContent = m;
+    pad.appendChild(e);
+    esitoCollegamento = null;
+  }
+
+  const stato = el("div", "diagnosi");
+  pad.appendChild(stato);
+  const riga = (cosa, valore, buono) => {
+    const r = el("div", "riga2");
+    r.innerHTML = "<span>" + esc(cosa) + '</span><span class="' +
+      (buono === true ? "si" : buono === false ? "no" : "") + '">' +
+      esc(valore) + "</span>";
+    stato.appendChild(r);
+  };
+  if (oauth.collegato) {
+    const resta = Math.max(0, Math.round((oauth.scade - Date.now()) / 60000));
+    riga("Collegamento", "OAuth, non scade", true);
+    riga("Permesso valido per", resta > 90 ? Math.round(resta / 60) + " ore" : resta + " min");
+  } else if (chiavi.token) {
+    riga("Collegamento", "token da 24 ore", false);
+  } else {
+    riga("Collegamento", "assente", false);
+  }
+
+  if (!oauth.collegato) {
+    const spiega = el("div", "gusto");
+    spiega.innerHTML = "I token semplici durano <b>24 ore</b>. Collegando " +
+      "l'app con OAuth il permesso si rinnova da solo: basta aprirla una " +
+      "volta al mese perché non scada mai.";
+    pad.appendChild(spiega);
+
+    const campi = el("div");
+    campi.innerHTML =
+      '<div class="campo"><label for="o1">Client ID</label>' +
+      '<textarea id="o1" rows="2" autocapitalize="off" autocomplete="off" spellcheck="false"></textarea></div>' +
+      '<div class="campo"><label for="o2">Client Secret</label>' +
+      '<textarea id="o2" rows="2" autocapitalize="off" autocomplete="off" spellcheck="false"></textarea>' +
+      "<p>Vengono dall'app creata con collega.sh. Restano su questo telefono.</p></div>";
+    pad.appendChild(campi);
+    document.getElementById("o1").value = oauth.id;
+    document.getElementById("o2").value = oauth.segreto;
+
+    const parti = el("button", "primario", "Collega SmartThings");
+    const avviso = el("div", "esito");
+    parti.onclick = () => {
+      oauth.id = document.getElementById("o1").value;
+      oauth.segreto = document.getElementById("o2").value;
+      if (!oauth.id || !oauth.segreto) {
+        avviso.innerHTML = '<div class="ko">Servono entrambi.</div>';
+        return;
+      }
+      avviso.innerHTML = '<div class="ok">Ti mando su Samsung...</div>';
+      avviaCollegamento();
+    };
+    pad.appendChild(parti);
+    pad.appendChild(avviso);
+
+    const dove = el("div", "gusto");
+    dove.innerHTML = "Samsung ti rimandera' a <b>" + esc(indirizzoDiRitorno()) +
+      "</b>, che deve essere esattamente il redirect URI registrato " +
+      "nell'app. Dall'indirizzo locale non funziona.";
+    pad.appendChild(dove);
+  } else {
+    const stacca = el("button", "svuota", "Scollega");
+    stacca.style.cssText = "width:100%;margin:12px 0 0";
+    stacca.onclick = () => {
+      if (stacca.dataset.sicuro !== "1") {
+        stacca.dataset.sicuro = "1";
+        stacca.textContent = "Tocca di nuovo per scollegare";
+        return;
+      }
+      oauth.scollega();
+      schermoImpostazioni();
+    };
+    pad.appendChild(stacca);
+  }
+}
+
 function schermoImpostazioni() {
   schermo.innerHTML = "";
   const pad = el("div", "pad");
   pad.appendChild(el("h1", "titolone", "Impostazioni"));
   schermo.appendChild(pad);
+  bloccoCollegamento(pad);
   bloccoAbbonamenti(pad);
 
   const chiaviPad = el("div");
@@ -3270,7 +3518,9 @@ function bloccoDiagnosi(pad) {
 
   riga("Versione", VERSIONE);
   riga("Chiave TMDB", chiavi.tmdb ? "inserita" : "manca", !!chiavi.tmdb);
-  riga("Token SmartThings", chiavi.token ? "inserito" : "manca", !!chiavi.token);
+  riga("Collegamento TV", oauth.collegato ? "OAuth (non scade)"
+       : chiavi.token ? "token 24 ore" : "assente",
+       oauth.collegato ? true : chiavi.token ? null : false);
   riga("TV già trovata", chiavi.tv ? "sì (…" + chiavi.tv.slice(-6) + ")" : "no", !!chiavi.tv);
   riga("Abbonamenti scelti", String(chiavi.servizi.length), chiavi.servizi.length > 0);
   riga("Da guardare", String(lista.tutto.length));
@@ -3371,9 +3621,22 @@ window.addEventListener("hashchange", () => {
 });
 
 // Al primo avvio non c'e' niente da mostrare: si comincia dalle chiavi.
-const arrivo = leggiIndirizzo();
-if (arrivo) apriIndirizzo(arrivo);
-else vai(chiavi.tmdb ? "sfoglia" : "impostazioni");
+(async () => {
+  // Se torniamo dall autorizzazione Samsung c'e' ?code= nella query,
+  // e va consumato PRIMA di qualunque instradamento.
+  let ritorno = null;
+  try { ritorno = await raccogliCodice(); } catch (e) { /* si continua */ }
+  if (ritorno) {
+    esitoCollegamento = ritorno;
+    vai("impostazioni");
+    return;
+  }
+  const arrivo = leggiIndirizzo();
+  if (arrivo) apriIndirizzo(arrivo);
+  else vai(chiavi.tmdb ? "sfoglia" : "impostazioni");
+  // permesso fresco per quando servira', senza far aspettare nessuno
+  if (oauth.collegato) rinnovaSeServe().catch(() => {});
+})();
 
 // Il service worker serve solo a far aprire l'app senza rete: vedi
 // sw.js. Se la registrazione fallisce (contesto non sicuro, o
