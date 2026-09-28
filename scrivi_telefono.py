@@ -17,11 +17,19 @@ samsungtvws ne' websocket-client: solo socket, ssl, base64, json.
 
 Serve il token della TV, quello in token.txt, ottenuto una volta
 sola accettando il popup.
+
+Variabili utili:
+    TV_IP     indirizzo della TV (predefinito 192.168.0.84)
+    TV_NOME   nome con cui ci presentiamo (predefinito TVProject)
+    TV_TOKEN  token, se non vuoi usare token.txt
+    TV_PORTA  8002 con TLS (predefinito), 8001 in chiaro (rifiutata
+              dalla TV: risponde ms.channel.unauthorized)
 """
 
 import base64
 import json
 import os
+import re
 import socket
 import struct
 import sys
@@ -38,7 +46,11 @@ TV = os.environ.get("TV_IP", "192.168.0.84")
 # Quindi serve un Python col modulo ssl - che c'e' sia in a-Shell
 # sia in iSH.
 PORTA = int(os.environ.get("TV_PORTA", "8002"))
-NOME = "TVProject"
+# Il nome con cui ci presentiamo alla TV. La TV tiene un elenco di
+# dispositivi autorizzati e NEGATI, e risponde 403 a quelli negati.
+# Se un popup scaduto ha registrato un rifiuto, presentarsi con un
+# nome nuovo fa ricomparire la richiesta di permesso.
+NOME = os.environ.get("TV_NOME", "TVProject")
 
 
 def inquadra(carico):
@@ -104,7 +116,7 @@ def manda(comando):
     percorso = "/api/v2/channels/samsung.remote.control?name=" + nome
     # Il token serve su ENTRAMBE le porte: sulla 8001 senza token
     # l'handshake passa ma la TV risponde ms.channel.unauthorized.
-    token = os.environ.get("TV_TOKEN") or leggi_token()
+    token = re.sub(r"\D", "", os.environ.get("TV_TOKEN", "")) or leggi_token()
     if token:
         percorso += "&token=" + token
     chiave = base64.b64encode(os.urandom(16)).decode()
@@ -128,6 +140,16 @@ def manda(comando):
         lettore = Lettore(s)
         prima = lettore.fino_a(b"\r\n\r\n").split(b"\r\n")[0].decode(errors="replace")
         if "101" not in prima:
+            if "403" in prima:
+                raise ConnectionError(
+                    "handshake rifiutato: " + prima + "\n"
+                    "  403 vuol dire che la TV ha questo dispositivo fra i NEGATI,\n"
+                    "  non che non ti conosce. Due strade:\n"
+                    "  1. presentati con un nome nuovo, cosi' ti richiede il permesso:\n"
+                    f'       TV_NOME=iPhone python3 {os.path.basename(__file__)} --tasto KEY_VOLUP\n'
+                    "  2. sblocca il vecchio sulla TV: Impostazioni -> Generali ->\n"
+                    "     Gestione dispositivi esterni -> Gestione connessione\n"
+                    "     dispositivi -> Elenco dispositivi")
             raise ConnectionError("handshake rifiutato: " + prima)
 
         # La TV manda ms.channel.connect: aspettarlo evita di scrivere
@@ -162,7 +184,11 @@ def leggi_token():
     ]
     for p in candidati:
         if os.path.exists(p):
-            t = open(p).read().strip()
+            # Il token e' solo cifre: scarto tutto il resto. Un "%"
+            # copiato per sbaglio dall'output di zsh, uno spazio o un
+            # ritorno a capo facevano rispondere 403 alla TV, e da un
+            # 403 nessuno indovina che il problema e' un carattere.
+            t = re.sub(r"\D", "", open(p).read())
             if t:
                 return t
     print("Non trovo il token. L'ho cercato in:")
