@@ -759,15 +759,22 @@ const POSIZIONE_SCRIPT =
 // ESEGUIRE: un comando che l'utente incolla a mano e che nessuno
 // prova e' un comando che non funziona.
 function comandoScorciatoia(titolo) {
-  // Col token davanti, sul telefono non serve nessun file: lo script
-  // si scarica, tastiere.py se lo prende da se', e il token arriva
-  // qui. Senza, lo script cerca token.txt in cartelle che dipendono
-  // da dove la Scorciatoia lo fa partire - e su a-Shell quella
-  // cartella non e' quella della finestra interattiva.
-  return (chiavi.tvtoken ? "TV_TOKEN=" + chiavi.tvtoken + " " : "") +
-         'python3 -c "import urllib.request as u;' +
-         "exec(u.urlopen('" + POSIZIONE_SCRIPT + "').read())\" " +
-         '--apri "' + titolo + '"';
+  // Tutto passa come ARGOMENTI, non nell'ambiente: a-Shell non e' una
+  // shell completa e il prefisso VAR=valore davanti al comando non lo
+  // interpreta.
+  //
+  // --nome perche' il token della TV e' legato al nome con cui ci si
+  // presenta, e il Mac si chiama TVProject: senza un nome proprio i
+  // due si rubano il permesso e la TV lo richiede ogni volta.
+  //
+  // --token perche' sul telefono non c'e' nessun file dove tenerlo, e
+  // cercarlo nelle cartelle non funziona: la Scorciatoia parte da un
+  // posto diverso dalla finestra interattiva di a-Shell.
+  return 'python3 -c "import urllib.request as u;' +
+         "exec(u.urlopen('" + POSIZIONE_SCRIPT + "').read())\"" +
+         " --nome=" + chiavi.tvnome +
+         (chiavi.tvtoken ? " --token=" + chiavi.tvtoken : "") +
+         ' --apri "' + titolo + '"';
 }
 
 const NOMI_PACCHETTO = {
@@ -848,7 +855,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20260928145958";
+const VERSIONE = "20260928150738";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -873,6 +880,26 @@ const chiavi = {
   // cifre, e qualunque altra cosa si incolli viene ripulita.
   get tvtoken()  { return localStorage.getItem("tv_token") || ""; },
   set tvtoken(v) { localStorage.setItem("tv_token", String(v).replace(/\D/g, "")); },
+
+  // Il nome con cui questo dispositivo si presenta alla TV. Ne serve
+  // uno PROPRIO: il token della TV e' legato al nome, quindi due
+  // dispositivi che si chiamano uguale si invalidano il permesso a
+  // vicenda, e il sintomo e' "me lo chiede ogni volta". Il Mac si
+  // chiama TVProject, quindi il telefono deve chiamarsi altrimenti.
+  // Generato una volta e conservato: cambiarlo vorrebbe dire
+  // riapprovare sulla TV.
+  get tvnome() {
+    let n = localStorage.getItem("tv_nome");
+    if (!n) {
+      n = "TV-" + Math.random().toString(36).slice(2, 6);
+      localStorage.setItem("tv_nome", n);
+    }
+    return n;
+  },
+  set tvnome(v) {
+    const pulito = String(v).replace(/[^A-Za-z0-9-]/g, "").slice(0, 24);
+    if (pulito) localStorage.setItem("tv_nome", pulito);
+  },
 
   // Distinguo "non ho mai scelto" (chiave assente -> predefiniti) da
   // "ho scelto niente" (lista vuota -> nessun filtro possibile, e
@@ -3839,6 +3866,15 @@ function schermoImpostazioni() {
   // riscontro che il salvataggio ha funzionato.
   const boxCmd = el("div", "diagnosi");
 
+  const spiegaNome = el("div", "gusto");
+  spiegaNome.innerHTML =
+    "Questo telefono si presenta alla TV come <b>" + esc(chiavi.tvnome) +
+    "</b>. \u00c8 il nome che vedi nell\u2019elenco dispositivi della TV, " +
+    "e serve che sia diverso da quello del computer: il permesso della TV " +
+    "\u00e8 legato al nome, e due dispositivi con lo stesso nome se lo " +
+    "rubano a vicenda.";
+  pad.appendChild(spiegaNome);
+
   const campoTk = el("div", "campo");
   campoTk.innerHTML =
     '<label for="tk">Token della TV (solo cifre, facoltativo)</label>' +
@@ -3848,10 +3884,11 @@ function schermoImpostazioni() {
   document.getElementById("tk").value = chiavi.tvtoken;
   const spiegaTk = el("div", "gusto");
   spiegaTk.innerHTML =
-    "\u00c8 il numero che sta in <code>token.txt</code> sul computer: la " +
-    "TV lo d\u00e0 la prima volta che accetti il collegamento. Mettendolo " +
-    "qui finisce dentro il comando, e sul telefono non serve nessun " +
-    "file.<br>Non \u00e8 il token di SmartThings.";
+    "Lascialo vuoto la prima volta: la TV chieder\u00e0 il permesso, tu " +
+    "accetti, e lo script ti dir\u00e0 il numero da mettere qui. Da quel " +
+    "momento la TV non chiede pi\u00f9 niente.<br>Non \u00e8 il token di " +
+    "SmartThings, ed \u00e8 diverso da quello del computer perch\u00e9 il " +
+    "nome \u00e8 diverso.";
   pad.appendChild(spiegaTk);
 
   const salvaTk = el("button", "svuota", "Salva il token");

@@ -40,6 +40,41 @@ import struct
 import sys
 import time
 
+def opzioni_da_argv():
+    """Legge le opzioni scritte come --chiave=valore e le toglie da
+    argv, mettendole nell'ambiente.
+
+    Serve perche' a-Shell non e' una shell completa: il prefisso
+    VAR=valore davanti a un comando non lo interpreta (e non capisce
+    nemmeno ";" per concatenare). Quindi tutto quello che altrove si
+    passerebbe nell'ambiente, dal telefono deve stare negli
+    ARGOMENTI.
+
+    Va chiamata QUI, prima delle costanti qui sotto: quelle leggono
+    l'ambiente una volta sola, all'avvio, e farlo dopo sarebbe
+    tardi."""
+    nomi = {"nome": "TV_NOME", "token": "TV_TOKEN", "ip": "TV_IP",
+            "porta": "TV_PORTA", "passo": "TV_PASSO",
+            "naviga": "TV_NAVIGA", "carica": "TV_CARICA",
+            "tastiera": "TV_TASTIERA", "azzera": "TV_AZZERA",
+            "app": "TV_APP", "tastiere": "TV_TASTIERE"}
+    resto, ignote = [sys.argv[0] if sys.argv else ""], []
+    for pezzo in sys.argv[1:]:
+        if pezzo.startswith("--") and "=" in pezzo:
+            chiave, valore = pezzo[2:].split("=", 1)
+            if chiave in nomi:
+                os.environ[nomi[chiave]] = valore
+                continue
+            ignote.append(pezzo)
+        resto.append(pezzo)
+    sys.argv[:] = resto
+    # Un'opzione scritta male non va ignorata in silenzio: finirebbe
+    # fra gli argomenti e, nel peggiore dei casi, dentro il titolo.
+    return ignote
+
+
+OPZIONI_IGNOTE = opzioni_da_argv()
+
 TV = os.environ.get("TV_IP", "192.168.0.84")
 # 8002 con TLS, e la verifica del certificato disattivata: quello
 # della TV ha subjectAltName IP 127.0.0.1, quindi non puo' valere per
@@ -243,7 +278,19 @@ def salva_token(nuovo):
     l'evento ms.channel.connect. Se non lo si salva, la volta dopo ci
     si presenta col token vecchio e la TV richiede il permesso da
     capo: era esattamente il sintomo "me lo chiede ogni volta"."""
-    percorso = DOVE_TOKEN or os.path.join(os.getcwd(), "token.txt")
+    # Eseguito al volo - il caso del telefono - non c'e' nessun file
+    # da aggiornare, e scriverne uno sarebbe peggio: si e' gia' visto
+    # cosa combina una copia salvata che non si aggiorna mai. Quindi
+    # il token si DICE, e chi legge lo mette nell'app una volta.
+    if not sono_un_file():
+        print()
+        print("  LA TV HA DATO UN TOKEN NUOVO:")
+        print(f"      {nuovo}")
+        print("  Mettilo nell'app: Opzioni -> Token della TV, salva, poi")
+        print("  ricopia il comando e reincollalo nella Scorciatoia.")
+        print("  Da quel momento la TV non chiede piu' il permesso.")
+        return
+    percorso = DOVE_TOKEN or os.path.join(mia_cartella(), "token.txt")
     try:
         with open(percorso, "w") as f:
             f.write(nuovo + "\n")
@@ -730,9 +777,18 @@ def main():
             manda([], ascolta=1.0)
             print()
             if not ULTIMO_TOKEN:
-                print("  La TV non ha consegnato nessun token.")
-                print("  Succede quando il collegamento non arriva a")
-                print("  completarsi: guarda se c'e' un popup da accettare.")
+                # Il collegamento e' riuscito (altrimenti manda()
+                # avrebbe alzato un'eccezione), e la TV non ha
+                # consegnato niente: vuol dire che ha ACCETTATO quello
+                # che le abbiamo dato. E' la notizia buona, e prima
+                # qui c'era scritto il contrario.
+                print("  La TV ha accettato il token che hai passato, e non")
+                print("  ne ha dato uno nuovo: va tutto bene, con questo")
+                print(f"  nome («{NOME}») non chiedera' il permesso.")
+                if not usato:
+                    print("  Attenzione: non stavi passando nessun token, e")
+                    print("  il collegamento e' riuscito comunque. Vuol dire")
+                    print("  che la TV conosce gia' questo nome.")
                 return
             if ULTIMO_TOKEN == usato:
                 print(f"  TOKEN: {ULTIMO_TOKEN}")
@@ -965,6 +1021,12 @@ def main():
             if saltati:
                 print("  fuori tastiera, saltati: " + "".join(saltati))
             return
+        if OPZIONI_IGNOTE:
+            raise ConnectionError(
+                "non conosco l'opzione " + " ".join(OPZIONI_IGNOTE) + "\n"
+                "  Le opzioni si scrivono --chiave=valore, e sono:\n"
+                "     --nome= --token= --ip= --porta= --passo= --naviga=\n"
+                "     --carica= --tastiera= --azzera= --app= --tastiere=")
         if sys.argv[1].startswith("-") and sys.argv[1] not in COMANDI:
             raise ConnectionError(
                 f'"{sys.argv[1]}" non e\' un comando che conosco, e non lo\n'
