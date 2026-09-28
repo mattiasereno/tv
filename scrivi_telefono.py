@@ -443,6 +443,40 @@ def digita_in_app(testo, app=None, azzera=0, passo=None):
     return tasti, saltati
 
 
+PROTOCOLLO = """  MISURARE LA TASTIERA DI UN'APP CHE NON CONOSCO
+
+  Non serve una foto: si fa scrivere all'app la propria tastiera
+  dentro il suo campo di ricerca, e tu la leggi dalla TV.
+
+  PRIMA DI TUTTO, la domanda che conta: quell'app usa la tastiera
+  della TV o una sua? Apri la ricerca dell'app, mettiti nel campo, e:
+       python3 scrivi_telefono.py "prova"
+  Se dice che l'inserimento e' arrivato, hai finito: quell'app non ha
+  bisogno di nessuna macro, il testo si scrive diretto.
+  Se non segnala nessuna tastiera aperta, ha una tastiera sua, e
+  allora si misura cosi', col cursore su una lettera:
+
+    1.  --taratura angolo         va nell'angolo in alto a sinistra e
+                                  scrive quel carattere
+    2.  --taratura colonna        scende la prima colonna: dice i
+                                  caratteri e quante righe ci sono
+                                  (in fondo si ripetono: quello e' il
+                                  bordo)
+    3.  --taratura riga 1         percorre la seconda riga, 5 passi
+        --taratura riga 1 8       ...o 8, se 5 non bastano
+        --taratura riga 2  ...    e cosi' per ogni riga
+
+  Fra una sonda e l'altra svuota il campo a mano, altrimenti i
+  caratteri si sommano e non si capisce piu' niente.
+
+  ATTENZIONE: a DESTRA di troppo alcune app escono dalla tastiera
+  (Netflix porta al menu). Percio' si parte da 5 passi e si alza.
+  A SINISTRA e in ALTO no: i passi in eccesso sbattono sul bordo e
+  non fanno niente, ed e' proprio quello che rende l'angolo un punto
+  di partenza certo senza sapere niente della griglia.
+"""
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
@@ -469,6 +503,39 @@ def main():
             else:
                 print("  La TV non ha risposto niente: la ricerca non si e' aperta.")
                 print(f"  La strada e' {STRADA_RICERCA}, si cambia con TV_STRADA.")
+            return
+        if sys.argv[1] == "--taratura":
+            tastiere = carica_tastiere()
+            fase = sys.argv[2] if len(sys.argv) > 2 else ""
+            if fase not in ("angolo", "colonna", "riga"):
+                print(PROTOCOLLO)
+                return
+            indice = int(sys.argv[3]) if len(sys.argv) > 3 else 0
+            quanti = int(sys.argv[4]) if len(sys.argv) > 4 else (
+                5 if fase == "riga" else 8)
+            tasti = tastiere.taratura(fase, quanti=quanti, indice=indice)
+            # La taratura non ha bisogno di nessuna disposizione: e'
+            # proprio lo strumento per ricavarne una. Percio' non passa
+            # da digita_in_app, che invece ne pretende una.
+            seq = []
+            for t in tasti:
+                seq.append(cmd_tasto(TASTI_VERI[t]))
+                seq.append(("pausa", PASSO))
+            manda(seq)
+            print(f"  sonda {fase}"
+                  + (f" {indice}" if fase == "riga" else "")
+                  + f": {len(tasti)} pressioni mandate.")
+            print("  LEGGI IL CAMPO DI RICERCA SULLA TV e dimmi cosa c'e'")
+            print("  scritto, carattere per carattere, spazi compresi.")
+            if fase == "colonna":
+                print("  In fondo i caratteri si RIPETONO: e' il bordo")
+                print("  basso, e da quante ripetizioni ci sono si")
+                print("  capisce quante righe ha la tastiera.")
+            else:
+                print("  Se la tastiera si e' chiusa o sei finito nel")
+                print(f"  menu, sei andato a destra di troppo: rifai con")
+                print(f"     --taratura riga {indice} {max(1, quanti - 2)}")
+            print("  Poi svuota il campo a mano prima della prossima sonda.")
             return
         if sys.argv[1] in ("--digita", "--percorso"):
             solo_vedere = sys.argv[1] == "--percorso"

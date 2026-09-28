@@ -184,6 +184,52 @@ def digita(testo, app="netflix", azzera=0):
     return tasti, saltati
 
 
+# --- misurare una tastiera che non si conosce --------------------------
+#
+# Per le app di cui non so la disposizione non serve una foto: si fa
+# scrivere all'app la propria tastiera dentro il suo campo di ricerca.
+# Premendo OK su ogni casella lungo una riga, nel campo compare la riga
+# in chiaro, e chi guarda la TV la legge e me la detta. E' una misura,
+# non una supposizione.
+#
+# I bordi rendono la cosa possibile: LEFT e UP a fondo corsa portano
+# all'angolo in alto a sinistra, che e' un punto di partenza certo
+# anche senza sapere niente della griglia.
+
+def taratura(fase, quanti=8, indice=0, corsa=14):
+    """I tasti di una sonda per misurare una tastiera sconosciuta.
+
+    fase "angolo":  va nell'angolo e premi OK -> il carattere di la'
+    fase "colonna": scende la prima colonna -> quanti caratteri e
+                    quante righe (in fondo si ripete, e il bordo si
+                    vede da quello)
+    fase "riga":    percorre la riga `indice` -> i caratteri in ordine
+
+    `corsa` e' quante volte insistere contro il bordo: di piu' del
+    necessario non fa danno, i passi in eccesso non si muovono.
+
+    ATTENZIONE: andare a DESTRA di troppo su alcune app esce dalla
+    tastiera (su Netflix porta al menu). Percio' `quanti` nella fase
+    riga si tiene basso e si alza a poco a poco, guardando la TV."""
+    if fase not in ("angolo", "colonna", "riga"):
+        raise ValueError(f'fase sconosciuta: "{fase}"')
+
+    # all'angolo in alto a sinistra ci si arriva senza sapere niente:
+    # a fondo corsa i bordi fermano il cursore
+    tasti = ["LEFT"] * corsa + ["UP"] * corsa
+    if fase == "angolo":
+        return tasti + ["OK"]
+    if fase == "colonna":
+        tasti += ["OK"]
+        for _ in range(quanti):
+            tasti += ["DOWN", "OK"]
+        return tasti
+    tasti += ["DOWN"] * indice + ["OK"]
+    for _ in range(quanti):
+        tasti += ["RIGHT", "OK"]
+    return tasti
+
+
 def simula(tasti, app="netflix"):
     """Cosa scriverebbe davvero quella sequenza di tasti. Non e' una
     comodita': e' il modo di provare `digita` senza la TV, generando i
