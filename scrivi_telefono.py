@@ -57,7 +57,8 @@ def opzioni_da_argv():
             "porta": "TV_PORTA", "passo": "TV_PASSO",
             "naviga": "TV_NAVIGA", "carica": "TV_CARICA",
             "tastiera": "TV_TASTIERA", "azzera": "TV_AZZERA",
-            "app": "TV_APP", "tastiere": "TV_TASTIERE"}
+            "app": "TV_APP", "tastiere": "TV_TASTIERE",
+            "prima": "TV_PRIMA", "normalizza": "TV_NORMALIZZA"}
     resto, ignote = [sys.argv[0] if sys.argv else ""], []
     for pezzo in sys.argv[1:]:
         if pezzo.startswith("--") and "=" in pezzo:
@@ -618,6 +619,19 @@ def separa_app(argomenti, tastiere):
     return APP, testo
 
 
+def passo_di(app, tastiere):
+    """Quanto aspettare fra un tasto e il successivo, per QUESTA app.
+
+    Non e' un valore del progetto: e' una proprieta' dell'app. Netflix
+    perde a 0,12s e regge a 0,15s; HBO Max a 0,15s scarta quasi tutto
+    (47 pressioni, una lettera scritta) e vuole 0,4s. Tenerne uno solo
+    per tutte vorrebbe dire o perdere lettere o aspettare il doppio
+    del necessario ovunque."""
+    if os.environ.get("TV_PASSO"):
+        return float(os.environ["TV_PASSO"])
+    return float(tastiere.DISPOSIZIONI[app].get("passo", PASSO))
+
+
 def digita_in_app(testo, app=None, azzera=0, passo=None):
     """Scrive il titolo sulla tastiera a schermo dell'app, a frecce.
 
@@ -631,7 +645,7 @@ def digita_in_app(testo, app=None, azzera=0, passo=None):
     mandarli."""
     tastiere = carica_tastiere()
     app = app or APP
-    passo = PASSO if passo is None else passo
+    passo = passo_di(app, tastiere) if passo is None else passo
     if app not in tastiere.DISPOSIZIONI or app == "prova":
         raise ConnectionError(
             f'non ho la disposizione della tastiera di "{app}".\n'
@@ -664,8 +678,8 @@ def digita_in_app(testo, app=None, azzera=0, passo=None):
 # su una copia vecchia del telefono, che non avendolo fra i comandi
 # l'ha scritto nel campo di ricerca come se fosse un titolo.
 COMANDI = ("--cerca", "--tasto", "--tasti", "--digita",
-           "--percorso", "--apri", "--taratura", "--ascolta",
-           "--token", "--testo")
+           "--percorso", "--apri", "--strada", "--taratura",
+           "--ascolta", "--token", "--testo")
 
 PROTOCOLLO = """  MISURARE LA TASTIERA DI UN'APP CHE NON CONOSCO
 
@@ -819,12 +833,19 @@ def main():
                 raise ConnectionError(
                     "non conosco " + " ".join(ignoti) + "\n  conosco: "
                     + " ".join(sorted(TASTI_VERI)))
+            # Col passo di NAVIGAZIONE, non con quello di scrittura:
+            # --tasti serve a muoversi dentro le app, e cambiare
+            # schermata costa piu' che spostarsi di una casella. A
+            # 0,15s NOW ha scartato dodici BACK di fila senza muoversi
+            # di un millimetro. Si stringe con --passo= se serve.
+            passo = float(os.environ.get("TV_PASSO", PASSO_NAVIGA)) \
+                if os.environ.get("TV_PASSO") else PASSO_NAVIGA
             seq = []
             for n in nomi:
                 seq.append(cmd_tasto(TASTI_VERI[n]))
-                seq.append(("pausa", PASSO))
+                seq.append(("pausa", passo))
             manda(seq)
-            print("  mandate " + str(len(nomi)) + " pressioni: "
+            print(f"  mandate {len(nomi)} pressioni a {passo}s: "
                   + ",".join(nomi))
             print("  Guarda la TV e dimmi cosa e' cambiato.")
             return
@@ -904,13 +925,13 @@ def main():
         if sys.argv[1] == "--taratura":
             tastiere = carica_tastiere()
             fase = sys.argv[2] if len(sys.argv) > 2 else ""
-            if fase not in ("angolo", "colonna", "riga"):
+            if fase not in ("colonna", "riga"):
                 print(PROTOCOLLO)
                 return
             indice = int(sys.argv[3]) if len(sys.argv) > 3 else 0
             quanti = int(sys.argv[4]) if len(sys.argv) > 4 else (
                 5 if fase == "riga" else 8)
-            tasti = tastiere.taratura(fase, quanti=quanti, indice=indice)
+            tasti = tastiere.taratura(fase, quanti=quanti, giu=indice)
             # La taratura non ha bisogno di nessuna disposizione: e'
             # proprio lo strumento per ricavarne una. Percio' non passa
             # da digita_in_app, che invece ne pretende una.
@@ -934,6 +955,51 @@ def main():
                 print(f"     --taratura riga {indice} {max(1, quanti - 2)}")
             print("  Poi svuota il campo a mano prima della prossima sonda.")
             return
+        if sys.argv[1] == "--strada":
+            # Manda SOLO la normalizzazione e la strada, e si ferma
+            # prima di scrivere.
+            #
+            # Serve perche' ho sbagliato: su NOW ho mandato --apri con
+            # una strada non ancora confermata, la ricerca non si e'
+            # aperta, e le 64 pressioni del titolo - che contengono
+            # degli OK - sono finite su una schermata qualunque,
+            # aprendo un titolo a caso. La scrittura non va mai mandata
+            # prima che l'apertura della ricerca sia VERIFICATA da chi
+            # guarda la TV.
+            tastiere = carica_tastiere()
+            app = (sys.argv[2].lower() if len(sys.argv) > 2
+                   and sys.argv[2].lower() in tastiere.DISPOSIZIONI else APP)
+            d = tastiere.DISPOSIZIONI[app]
+            normalizza = [x.strip().upper() for x in
+                          (os.environ["TV_NORMALIZZA"].split(",")
+                           if os.environ.get("TV_NORMALIZZA")
+                           else d.get("normalizza", []))
+                          if x.strip()]
+            strada = [x.strip().upper() for x in
+                      (os.environ.get("TV_PRIMA", "").split(",")
+                       if os.environ.get("TV_PRIMA") else d.get("strada", []))
+                      if x.strip()]
+            if not normalizza and not strada:
+                raise ConnectionError(
+                    f"di {d['nome']} non ho ne' normalizzazione ne' strada.\n"
+                    "  Si passano a mano per provarle:\n"
+                    "     --normalizza=BACK,BACK,OK --prima=UP,OK --strada "
+                    + app)
+            seq = []
+            for t in normalizza + strada:
+                seq.append(cmd_tasto(TASTI_VERI.get(
+                    t, t if t.startswith("KEY_") else "KEY_" + t)))
+                seq.append(("pausa", PASSO_NAVIGA))
+            manda(seq)
+            print(f"  normalizzo: {','.join(normalizza)}")
+            print(f"  strada:     {','.join(strada)}")
+            print(f"  {len(normalizza) + len(strada)} pressioni. NON ho "
+                  "scritto niente.")
+            print("  GUARDA LA TV: la ricerca dell'app e' aperta, con la")
+            print("  tastiera visibile? Solo se la risposta e' si' ha senso")
+            print("  mandare un titolo. Altrimenti gli OK della scrittura")
+            print("  finiscono su una schermata qualunque.")
+            return
         if sys.argv[1] == "--apri":
             # Il pezzo che chiude il cerchio: dall'app appena aperta
             # al titolo scritto nella sua ricerca.
@@ -956,7 +1022,15 @@ def main():
             # riportarla a un punto noto contare i passi non serve a
             # niente. Su Netflix e' BACK ripetuto, che sul tasto Home
             # in alto sbatte senza fare danni.
-            normalizza = list(d.get("normalizza", []))
+            # TV_NORMALIZZA come TV_PRIMA: per provare varianti senza
+            # riscrivere il codice a ogni tentativo. Misurare la strada
+            # di un'app e' un lavoro a tentativi, e ogni giro deve
+            # costare poco.
+            normalizza = [x.strip().upper() for x in
+                          (os.environ["TV_NORMALIZZA"].split(",")
+                           if os.environ.get("TV_NORMALIZZA")
+                           else d.get("normalizza", []))
+                          if x.strip()]
             strada = [x.strip().upper() for x in
                       (os.environ.get("TV_PRIMA", "").split(",")
                        if os.environ.get("TV_PRIMA") else d.get("strada", []))
@@ -975,7 +1049,10 @@ def main():
             attesa = float(os.environ.get("TV_CARICA", "6"))
             print(f'  aspetto {attesa:.0f}s che {d["nome"]} finisca di '
                   "caricare")
-            azzera = int(os.environ.get("TV_AZZERA", "0"))
+            # Quanto cancellare prima di scrivere: lo dice la
+            # disposizione, perche' dipende da com'e' fatta la
+            # tastiera dell'app. TV_AZZERA lo sovrascrive.
+            azzera = int(os.environ.get("TV_AZZERA", d.get("azzera", 0)))
             tasti, saltati = tastiere.digita(testo, app, azzera=azzera)
             seq = [("pausa", attesa)]
             for t in normalizza + strada:
@@ -983,9 +1060,10 @@ def main():
                     t, t if t.startswith("KEY_") else "KEY_" + t)))
                 seq.append(("pausa", PASSO_NAVIGA))
             seq.append(("pausa", ATTESA_TASTIERA))
+            passo = passo_di(app, tastiere)
             for t in tasti:
                 seq.append(cmd_tasto(TASTI_VERI[t]))
-                seq.append(("pausa", PASSO))
+                seq.append(("pausa", passo))
             manda(seq)
             print(f"  normalizzo: {','.join(normalizza)}")
             print(f"  strada: {','.join(strada)}")
@@ -1003,7 +1081,8 @@ def main():
                 print(f'     python3 {mio_nome()} '
                       f'{sys.argv[1]} "the bear"')
                 return
-            azzera = int(os.environ.get("TV_AZZERA", "0"))
+            azzera = int(os.environ.get(
+                "TV_AZZERA", tastiere.DISPOSIZIONI[app].get("azzera", 0)))
             if solo_vedere:
                 tasti, saltati = tastiere.digita(testo, app, azzera=azzera)
                 print(f'  "{testo}" su {tastiere.DISPOSIZIONI[app]["nome"]}: '

@@ -21,6 +21,16 @@ bordi: dicevano che bloccano, invece GIRANO.
 
 SPAZIO = " "
 CANCELLA = "\b"
+# Un tasto che esiste, occupa una casella, ma non scrive testo: "123",
+# i simboli, le maiuscole. Serve che stia nella griglia perche' i
+# passi si contano anche sopra di lui, ma non deve mai essere una
+# destinazione - e non lo e', perche' nessun titolo contiene questo
+# carattere.
+ALTRO = "\x00"
+# Il tasto che svuota TUTTO il campo in una pressione - il cestino di
+# HBO Max. Vale piu' di N cancella: una pressione sola e la certezza
+# di partire da vuoto, invece di indovinare quanto c'era dentro.
+SVUOTA = "\x01"
 
 # --- come si modella una tastiera -------------------------------------
 #
@@ -85,6 +95,13 @@ DISPOSIZIONI = {
         # alla cieca ha aperto il menu Impostazioni. Le riempie chi
         # guarda la TV, che quella strada la fa ogni giorno col
         # telecomando.
+        # Come su NOW: cancellare qualche carattere prima di scrivere
+        # rende il risultato indipendente da cosa c'era nel campo, e su
+        # Netflix la ricerca vecchia RESTA (visto: "thebear" era ancora
+        # li' al giro dopo). Su Netflix CANCELLA e' un tasto largo e ci
+        # si arriva da sotto, salendo dalla colonna centrale.
+        # NON ANCORA PROVATO SULLA TV su Netflix, a differenza di NOW.
+        "azzera": 3,
         # MISURATO: BACK porta il fuoco sul tasto Home in alto, e un
         # BACK in piu' quando e' gia' la' NON FA NIENTE. Quindi e' un
         # fondo idempotente, e questo risolve il problema dello stato
@@ -123,7 +140,279 @@ DISPOSIZIONI = {
         # quindi la strada e digita si incastrano senza aggiustamenti.
         "strada": ["LEFT", "OK"],
         "bordi": "girano",        # MISURATO, contro le fonti
+        # Nessuna ancora possibile: coi bordi che girano, a fondo
+        # corsa il cursore non si ferma, ricompare dall'altro lato.
+        "ancoraggio": None,
         "larghi": {SPAZIO, CANCELLA},
+    },
+    "now": {
+        "nome": "NOW",
+        # MISURATO SULLA TV il 28/09/2026, sonda per sonda.
+        # QWERTY, non alfabetica come Netflix. Il cursore arriva sulla
+        # q. Nessun tasto largo: cancella e spazio sono tasti singoli,
+        # e questo rende tutto piu' semplice che su Netflix.
+        "griglia": [
+            "qwertyuiop",
+            "asdfghjkl" + CANCELLA,
+            "zxcvbnm" + ALTRO * 2 + SPAZIO,
+        ],
+        "partenza": (0, 0),       # la q
+        # I BORDI, misurati uno per uno muovendo SENZA premere:
+        #   destra   BLOCCA  (15 passi dalla q si fermano sulla p)
+        #   alto     BLOCCA  (5 passi in su dalla p restano sulla p)
+        #   basso    PERDE   (6 passi in giu' dalla q finiscono su un
+        #                    titolo: la prima versione premeva OK la'
+        #                    e ha fatto partire un programma)
+        #   sinistra PERDE   (15 passi a sinistra sono usciti dalla
+        #                    tastiera, stesso guaio)
+        # I percorsi a delta esatto non toccano nessun bordo, quindi
+        # quelli che perdono non danno fastidio. I due che bloccano
+        # invece sono un regalo: danno un'ANCORA, che su Netflix non
+        # esiste.
+        "bordi": "fermano",
+        "larghi": set(),
+        "ancoraggio": {"tasti": ["RIGHT"] * 15 + ["UP"] * 5,
+                       "arrivo": (0, 9)},
+        # MISURATO: su NOW la normalizzazione non e' "BACK a
+        # ripetizione" come su Netflix, perche' qui il BACK di troppo
+        # NON e' gratis: apre la richiesta di conferma per uscire
+        # dall'app. E i due stati si ALTERNANO:
+        #     home -> BACK -> conferma
+        #     conferma -> BACK -> home col menu a tendina aperto
+        # Quindi dopo N BACK non si sa in quale dei due si e'.
+        #
+        # Si fanno convergere sfruttando due cose misurate:
+        #   - nella conferma e' evidenziato "RESTA", quindi OK e'
+        #     sicuro e porta al menu a tendina con Home evidenziata;
+        #   - nel menu e' evidenziata "Home", quindi OK va alla home.
+        # Da cui:
+        #     BACK x8   -> conferma OPPURE home col menu
+        #     OK        -> menu (da conferma) oppure home (da menu)
+        #     BACK      -> conferma, DA ENTRAMBE
+        #     OK        -> menu col Home evidenziato, certo
+        # TROVATA da chi guarda la TV, il 28/09/2026, dopo che i
+        # miei tre tentativi dedotti erano falliti. Sei BACK e poi DUE
+        # volte su+OK:
+        #     BACK x6        porta in un punto da cui i due su+OK
+        #                    funzionano
+        #     UP, OK         il primo passaggio
+        #     UP, OK         il secondo, e la ricerca si apre
+        # VERIFICATO partendo da dentro un titolo della home: la
+        # ricerca si e' aperta e --digita ha scritto "the bear".
+        #
+        # IL MODELLO, ricavato provando una variante che NON funziona:
+        # mettendo un OK davanti, la sequenza e' finita "nel menu sopra
+        # quello in cui ero". Cioe' questa sequenza atterra sempre
+        # sulla voce di menu SOPRA LA SEZIONE CORRENTE.
+        #
+        # Da cui: funziona perche' la RICERCA sta sopra HOME. Quindi
+        # funziona esattamente quando la sezione corrente e' Home.
+        # Se sei in un'altra sezione apre la voce sopra QUELLA: lo
+        # vedi subito, non rompe niente, e si rimedia con due tasti.
+        #
+        # E' un limite dichiarato, non un difetto nascosto: chi usa la
+        # TV ha scelto di non navigare a mano fra le sezioni e di far
+        # fare tutto al telefono, e con quella premessa la sezione
+        # resta Home.
+        #
+        # L'OK INIZIALE serve al caso a freddo, quando NOW parte dal
+        # SELETTORE PROFILI: la' scegle il profilo. E non sposta
+        # l'allineamento, perche' aggiunge profondita' che i sei BACK
+        # riassorbono.
+        # Me l'ero convinto del contrario leggendo male una prova:
+        # quella prova partiva da una sezione NON Home (l'avevo
+        # chiesto io), quindi finire "sul menu sopra quella sezione"
+        # era il comportamento GIUSTO, non un disallineamento.
+        # Quante volte premere CANCELLA prima di scrivere. Serve
+        # perche' non si puo' vedere lo schermo: un OK della
+        # navigazione e' arrivato anche sulla tastiera e ha scritto una
+        # "q" di troppo ("qthe bear"), e una ricerca vecchia potrebbe
+        # essere rimasta nel campo. Cancellare qualche carattere rende
+        # il risultato indipendente da cosa c'era prima.
+        # Su NOW il cancella e' un tasto SINGOLO in riga 1 colonna 9,
+        # quindi raggiungerlo costa poco e non ha ambiguita'.
+        "azzera": 3,
+        "normalizza": ["OK"] + ["BACK"] * 6,
+        "strada": ["UP", "OK", "UP", "OK"],
+    },
+    "disney": {
+        "nome": "Disney+",
+        # MISURATO SULLA TV il 28/09/2026. Alfabetica come Netflix, ma
+        # 7 colonne invece di 6, e con i numeri di fila dopo la z.
+        # Il cursore arriva sullo SPAZIO, in alto a destra.
+        #
+        # La sonda della prima colonna ha scritto "f m t 1 8 0" (il
+        # primo OK era sullo spazio, invisibile). Sono esattamente le
+        # colonne 5 delle righe sotto, e le due righe finali sono state
+        # dedotte dall'aritmetica e poi CONFERMATE guardando lo
+        # schermo.
+        "griglia": [
+            CANCELLA * 4 + SPAZIO * 3,
+            "abcdefg",
+            "hijklmn",
+            "opqrstu",
+            "vwxyz12",
+            "3456789",
+            "0",
+        ],
+        "partenza": (0, 5),       # sullo spazio, in alto a destra
+        # LO SPAZIO NON SI RIESCE A PREMERE, e non perche' non si sappia
+        # dov'e': sta sopra "e f g" (confermato guardando), quindi la
+        # colonna centrale e' quella della f ed e' esattamente dove il
+        # codice mira. L'OK la' non ha scritto niente e non ha
+        # cancellato niente: la pressione si e' PERSA, probabilmente
+        # arrivata mentre il fuoco si stava ancora spostando.
+        # "Non so dov'e'" e "so dov'e' ma la pressione si perde" sono
+        # due cose diverse, e questa e' la seconda: si risolverebbe
+        # rallentando il passo intorno al tasto largo.
+        # Non vale la pena: VERIFICATO che la ricerca di Disney+ TROVA
+        # il titolo anche senza lo spazio ("thebear" ha trovato The
+        # Bear). Percio' lo spazio si salta e si DICHIARA, come i
+        # numeri su NOW.
+        "non_scrivibili": {SPAZIO},
+        # DA MISURARE: i bordi. Fino a prova contraria si assume che
+        # fermino, ma i percorsi a delta esatto non li toccano, quindi
+        # la scrittura funziona comunque. Senza saperlo non si puo'
+        # dire se esiste un'ancora.
+        "bordi": "fermano",
+        "larghi": {SPAZIO, CANCELLA},
+        "ancoraggio": None,
+        # L'ultima riga ha il solo "0": scendendoci la colonna si
+        # schiaccia, ed e' proprio quello che ha fatto la sonda.
+        "azzera": 3,
+        # MISURATO, e Disney+ e' il caso FORTUNATO: il suo menu a
+        # tendina e' BLOCCATO sopra e sotto, non gira come quello di
+        # NOW. Percio' "su a fondo corsa" atterra sempre sulla prima
+        # voce, qualunque sia la sezione da cui arrivi - ed e' l'ancora
+        # che su NOW non esisteva e che ci e' costata tre tentativi.
+        #     voce 1   selettore profili
+        #     voce 2   CERCA, e cliccandola si arriva sullo SPAZIO,
+        #              cioe' esattamente la partenza qui sopra
+        #
+        # L'OK iniziale serve al caso a freddo (selettore profili):
+        # scegle il profilo. Nel caso a caldo cade su quello che e' a
+        # fuoco e i BACK dopo lo disfanno.
+        #
+        # E "su a fondo corsa, giu', OK" e' SICURO IN ENTRAMBI GLI
+        # STATI, che e' la cosa che rende tutto questo accettabile:
+        #   - nel menu porta sulla ricerca;
+        #   - nella finestra "vuoi uscire" - dove su Disney+ e'
+        #     evidenziato ESCI, non Resta - il su sbatte su Esci, il
+        #     giu' va su ANNULLA e l'OK annulla.
+        # Quindi non puo' chiudere l'app. Su NOW l'evidenziato era
+        # Resta e il rischio non c'era; qui c'era, e si aggira.
+        "normalizza": ["OK"] + ["BACK"] * 6,
+        "strada": ["UP"] * 6 + ["DOWN", "OK"],
+    },
+    "hbomax": {
+        "nome": "HBO Max",
+        # MISURATO SULLA TV il 28/09/2026. La griglia delle lettere e'
+        # IDENTICA a Netflix - alfabetica, 6 colonne - e il cursore
+        # arriva sulla a. La differenza e' che la riga dei tasti
+        # larghi sta SOTTO invece che sopra, e ha TRE tasti invece di
+        # due: cancella, spazio e CESTINO.
+        #
+        # La sonda della colonna ha scritto "agmsy4" e poi ha
+        # CANCELLATO il 4: la settima pressione era sul cancella, che
+        # sta sotto la colonna del 4. Conferma la griglia e la riga in
+        # fondo in un colpo.
+        "griglia": [
+            "abcdef",
+            "ghijkl",
+            "mnopqr",
+            "stuvwx",
+            "yz0123",
+            "456789",
+            CANCELLA * 2 + SPAZIO * 2 + SVUOTA * 2,
+        ],
+        "partenza": (0, 0),       # la a
+        # I BORDI, misurati muovendo SENZA premere:
+        #   alto e basso  BLOCCANO
+        #   destra        PERDE, il fuoco esce sui RISULTATI
+        #   sinistra      PERDE, il fuoco esce sul MENU A TENDINA
+        "bordi": "fermano",
+        "larghi": {CANCELLA, SPAZIO, SVUOTA},
+        # L'ANCORA, e usa proprio il bordo che perde:
+        #   sinistra a fondo corsa  -> esce sul menu a tendina
+        #   destra                  -> rientra in PRIMA COLONNA (sulla
+        #                              a, verificato)
+        #   su a fondo corsa        -> riga 0, perche' il verticale
+        #                              blocca
+        # Quindi si arriva sempre sulla a, da qualunque casella. Un
+        # bordo che perde non e' sempre un problema: qui e' la porta.
+        "ancoraggio": {"tasti": ["LEFT"] * 10 + ["RIGHT"] + ["UP"] * 7,
+                       "arrivo": (0, 0)},
+        # Col cestino basta UNA pressione per svuotare il campo.
+        "azzera": 1,
+        # HBO MAX E' LENTA. A 0,15s - il passo che va bene su Netflix,
+        # NOW e Disney+ - scarta quasi tutto: 47 pressioni hanno
+        # prodotto una sola "c". A 0,5s "it" e' uscito giusto.
+        # Il passo e' una proprieta' dell'APP, non del progetto.
+        # Provato: 0,5s giusto, 0,4s giusto, 0,3s giusto, 0,2s TROPPO
+        # VELOCE (lettere perse). Fissato 0,3 con un gradino di
+        # margine, perche' una lettera persa non si vede.
+        "passo": 0.3,
+        # MISURATO, e qui la convergenza e' pulita.
+        # BACK a ripetizione alterna MENU A TENDINA e CONFERMA
+        # D'USCITA, come su NOW. Ma su HBO Max i due stati si fanno
+        # convergere con DESTRA + BACK:
+        #   dalla conferma: destra sposta su "No" senza attivare
+        #                   niente, BACK chiude -> MENU
+        #   dal menu:       destra esce sui contenuti, BACK rientra
+        #                   -> MENU
+        # Verificato da entrambi. Quindi i BACK in eccesso sono
+        # GRATIS: qualunque stato raggiungano, la coppia li porta nel
+        # menu.
+        #
+        # E soprattutto: fino a qui NON si preme mai OK. Serviva,
+        # perche' nella conferma d'uscita di HBO Max e' selezionato
+        # "Si'" - un OK al buio chiuderebbe l'app. L'OK si preme solo
+        # dopo, quando si e' certi di stare nel menu.
+        # L'OK IN TESTA serve al caso a freddo, quando l'app parte dalla
+        # PAGINA DEI PROFILI: la' scegle il profilo. Nel caso normale
+        # cade su quello che e' a fuoco - dentro un titolo fa partire
+        # qualcosa - e gli otto BACK lo disfano.
+        # UNICO RISCHIO, specifico di HBO Max: se l'app riprendesse con
+        # la CONFERMA D'USCITA gia' a schermo, quell'OK cadrebbe su
+        # "Si'" e chiuderebbe l'app. Improbabile (un'app non riprende
+        # su una finestra di conferma), ma su NOW e Disney+ questo
+        # rischio non c'e', perche' la' non e' selezionato "esci".
+        "normalizza": ["OK"] + ["BACK"] * 8 + ["RIGHT", "BACK"],
+        # Il menu BLOCCA sopra e sotto (come Disney+, non come NOW),
+        # quindi su a fondo corsa atterra sulla prima voce. La ricerca
+        # e' la TERZA.
+        "strada": ["UP"] * 8 + ["DOWN", "DOWN", "OK"],
+    },
+    "prime": {
+        "nome": "Prime Video",
+        # MISURATO SULLA TV il 28/09/2026, letta riga per riga.
+        # Alfabetica come Netflix - non QWERTY, come diceva la rete -
+        # ma con le VOCALI ACCENTATE dopo la z, e i numeri che
+        # partono da 1 invece che da 0. Il cursore arriva sulla a.
+        # Gli accenti sono una buona notizia: i titoli italiani si
+        # scrivono per davvero.
+        "griglia": [
+            "abcdef",
+            "ghijkl",
+            "mnopqr",
+            "stuvwx",
+            "yz\u00e0\u00e8\u00e9\u00ec",
+            "\u00f2\u00f9" + "1234",
+            "567890",
+            SPAZIO * 2 + CANCELLA * 2 + SVUOTA * 2,
+        ],
+        "partenza": (0, 0),       # la a
+        # DA MISURARE: i bordi, e quindi se esiste un'ancora.
+        "bordi": "fermano",
+        "larghi": {SPAZIO, CANCELLA, SVUOTA},
+        "ancoraggio": None,
+        "azzera": 1,              # c'e' il cestino
+        # PROVATO: a 0,3s "the bear" esce giusto. Si potrebbe
+        # stringere, non provato.
+        "passo": 0.3,
+        # DA MISURARE
+        "normalizza": [],
+        "strada": [],
     },
     # Griglia finta senza tasti larghi, per le prove.
     "prova": {
@@ -135,13 +424,29 @@ DISPOSIZIONI = {
     },
 }
 
+# Discovery+ e HBO Max sono LA STESSA PIATTAFORMA: il pacchetto di HBO
+# Max su questa TV e' 5b8c3eb16b.BeamCTVDev, e "Beam" e' il nome
+# interno di Warner Bros. Discovery. Chi guarda la TV ha detto che le
+# due app sono "esattamente uguali", e la disposizione si riusa - ma
+# resta una COPIA DICHIARATA, non un caso: se un giorno divergono,
+# basta staccarla qui.
+# La griglia e' identica (letta riga per riga: abcdef / ghijkl /
+# mnopqr / stuvwx / yz0123 / 456789, e in fondo cancella, spazio,
+# cestino). Ma DISCOVERY+ E' ANCORA PIU' LENTA: a 0,3s - il passo che
+# va bene su HBO Max - "the bear" e' uscito "thk beb". Gli errori
+# erano SPARSI (terza e settima lettera sbagliate, le altre giuste,
+# una mancante), e nessuna casella di partenza produce quella stringa:
+# quindi non era uno sfasamento dell'ancora, erano pressioni perse.
+DISPOSIZIONI["discovery"] = dict(DISPOSIZIONI["hbomax"],
+                                 nome="Discovery+", passo=0.5)
+
+
 # App che ci sono ma di cui non conosco la tastiera. Servono a
 # rifiutare il lavoro invece di scrivere il loro nome come se fosse un
 # titolo: ognuna ha una disposizione sua, e la TV non la sa dire.
 SENZA_DISPOSIZIONE = {
-    "now", "nowtv", "disney", "disney+", "prime", "primevideo",
-    "apple", "appletv", "hbo", "hbomax", "max", "infinity",
-    "mediaset", "discovery", "discovery+", "youtube",
+    "apple", "appletv", "infinity",
+    "mediaset", "youtube",
 }
 
 
@@ -256,27 +561,54 @@ def percorso_largo(griglia, da, ch, bordi="fermano"):
         # sulla riga larga, e di lato non ci si muove - quindi si
         # scende, e da sotto si risale come sempre. Prima questo caso
         # era un errore, e un titolo vero l'ha trovato subito.
-        passi.append("DOWN")
-        pos = muovi(griglia, pos, "DOWN", bordi)
+        via = "DOWN" if riga_larga == 0 else "UP"
+        passi.append(via)
+        pos = muovi(griglia, pos, via, bordi)
     # orizzontale PRIMA, sulla riga delle lettere dove contare e' sicuro
-    for _ in range(len(griglia[da[0]]) + 1):
+    for _ in range(len(griglia[pos[0]]) + 1):
         if pos[1] == colonna:
             break
         passi.append("RIGHT" if colonna > pos[1] else "LEFT")
         pos = muovi(griglia, pos, passi[-1], bordi)
-    # poi in su, fino alla riga del tasto largo
+    # poi in verticale fino alla riga dei tasti larghi. La direzione
+    # dipende da DOVE STA quella riga: sopra le lettere su Netflix e
+    # Disney+, SOTTO su HBO Max. Darla per scontata rompeva HBO Max.
     for _ in range(len(griglia) + 1):
         if pos[0] == riga_larga:
             break
-        passi.append("UP")
-        pos = muovi(griglia, pos, "UP", bordi)
+        via = "DOWN" if riga_larga > pos[0] else "UP"
+        passi.append(via)
+        pos = muovi(griglia, pos, via, bordi)
     if griglia[pos[0]][pos[1]] != ch:
         raise ValueError(f"non arrivo su {ch!r}: sono su "
                          f"{griglia[pos[0]][pos[1]]!r}")
     return passi, pos
 
 
-def digita(testo, app="netflix", azzera=0):
+def ancoraggio(app="netflix"):
+    """I tasti per portarsi in un punto CERTO della tastiera, e dove
+    si finisce.
+
+    Non e' una formula: e' un fatto misurato, diverso per ogni
+    tastiera, e sta scritto nella disposizione. Su NOW sono destra e
+    su a fondo corsa, perche' quei due bordi bloccano. Su Netflix non
+    esiste, perche' i bordi girano e a fondo corsa il cursore
+    ricompare dall'altro lato.
+
+    Serve perche' dopo aver scritto il cursore resta sull'ultima
+    lettera, e perche' qualcuno potrebbe averlo mosso col telecomando.
+    Dove c'e', il punto di partenza non conta piu'."""
+    d = DISPOSIZIONI[app]
+    anc = d.get("ancoraggio")
+    if not anc:
+        raise ValueError(
+            f"{d['nome']}: nessun ancoraggio. I bordi non bloccano, "
+            "quindi a fondo corsa il cursore non si ferma: serve sapere "
+            "da dove parte, e aprire la ricerca da zero.")
+    return list(anc["tasti"]), tuple(anc["arrivo"])
+
+
+def digita(testo, app="netflix", azzera=0, ancora=None):
     """La sequenza di tasti per scrivere un testo dentro l'app.
 
     PRETENDE che il cursore sia sulla casella di partenza dichiarata
@@ -297,8 +629,19 @@ def digita(testo, app="netflix", azzera=0):
     griglia, larghi = d["griglia"], d["larghi"]
     bordi = d.get("bordi", "fermano")
     dove = posizioni(griglia)
+    non_scrivibili = d.get("non_scrivibili", set())
     pos = tuple(d["partenza"])
     tasti, saltati = [], []
+
+    # Se la tastiera ha un'ancora si usa: costa qualche pressione e in
+    # cambio il punto di partenza non conta piu'. Dove non c'e' si
+    # PRETENDE che il cursore stia sulla casella dichiarata, cioe' che
+    # la ricerca sia appena stata aperta.
+    if ancora is None:
+        ancora = bool(d.get("ancoraggio"))
+    if ancora:
+        passi, pos = ancoraggio(app)
+        tasti += passi
 
     # Prima si toglie quello che non si puo' scrivere, POI si
     # accorpano gli spazi rimasti. Senza questo, "Amori & incantesimi"
@@ -307,14 +650,19 @@ def digita(testo, app="netflix", azzera=0):
     # dichiarano comunque, in `saltati`.
     pulito = []
     for ch in testo.lower():
-        if ch in dove and ch != CANCELLA:
+        if ch in dove and ch != CANCELLA and ch not in non_scrivibili:
             if ch == SPAZIO and (not pulito or pulito[-1] == SPAZIO):
                 continue                # niente spazi doppi ne' in testa
             pulito.append(ch)
         else:
             saltati.append(ch)
-            if pulito and pulito[-1] != SPAZIO:
-                pulito.append(SPAZIO)   # un buco resta un buco
+            # Un buco resta un buco: al posto del carattere saltato ci
+            # va uno spazio. Ma solo se lo spazio si puo' scrivere -
+            # altrimenti saltando lo SPAZIO si finirebbe per
+            # inserirne uno, che e' un cerchio.
+            if (pulito and pulito[-1] != SPAZIO
+                    and SPAZIO in dove and SPAZIO not in non_scrivibili):
+                pulito.append(SPAZIO)
     while pulito and pulito[-1] == SPAZIO:
         pulito.pop()                    # niente spazio in coda
     testo = "".join(pulito)
@@ -327,10 +675,17 @@ def digita(testo, app="netflix", azzera=0):
         return percorso(griglia, pos, dove[carattere], bordi)
 
     if azzera:
-        if CANCELLA not in dove:
+        # Col cestino una pressione svuota tutto, e non serve
+        # indovinare quanti caratteri c'erano nel campo. Dove non c'e',
+        # si preme cancella `azzera` volte.
+        if SVUOTA in dove:
+            passi, pos = vai(SVUOTA)
+            tasti += passi + ["OK"]
+        elif CANCELLA in dove:
+            passi, pos = vai(CANCELLA)
+            tasti += passi + ["OK"] * azzera
+        else:
             raise ValueError(f"{d['nome']}: non so dov'e' il tasto cancella")
-        passi, pos = vai(CANCELLA)
-        tasti += passi + ["OK"] * azzera
 
     for ch in testo:
         passi, pos = vai(ch)
@@ -355,7 +710,12 @@ def simula(tasti, app="netflix", da=None, bordi=None):
     for t in tasti:
         if t == "OK":
             ch = griglia[pos[0]][pos[1]]
-            scritto = scritto[:-1] if ch == CANCELLA else scritto + ch
+            if ch == CANCELLA:
+                scritto = scritto[:-1]
+            elif ch == SVUOTA:
+                scritto = ""
+            else:
+                scritto += ch
         else:
             pos = muovi(griglia, pos, t, come)
     return scritto
@@ -377,20 +737,33 @@ def simula(tasti, app="netflix", da=None, bordi=None):
 # proprio dalla coda della sonda: se gli ultimi caratteri si RIPETONO
 # il bordo ferma, se RICOMINCIANO dal primo il bordo gira.
 
-def taratura(fase, quanti=6):
+def taratura(fase, quanti=6, giu=0):
     """I tasti di una sonda per misurare una tastiera sconosciuta.
 
-    fase "riga":    OK e poi passi a destra -> i caratteri della riga
-                    dove sta il cursore, e come si comporta il bordo
-    fase "colonna": OK e poi passi in giu'  -> la colonna, e il bordo
+    fase "colonna": OK e poi passi in GIU'  -> la prima colonna, e
+                    quante righe ci sono (in fondo si ripete o
+                    ricomincia, e da quello si vede il bordo)
+    fase "riga":    scende `giu` volte, poi OK e passi a DESTRA -> i
+                    caratteri di quella riga
 
-    Va usata con la ricerca appena aperta, cosi' si sa da dove parte.
+    Va usata con la ricerca appena aperta e il cursore non toccato,
+    cosi' si sa da dove parte.
+
     `quanti` si tiene basso e si alza a poco a poco guardando la TV:
-    su una tastiera sconosciuta non si sa cosa ci sia oltre il bordo."""
+    su una tastiera sconosciuta non si sa cosa ci sia oltre il bordo,
+    e a destra su Netflix si esce dalla tastiera.
+
+    Le sonde sono RELATIVE, e non danno per buono niente sui bordi:
+    una prima versione partiva "dall'angolo" andando a fondo corsa, e
+    su Netflix ha fatto perdere la query, perche' con i bordi che
+    girano l'angolo non esiste. Il comportamento dei bordi e' una
+    delle cose DA misurare, e si vede dalla coda della sonda: se gli
+    ultimi caratteri si RIPETONO il bordo ferma, se RICOMINCIANO dal
+    primo il bordo gira."""
     if fase not in ("riga", "colonna"):
         raise ValueError(f'fase sconosciuta: "{fase}"')
+    tasti = ["DOWN"] * giu + ["OK"]
     verso = "RIGHT" if fase == "riga" else "DOWN"
-    tasti = ["OK"]
     for _ in range(quanti):
         tasti += [verso, "OK"]
     return tasti
