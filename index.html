@@ -741,6 +741,35 @@ const SOTTOGENERI = [
 // normalizzazione e strada fino al campo di ricerca.
 const TASTIERE = { "8": "netflix" };
 
+// Da dove a-Shell scarica lo script che scrive sulla TV. In un posto
+// solo, perche' finisce in un comando che l'utente incolla a mano:
+// se cambia, deve cambiare qui e basta.
+const POSIZIONE_SCRIPT =
+  "https://mattiasereno.github.io/tv/scrivi_telefono.py";
+
+// Il comando da incollare nella Scorciatoia di iOS.
+//
+// NON contiene percorsi: scarica lo script al volo. Su a-Shell la
+// cartella da cui parte una Scorciatoia non e' quella della finestra
+// interattiva, e indovinarla e' costato tre tentativi. Cosi' il
+// telefono non ha nessuna copia da tenere aggiornata, che e' stata
+// due volte la causa di guasti silenziosi.
+//
+// E' una funzione e non una stringa perche' le prove devono poterlo
+// ESEGUIRE: un comando che l'utente incolla a mano e che nessuno
+// prova e' un comando che non funziona.
+function comandoScorciatoia(titolo) {
+  // Col token davanti, sul telefono non serve nessun file: lo script
+  // si scarica, tastiere.py se lo prende da se', e il token arriva
+  // qui. Senza, lo script cerca token.txt in cartelle che dipendono
+  // da dove la Scorciatoia lo fa partire - e su a-Shell quella
+  // cartella non e' quella della finestra interattiva.
+  return (chiavi.tvtoken ? "TV_TOKEN=" + chiavi.tvtoken + " " : "") +
+         'python3 -c "import urllib.request as u;' +
+         "exec(u.urlopen('" + POSIZIONE_SCRIPT + "').read())\" " +
+         '--apri "' + titolo + '"';
+}
+
 const NOMI_PACCHETTO = {
   "org.tizen.netflix-app": "Netflix",
   "org.tizen.primevideo": "Prime Video",
@@ -819,7 +848,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20260928133508";
+const VERSIONE = "20260928141108";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -836,6 +865,14 @@ const chiavi = {
   set token(v) { localStorage.setItem("st_token", v.trim()); },
   get tv()     { return localStorage.getItem("st_device") || ""; },
   set tv(v)    { localStorage.setItem("st_device", v); },
+
+  // Il token del WebSocket locale della TV: altra cosa dal token
+  // SmartThings, che e' cloud. Serve solo per finire dentro il
+  // comando della Scorciatoia, cosi' sul telefono non serve nessun
+  // file - ne' lo script, ne' tastiere.py, ne' token.txt. Sono solo
+  // cifre, e qualunque altra cosa si incolli viene ripulita.
+  get tvtoken()  { return localStorage.getItem("tv_token") || ""; },
+  set tvtoken(v) { localStorage.setItem("tv_token", String(v).replace(/\D/g, "")); },
 
   // Distinguo "non ho mai scelto" (chiave assente -> predefiniti) da
   // "ho scelto niente" (lista vuota -> nessun filtro possibile, e
@@ -3767,10 +3804,12 @@ function schermoImpostazioni() {
   pad.appendChild(el("p", "sezione", "Scrivere sulla TV"));
   const spiegaSc = el("div", "gusto");
   spiegaSc.innerHTML =
-    "Una pagina web non può parlare con la TV in rete locale, ma una " +
-    "<b>Scorciatoia</b> di iOS sì. Se ne hai creata una che apre la ricerca " +
-    "della TV, mettine qui il nome esatto e comparirà il pulsante " +
-    "<b>«Cerca sulla TV»</b> nelle schede.<br>Lascia vuoto se non ce l'hai.";
+    "Una pagina web non può parlare con la TV in rete locale, perché il " +
+    "certificato della TV vale solo per sé stessa. Una <b>Scorciatoia</b> " +
+    "di iOS sì, passando da a-Shell. Con la Scorciatoia impostata, il " +
+    "pulsante sulle schede diventa <b>«Apri l\u2019app e cerca il " +
+    "titolo»</b>: apre l\u2019app sulla TV e scrive il titolo nella sua " +
+    "ricerca.<br>Lascia vuoto se non ce l\u2019hai.";
   pad.appendChild(spiegaSc);
 
   const campoSc = el("div", "campo");
@@ -3788,6 +3827,71 @@ function schermoImpostazioni() {
     setTimeout(() => { salvaSc.textContent = "Salva il nome"; }, 1600);
   };
   pad.appendChild(salvaSc);
+
+  // Il comando da mettere nella Scorciatoia, pronto da copiare.
+  // NON contiene percorsi: scarica lo script al volo. Su a-Shell la
+  // cartella da cui parte una Scorciatoia non e' quella della
+  // finestra interattiva, e indovinarla e' costato tre tentativi.
+  // Cosi' il telefono non ha nessuna copia da tenere aggiornata, che
+  // e' stata due volte la causa di guasti silenziosi.
+  // Dichiarato prima perche' il pulsante del token lo aggiorna: il
+  // comando cambia appena il token c'e', e vederlo cambiare e' il
+  // riscontro che il salvataggio ha funzionato.
+  const boxCmd = el("div", "diagnosi");
+
+  const campoTk = el("div", "campo");
+  campoTk.innerHTML =
+    '<label for="tk">Token della TV (solo cifre, facoltativo)</label>' +
+    '<textarea id="tk" rows="1" inputmode="numeric" autocapitalize="off" ' +
+    'autocomplete="off" spellcheck="false"></textarea>';
+  pad.appendChild(campoTk);
+  document.getElementById("tk").value = chiavi.tvtoken;
+  const spiegaTk = el("div", "gusto");
+  spiegaTk.innerHTML =
+    "\u00c8 il numero che sta in <code>token.txt</code> sul computer: la " +
+    "TV lo d\u00e0 la prima volta che accetti il collegamento. Mettendolo " +
+    "qui finisce dentro il comando, e sul telefono non serve nessun " +
+    "file.<br>Non \u00e8 il token di SmartThings.";
+  pad.appendChild(spiegaTk);
+
+  const salvaTk = el("button", "svuota", "Salva il token");
+  salvaTk.style.cssText = "width:100%;margin:4px 0 0";
+  salvaTk.onclick = () => {
+    chiavi.tvtoken = document.getElementById("tk").value;
+    document.getElementById("tk").value = chiavi.tvtoken;
+    salvaTk.textContent = chiavi.tvtoken ? "Salvato" : "Tolto";
+    boxCmd.textContent = comandoScorciatoia("TITOLO");
+    setTimeout(() => { salvaTk.textContent = "Salva il token"; }, 1600);
+  };
+  pad.appendChild(salvaTk);
+
+  pad.appendChild(el("p", "sezione", "Il comando per la Scorciatoia"));
+  const spiegaCmd = el("div", "gusto");
+  spiegaCmd.innerHTML =
+    "Nella Scorciatoia serve una sola azione: <b>a-Shell \u203a Esegui " +
+    "comando</b>. Incolla qui sotto, poi <b>al posto di " +
+    "<code>TITOLO</code> inserisci la variabile «Ingresso comando " +
+    "rapido»</b> lasciando le virgolette.";
+  pad.appendChild(spiegaCmd);
+
+  boxCmd.style.cssText = "white-space:pre-wrap;word-break:break-all";
+  boxCmd.textContent = comandoScorciatoia("TITOLO");
+  pad.appendChild(boxCmd);
+
+  const copia = el("button", "svuota", "Copia il comando");
+  copia.style.cssText = "width:100%;margin:4px 0 0";
+  copia.onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(boxCmd.textContent);
+      copia.textContent = "Copiato";
+    } catch (e) {
+      // Senza permesso non resta niente da fare: il testo e' li'
+      // sopra e si seleziona a mano.
+      copia.textContent = "Copia a mano qui sopra";
+    }
+    setTimeout(() => { copia.textContent = "Copia il comando"; }, 2000);
+  };
+  pad.appendChild(copia);
 
   bloccoDiagnosi(pad);
 }

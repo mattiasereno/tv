@@ -156,7 +156,7 @@ def manda(comandi, ascolta=0.0, scadenza=None, eco=False):
                     "  403 vuol dire che la TV ha questo dispositivo fra i NEGATI,\n"
                     "  non che non ti conosce. Due strade:\n"
                     "  1. presentati con un nome nuovo, cosi' ti richiede il permesso:\n"
-                    f'       TV_NOME=iPhone python3 {os.path.basename(__file__)} --tasto KEY_VOLUP\n'
+                    f'       TV_NOME=iPhone python3 {mio_nome()} --tasto KEY_VOLUP\n'
                     "  2. sblocca il vecchio sulla TV: Impostazioni -> Generali ->\n"
                     "     Gestione dispositivi esterni -> Gestione connessione\n"
                     "     dispositivi -> Elenco dispositivi")
@@ -255,7 +255,7 @@ def leggi_token():
     lavoro non e' quella dello script, quindi un percorso solo non
     basta."""
     candidati = [
-        os.path.join(os.path.dirname(os.path.abspath(__file__)), "token.txt"),
+        os.path.join(mia_cartella(), "token.txt"),
         os.path.join(os.getcwd(), "token.txt"),
         os.path.expanduser("~/token.txt"),
         os.path.expanduser("~/Documents/token.txt"),
@@ -425,18 +425,105 @@ ATTESA_TASTIERA = float(os.environ.get("TV_TASTIERA", "3"))
 APP = os.environ.get("TV_APP", "netflix")
 
 
+DA_DOVE = "https://mattiasereno.github.io/tv/tastiere.py"
+
+
+# Questo script puo' girare anche SENZA essere un file su disco:
+# eseguito al volo dentro python3 -c, __file__ non esiste e ogni suo
+# uso esplode con NameError. Serve per la Scorciatoia iOS, dove il
+# percorso dello script non si sa: si scarica e si esegue, e cosi' sul
+# telefono non resta nessuna copia da aggiornare a mano.
+def mia_cartella():
+    """Dove sta questo script, o la cartella corrente se non e' un
+    file."""
+    try:
+        return os.path.dirname(os.path.abspath(__file__))
+    except NameError:
+        return os.getcwd()
+
+
+def mio_nome():
+    """Come chiamarmi nei messaggi di aiuto."""
+    try:
+        return os.path.basename(__file__)
+    except NameError:
+        return "scrivi_telefono.py"
+
+
 def carica_tastiere():
     """tastiere.py sta accanto a questo script, non nella cartella da
-    cui lo lanci: su a-Shell si parte sempre dalla home."""
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    cui lo lanci: su a-Shell si parte sempre dalla home.
+
+    Se manca, se lo scarica da se'. Non e' pigrizia: due file da
+    tenere allineati a mano su un telefono sono due occasioni di
+    sbagliare, e scaricarne uno da a-Shell si e' rivelato tutt'altro
+    che ovvio. Cosi' il file da gestire e' uno solo."""
+    sys.path.insert(0, mia_cartella())
     try:
         import tastiere
+        return tastiere
     except ImportError:
+        pass
+    print("  manca tastiere.py (le disposizioni dei tasti), lo scarico")
+    print("  da " + DA_DOVE)
+    import urllib.request
+    try:
+        with urllib.request.urlopen(DA_DOVE, timeout=20) as risposta:
+            testo = risposta.read().decode("utf-8")
+    except Exception as e:
         raise ConnectionError(
-            "manca tastiere.py, che contiene le disposizioni dei tasti.\n"
-            "  Va scaricato accanto a questo script:\n"
-            "     curl -O https://mattiasereno.github.io/tv/tastiere.py")
-    return tastiere
+            f"non riesco a scaricarlo ({e.__class__.__name__}).\n"
+            "  Serve internet. A mano:\n"
+            "     curl -O " + DA_DOVE)
+    # Che sia davvero il file e non una pagina d'errore travestita da
+    # 200: scrivere spazzatura con l'estensione giusta sarebbe peggio
+    # che non scrivere niente.
+    if "DISPOSIZIONI" not in testo or "def digita" not in testo:
+        raise ConnectionError(
+            "quello che e' arrivato non e' tastiere.py "
+            f"({len(testo)} byte).\n  Forse l'indirizzo e' cambiato: "
+            + DA_DOVE)
+    # Prima accanto allo script, e se quella cartella non si scrive,
+    # nella cartella corrente: su iOS i permessi sono imprevedibili.
+    ultimo = None
+    for cartella in (mia_cartella(), os.getcwd()):
+        try:
+            strada = os.path.join(cartella, "tastiere.py")
+            with open(strada, "w") as f:
+                f.write(testo)
+            print(f"  salvato in {strada}")
+            sys.path.insert(0, cartella)
+            import tastiere
+            return tastiere
+        except OSError as e:
+            ultimo = e
+    raise ConnectionError(f"scaricato ma non riesco a salvarlo: {ultimo}")
+
+
+def separa_app(argomenti, tastiere):
+    """Divide "netflix the bear" in ("netflix", "the bear").
+
+    Si guarda la prima PAROLA e non il primo argomento, perche' la
+    Scorciatoia iOS passa tutto in un pezzo unico.
+
+    Sta in una funzione sola perche' ci sono tre comandi che devono
+    capirlo allo STESSO modo: --apri che lo fa, --digita che scrive
+    senza navigare, e --percorso che mostra cosa farebbe. Quando
+    --percorso interpretava diversamente, mostrava un percorso che
+    non era quello che sarebbe stato eseguito - e una prova a secco
+    che non corrisponde all'esecuzione e' peggio di nessuna prova."""
+    testo = " ".join(argomenti).strip()
+    pezzi = testo.split(None, 1)
+    primo = pezzi[0].lower() if pezzi else ""
+    if primo in tastiere.DISPOSIZIONI and primo != "prova":
+        return primo, (pezzi[1] if len(pezzi) > 1 else "")
+    if primo in tastiere.SENZA_DISPOSIZIONE:
+        raise ConnectionError(
+            f'della tastiera di "{pezzi[0]}" non ho la disposizione, e '
+            "non\n  la posso indovinare: la TV non dice niente di cosa "
+            "ha sullo schermo.\n  Ce l'ho per: "
+            + ", ".join(k for k in tastiere.DISPOSIZIONI if k != "prova"))
+    return APP, testo
 
 
 def digita_in_app(testo, app=None, azzera=0, passo=None):
@@ -521,6 +608,26 @@ PROTOCOLLO = """  MISURARE LA TASTIERA DI UN'APP CHE NON CONOSCO
   non fanno niente, ed e' proprio quello che rende l'angolo un punto
   di partenza certo senza sapere niente della griglia.
 """
+
+
+def spiega_rete(e):
+    """Perche' il collegamento alla TV non riesce, e cosa fare.
+
+    In una funzione sola perche' serve a DUE rami diversi: gli errori
+    del sistema arrivano come ConnectionRefusedError (che e' un
+    ConnectionError) o come altri OSError, e dare la spiegazione solo
+    a uno dei due lasciava l'altro con "[Errno 61] Connection
+    refused" e nient'altro."""
+    print(f"  Non completo il collegamento a {TV}:{PORTA} "
+          f"({e.__class__.__name__}).")
+    print()
+    print("  Tre cause possibili, in ordine di probabilita':")
+    print("  1. GUARDA LA TV: con un token non valido la TV non")
+    print("     rifiuta, mostra il popup di autorizzazione e aspetta.")
+    print("     Se c'e', accettalo. Se non lo accetti, e' questo timeout.")
+    print("  2. Non sei sulla rete di casa, o la TV e' spenta.")
+    print("  3. L'indirizzo e' cambiato. In quel caso:")
+    print(f'       TV_IP=192.168.0.x python3 {mio_nome()} "the bear"')
 
 
 def main():
@@ -691,24 +798,10 @@ def main():
             # niente, provato. Quindi lancia l'app, e poi chiama
             # questo per la parte che solo la LAN puo' fare.
             tastiere = carica_tastiere()
-            testo = " ".join(sys.argv[2:]).strip()
-            app = APP
-            # La prima parola puo' essere il nome dell'app. Si guarda
-            # la PAROLA e non l'argomento, perche' la Scorciatoia iOS
-            # passa tutto in un pezzo unico: "netflix the bear".
-            pezzi = testo.split(None, 1)
-            if pezzi and pezzi[0].lower() in tastiere.DISPOSIZIONI:
-                app = pezzi[0].lower()
-                testo = pezzi[1] if len(pezzi) > 1 else ""
-            elif pezzi and pezzi[0].lower() in tastiere.SENZA_DISPOSIZIONE:
-                raise ConnectionError(
-                    f'della tastiera di "{pezzi[0]}" non ho la '
-                    "disposizione, e non\n  la posso indovinare. Ce l'ho "
-                    "per: " + ", ".join(k for k in tastiere.DISPOSIZIONI
-                                        if k != "prova"))
+            app, testo = separa_app(sys.argv[2:], tastiere)
             if not testo:
                 print("  e cosa cerco? Esempio:")
-                print(f'     python3 {os.path.basename(__file__)} '
+                print(f'     python3 {mio_nome()} '
                       f'--apri "the bear"')
                 return
             d = tastiere.DISPOSIZIONI[app]
@@ -729,9 +822,9 @@ def main():
                     "--apri scriverebbe alla cieca\n  dove capita. Si "
                     "misura guardando la TV, oppure si passa a mano:\n"
                     f'     TV_PRIMA=UP,LEFT,LEFT,OK python3 '
-                    f'{os.path.basename(__file__)} --apri "{testo}"\n'
+                    f'{mio_nome()} --apri "{testo}"\n'
                     "  Con la ricerca gia' aperta a mano, invece:\n"
-                    f'     python3 {os.path.basename(__file__)} '
+                    f'     python3 {mio_nome()} '
                     f'--digita "{testo}"')
             attesa = float(os.environ.get("TV_CARICA", "6"))
             print(f'  aspetto {attesa:.0f}s che {d["nome"]} finisca di '
@@ -757,24 +850,11 @@ def main():
             return
         if sys.argv[1] in ("--digita", "--percorso"):
             solo_vedere = sys.argv[1] == "--percorso"
-            resto = sys.argv[2:]
-            app = APP
             tastiere = carica_tastiere()
-            if resto and resto[0] in tastiere.DISPOSIZIONI:
-                app, resto = resto[0], resto[1:]
-            elif resto and resto[0].lower() in tastiere.SENZA_DISPOSIZIONE:
-                # senza questo controllo "--digita now the bear"
-                # scriverebbe "now the bear" su Netflix, in silenzio
-                raise ConnectionError(
-                    f'della tastiera di "{resto[0]}" non ho la disposizione, '
-                    "e non la\n  posso indovinare: la TV non dice niente di "
-                    "cosa ha sullo schermo.\n  Ce l'ho per: "
-                    + ", ".join(k for k in tastiere.DISPOSIZIONI
-                                if k != "prova"))
-            testo = " ".join(resto)
+            app, testo = separa_app(sys.argv[2:], tastiere)
             if not testo:
                 print("  e cosa scrivo? Esempio:")
-                print(f'     python3 {os.path.basename(__file__)} '
+                print(f'     python3 {mio_nome()} '
                       f'{sys.argv[1]} "the bear"')
                 return
             azzera = int(os.environ.get("TV_AZZERA", "0"))
@@ -804,10 +884,10 @@ def main():
                 "  Se quel comando dovrebbe esistere, la copia che hai e'\n"
                 "  vecchia. Riscaricala:\n"
                 "     curl -O https://mattiasereno.github.io/tv/"
-                + os.path.basename(__file__) + "\n"
+                + mio_nome() + "\n"
                 "     curl -O https://mattiasereno.github.io/tv/tastiere.py\n"
                 "  Per scrivere davvero un testo che comincia per meno:\n"
-                f'     python3 {os.path.basename(__file__)} --testo '
+                f'     python3 {mio_nome()} --testo '
                 f'"{sys.argv[1]}"')
         if sys.argv[1] == "--tasto":
             tasto(sys.argv[2])
@@ -832,22 +912,23 @@ def main():
                 print("  Prova sulla ricerca della TV: tasto Home, poi la lente.")
     except ConnectionError as e:
         # Una traccia di stack su un telefono non aiuta nessuno.
+        #
+        # ConnectionError e' sia la MIA (con un messaggio scritto per
+        # essere letto) sia quella del sistema operativo, che arriva
+        # come "[Errno 61] Connection refused" - in inglese e senza
+        # dire cosa fare. Le prime si stampano, le seconde vanno
+        # tradotte, e il telefono e' proprio il posto dove un
+        # messaggio criptico non si puo' permettere.
+        if isinstance(e, (ConnectionRefusedError, ConnectionResetError,
+                          ConnectionAbortedError, BrokenPipeError)):
+            spiega_rete(e)
         print("  " + str(e))
         if "unauthorized" in str(e):
             print("  Il token non e' valido per questa TV. Rifallo dal computer:")
             print("    venv/bin/python3 tastiera.py collega")
         sys.exit(1)
     except OSError as e:
-        nome = os.path.basename(__file__)
-        print(f"  Non completo il collegamento a {TV}:{PORTA} ({e.__class__.__name__}).")
-        print()
-        print("  Tre cause possibili, in ordine di probabilita':")
-        print("  1. GUARDA LA TV: con un token non valido la TV non")
-        print("     rifiuta, mostra il popup di autorizzazione e aspetta.")
-        print("     Se c'e', accettalo. Se non lo accetti, e' questo timeout.")
-        print("  2. Non sei sulla rete di casa, o la TV e' spenta.")
-        print(f"  3. L'indirizzo e' cambiato. In quel caso:")
-        print(f'       TV_IP=192.168.0.x python3 {nome} "the bear"')
+        spiega_rete(e)
         sys.exit(1)
 
 
