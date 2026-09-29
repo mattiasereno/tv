@@ -769,10 +769,21 @@ const POSIZIONE_SCRIPT =
 // verso lo script: il comando nella Scorciatoia e' fisso e varia solo
 // il testo.
 function testoPerScorciatoia(tastiera, comeEAndata, titolo) {
-  // Se l'app era GIA' APERTA non deve caricare, e i quattordici
-  // secondi di attesa sono sprecati.
-  const fretta = comeEAndata === "gia" ? " --carica=2" : "";
-  return tastiera + fretta + " " + titolo;
+  // PROVATO E TOLTO, 29/09/2026: qui passava " --carica=2" quando
+  // l'app era GIA' APERTA, per risparmiare i quattordici secondi di
+  // attesa che in quel caso sembravano sprecati. Sulla TV vera NON E'
+  // PARTITO, e si e' scelto di tornare all'attesa piena.
+  //
+  // Perche' non riproporlo alla leggera: "gia aperta" secondo
+  // SmartThings non vuol dire "pronta a ricevere tasti". Il
+  // tvChannelName dice quale app e' in primo piano, non se ha finito
+  // di disegnare - e i primi tasti persi sono stati uno dei difetti
+  // piu' fastidiosi di tutta la serata.
+  //
+  // comeEAndata resta nella firma perche' lancia() lo calcola
+  // comunque e le prove lo fissano: se un giorno si trova un modo di
+  // sapere che l'app e' davvero pronta, il posto e' questo.
+  return tastiera + " " + titolo;
 }
 
 function comandoScorciatoia(titolo) {
@@ -873,7 +884,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20260929160235";
+const VERSIONE = "20260929161832";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
