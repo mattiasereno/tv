@@ -1077,7 +1077,18 @@ def main():
             # disposizione, perche' dipende da com'e' fatta la
             # tastiera dell'app. TV_AZZERA lo sovrascrive.
             azzera = int(os.environ.get("TV_AZZERA", d.get("azzera", 0)))
-            tasti, saltati = tastiere.digita(testo, app, azzera=azzera)
+            # SENZA ancoraggio: il compito della strada e' proprio
+            # lasciare il cursore sulla casella di partenza dichiarata
+            # dalla disposizione, quindi ancorarsi di nuovo e' inutile
+            # - e su HBO Max era DANNOSO. La sua ancora esce dalla
+            # tastiera verso il menu e rientra: funziona quando il
+            # cursore sta fra le lettere, ma appena aperta la ricerca
+            # il fuoco e' altrove e quei dieci sinistra lo portano
+            # fuori. Il risultato era "hall6" e poi il fuoco scappato.
+            # L'ancora serve a --digita usato da solo, dove il punto
+            # di partenza non si sa.
+            tasti, saltati = tastiere.digita(testo, app, azzera=azzera,
+                                             ancora=False)
             seq = [("pausa", attesa)]
             for t in normalizza + strada:
                 seq.append(cmd_tasto(TASTI_VERI.get(
