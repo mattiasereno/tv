@@ -488,8 +488,14 @@ def cerca(testo, dopo="", pausa=0.7):
 # regolabile: se un'app si rivela piu' lenta di Netflix, TV_PASSO.
 PASSO = float(os.environ.get("TV_PASSO", "0.15"))
 # Quanto aspettare che la tastiera COMPAIA dopo aver aperto la
-# ricerca. Diverso dal passo: qui c'e' una schermata da disegnare.
-ATTESA_TASTIERA = float(os.environ.get("TV_TASTIERA", "3"))
+# ricerca. Diverso dal passo: qui c'e' una schermata da disegnare, e
+# finche' non e' ferma le prime pressioni si perdono.
+# Da 3 a 5 secondi perche' su HBO Max si perdeva la SECONDA lettera
+# di un titolo di quarantuno caratteri: "il signore degli anelli..."
+# e' diventato "i signore degli anelli...", con tutto il resto
+# perfetto. Una lettera MANCANTE (non sbagliata) vuol dire un OK
+# perso, non una freccia: quindi non era il passo, era l'assestamento.
+ATTESA_TASTIERA = float(os.environ.get("TV_TASTIERA", "5"))
 # La pausa fra i tasti di NAVIGAZIONE (i BACK della normalizzazione, i
 # passi sulla barra). Separata dal passo di scrittura, e non piu'
 # ricavata da quello: erano legate come PASSO*4, e abbassando il passo
