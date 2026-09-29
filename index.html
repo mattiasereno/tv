@@ -551,9 +551,11 @@
     color: var(--tenue); font-size: 13.5px; text-decoration: underline;
   }
 
+  /* 32px misurati: sotto i 44 il dito sbaglia, e qui ci sono due
+     comandi vicini («Non l'ho visto» e «Buono per dormire»). */
   .visto .togli {
-    margin: 10px 0 0; padding: 0; color: var(--tenue);
-    font-size: 13.5px; text-decoration: underline; min-height: 32px;
+    margin: 4px 0 0; padding: 6px 0; color: var(--tenue);
+    font-size: 13.5px; text-decoration: underline; min-height: 44px;
   }
   .visto .esito { margin: 10px 0 0; font-size: 14.5px; font-weight: 550; }
   .gusto {
@@ -810,6 +812,17 @@ const TASTIERE = { "8": "netflix", "39": "now", "337": "disney",
 // se cambia, deve cambiare qui e basta.
 const POSIZIONE_SCRIPT =
   "https://mattiasereno.github.io/tv/scrivi_telefono.py";
+const POSIZIONE_FIRE =
+  "https://mattiasereno.github.io/tv/firestick.py";
+
+// Dove si ferma la catena sul Fire TV, e come si chiama in italiano.
+// L'ordine e' dal piu' prudente al piu' spiccio.
+const FERMATE_FIRE = [
+  ["risultati", "Sui risultati", "Scegli tu il titolo dalla lista"],
+  ["titolo", "Sulla pagina del titolo",
+   "Apre il primo risultato: guardi che sia quello e premi OK"],
+  ["servizio", "Parte", "Apre il primo risultato e avvia"],
+];
 
 // Il comando da incollare nella Scorciatoia di iOS.
 //
@@ -862,6 +875,32 @@ function comandoScorciatoia(titolo) {
          " --nome=" + chiavi.tvnome +
          (chiavi.tvtoken ? " --token=" + chiavi.tvtoken : "") +
          ' --apri "' + titolo + '"';
+}
+
+// Il comando per la Scorciatoia del Fire Stick. Stessa forma di
+// quello Samsung - niente percorsi, lo script si scarica al volo -
+// ma altro script e altre opzioni.
+//
+// --ip perche' l'ADB parla con un indirizzo, non con un nome: il
+// Fire TV non si annuncia da nessuna parte che una Scorciatoia possa
+// interrogare.
+// Il SEME resta quello di default dentro lo script: e' quello che
+// decide la chiave, e cambiarlo vorrebbe dire riautorizzare il
+// dispositivo sul popup del Fire TV.
+function comandoScorciatoiaFire(titolo) {
+  return 'python3 -c "import urllib.request as u;' +
+         "exec(u.urlopen('" + POSIZIONE_FIRE + "').read())\"" +
+         (chiavi.fireip ? " --ip=" + chiavi.fireip : "") +
+         ' --cerca "' + titolo + '"';
+}
+
+// Il testo da passare alla Scorciatoia del Fire Stick: la fermata e
+// il titolo. La fermata viaggia qui e non nel comando incollato,
+// perche' si cambia dalle Opzioni e il comando lo si incolla una
+// volta sola.
+function testoPerScorciatoiaFire(titolo, fino) {
+  const f = fino || "risultati";
+  return (f === "risultati" ? "" : "--fino=" + f + " ") + titolo;
 }
 
 const NOMI_PACCHETTO = {
@@ -943,7 +982,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20260929183353";
+const VERSIONE = "20260929193658";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -1007,6 +1046,26 @@ const chiavi = {
   // pulsante che apre Scorciatoie e dice "non trovata".
   get scorciatoia() { return localStorage.getItem("scorciatoia") || ""; },
   set scorciatoia(v) { localStorage.setItem("scorciatoia", (v || "").trim()); },
+
+  // Il Fire Stick e' l'ALTRA strada, non un pezzo della stessa: non
+  // passa da SmartThings, non naviga nessuna tastiera, e scrive il
+  // titolo in una volta con «input text» via ADB. Ha una Scorciatoia
+  // sua, perche' il comando da eseguire e' un altro script.
+  get scorciatoiaFire() { return localStorage.getItem("sc_fire") || ""; },
+  set scorciatoiaFire(v) { localStorage.setItem("sc_fire", (v || "").trim()); },
+  // solo cifre e punti: qualunque altra cosa si incolli viene pulita
+  get fireip() { return localStorage.getItem("fire_ip") || ""; },
+  set fireip(v) {
+    localStorage.setItem("fire_ip", String(v).replace(/[^0-9.]/g, ""));
+  },
+  // Dove si ferma la catena sul Fire TV. Il default sono i RISULTATI,
+  // di proposito: aprire il primo risultato alla cieca e' la cosa che
+  // chi usa la TV ha detto di non volere.
+  get firefino() { return localStorage.getItem("fire_fino") || "risultati"; },
+  set firefino(v) { localStorage.setItem("fire_fino", v); },
+  // Quale delle due strade usa l'app: "tv" (Samsung) o "fire".
+  get strada() { return localStorage.getItem("strada") || "tv"; },
+  set strada(v) { localStorage.setItem("strada", v === "fire" ? "fire" : "tv"); },
 };
 
 // I provider italiani: nome e logo per ogni id. Vengono da TMDB una
@@ -2814,6 +2873,42 @@ function schermoCerca() {
 
 // Il pulsante "Apri X sulla TV". Estratto perche' serve sia nella
 // scheda sia nel pescato di Stasera.
+// Il pulsante del Fire Stick. Uno solo, e non uno per app: la
+// ricerca globale del Fire TV copre tutte le app insieme, e dice da
+// se' quali ce l'hanno («Guarda ora con X») e quali no («Disponibile
+// con X» e un prezzo). Su Samsung serviva una tastiera misurata per
+// app; qui serve un indirizzo.
+function pulsanteFire(d) {
+  const b = el("button", "apri");
+  const pronto = !!(chiavi.scorciatoiaFire && chiavi.fireip);
+  const fermata = FERMATE_FIRE.find(f => f[0] === chiavi.firefino)
+    || FERMATE_FIRE[0];
+  b.innerHTML = '<span class="logo"></span><span class="etichetta">' +
+    (pronto
+      ? "Cerca «" + esc(d.titolo) + "» sul Fire Stick<small>" +
+        esc(fermata[2]) + "</small>"
+      : "Fire Stick da finire di impostare<small>" +
+        (chiavi.fireip ? "Manca il nome della Scorciatoia"
+                       : "Manca l\u2019indirizzo del Fire Stick") +
+        ": vai in Opzioni</small>") +
+    "</span>";
+  if (!pronto) {
+    b.onclick = () => vai("impostazioni");
+    return b;
+  }
+  b.onclick = () => {
+    b.disabled = true;
+    b.className = "apri fatto";
+    b.querySelector(".etichetta").innerHTML = "Passo «" + esc(d.titolo) +
+      "» alla Scorciatoia\u2026<small>Il Fire Stick deve essere accesso " +
+      "o in attesa, e l\u2019app non pu\u00f2 saperlo: guarda lo " +
+      "schermo.</small>";
+    location.href = urlScorciatoia(chiavi.scorciatoiaFire,
+      testoPerScorciatoiaFire(d.titolo, chiavi.firefino));
+  };
+  return b;
+}
+
 function pulsanteLancio(i, d) {
   const b = el("button", "apri");
   // Il titolo si puo' scrivere dentro l'app solo se la sua tastiera
@@ -2958,23 +3053,30 @@ async function schermoDettaglio(tipo, id, torna) {
   }
   pad.appendChild(box);
 
-  d.compresi.filter(i => i.app).forEach(i => pad.appendChild(pulsanteLancio(i, d)));
+  // Le due strade sono ALTERNATIVE, non sovrapposte: sul Fire Stick
+  // non si apre un'app per volta, si cerca una volta per tutte. Fare
+  // vedere entrambe vorrebbe dire dieci pulsanti sulla stessa pagina.
+  if (chiavi.strada === "fire") {
+    pad.appendChild(pulsanteFire(d));
+  } else {
+    d.compresi.filter(i => i.app).forEach(i => pad.appendChild(pulsanteLancio(i, d)));
 
-  // Scrivere il titolo sulla TV passando per la Scorciatoia iOS.
-  // Compare solo se hai detto in Opzioni di averla: un pulsante che
-  // apre Scorciatoie per dire "non trovata" non aiuta nessuno.
-  if (chiavi.scorciatoia) {
-    const sb = el("button", "apri");
-    sb.innerHTML = '<span class="logo"></span><span class="etichetta">Cerca «' +
-      esc(d.titolo) + '» sulla TV<small>Apre la ricerca della TV e scrive il ' +
-      "titolo. Poi scegli il risultato con la croce in Comandi.</small></span>";
-    sb.onclick = () => scriviConScorciatoia(d.titolo);
-    pad.appendChild(sb);
+    // Scrivere il titolo sulla TV passando per la Scorciatoia iOS.
+    // Compare solo se hai detto in Opzioni di averla: un pulsante che
+    // apre Scorciatoie per dire "non trovata" non aiuta nessuno.
+    if (chiavi.scorciatoia) {
+      const sb = el("button", "apri");
+      sb.innerHTML = '<span class="logo"></span><span class="etichetta">Cerca «' +
+        esc(d.titolo) + '» sulla TV<small>Apre la ricerca della TV e scrive il ' +
+        "titolo. Poi scegli il risultato con la croce in Comandi.</small></span>";
+      sb.onclick = () => scriviConScorciatoia(d.titolo);
+      pad.appendChild(sb);
+    }
+
+    const senza = d.compresi.filter(i => !i.app).map(i => i.nome);
+    if (senza.length)
+      pad.appendChild(el("p", "nota", senza.join(" e ") + ": apri col telecomando, non so lanciarla."));
   }
-
-  const senza = d.compresi.filter(i => !i.app).map(i => i.nome);
-  if (senza.length)
-    pad.appendChild(el("p", "nota", senza.join(" e ") + ": apri col telecomando, non so lanciarla."));
 
   if (d.video) {
     pad.appendChild(el("p", "sezione", "Trailer"));
@@ -4355,6 +4457,28 @@ function schermoImpostazioni() {
   pad.appendChild(salva);
   pad.appendChild(esito);
 
+  // ------------------------------------------------- quale strada
+  // Due strade per la stessa cosa, e sono davvero due: la Samsung
+  // apre l'app e naviga la SUA tastiera (sette tastiere misurate);
+  // il Fire Stick scrive nella ricerca globale in una volta, via
+  // ADB. Non si sommano, si scelgono - e la scheda mostra i pulsanti
+  // di quella scelta.
+  pad.appendChild(el("p", "sezione", "Come cerchi sulla TV"));
+  const swStrada = el("div", "interruttore");
+  [["tv", "TV Samsung"], ["fire", "Fire Stick"]].forEach(([v, etichetta]) => {
+    const b = el("button", null, etichetta);
+    b.setAttribute("aria-pressed", String(chiavi.strada === v));
+    b.onclick = () => { chiavi.strada = v; schermoImpostazioni(); };
+    swStrada.appendChild(b);
+  });
+  pad.appendChild(swStrada);
+
+  if (chiavi.strada === "fire") {
+    bloccoFire(pad);
+    bloccoDiagnosi(pad);
+    return;
+  }
+
   pad.appendChild(el("p", "sezione", "Scrivere sulla TV"));
   const spiegaSc = el("div", "gusto");
   spiegaSc.innerHTML =
@@ -4460,6 +4584,115 @@ function schermoImpostazioni() {
   bloccoDiagnosi(pad);
 }
 
+// Le impostazioni del Fire Stick. Tre cose: l'indirizzo, la
+// Scorciatoia e dove fermarsi.
+function bloccoFire(pad) {
+  const spiega = el("div", "gusto");
+  spiega.innerHTML =
+    "Il Fire Stick si comanda per <b>ADB</b>, che \u00e8 un'altra cosa da " +
+    "SmartThings: non serve nessun account, serve che il Fire Stick sia " +
+    "sulla rete di casa e abbia il <b>Debug ADB</b> attivo.<br>" +
+    "La prima volta il Fire TV mostra un popup sullo schermo e tu accetti; " +
+    "dopo non chiede pi\u00f9 niente.<br>" +
+    "Il vantaggio sulla strada Samsung: la ricerca del Fire TV copre " +
+    "<b>tutte le app insieme</b>, e dice da s\u00e9 quali ce l\u2019hanno " +
+    "in abbonamento e quali no. Non c\u2019\u00e8 nessuna tastiera da " +
+    "navigare: il titolo si scrive in una volta.";
+  pad.appendChild(spiega);
+
+  const istruzioni = el("div", "diagnosi");
+  istruzioni.innerHTML =
+    "Sul Fire TV, col telecomando:<br>" +
+    "Impostazioni \u203a Il mio Fire TV \u203a Opzioni per sviluppatori " +
+    "\u203a Debug ADB \u203a Attiva<br>" +
+    "Se non vedi le opzioni per sviluppatori: Informazioni \u203a premi OK " +
+    "sette volte sul nome del dispositivo.<br>" +
+    "L\u2019indirizzo sta in Informazioni \u203a Rete.";
+  pad.appendChild(istruzioni);
+
+  const campoIp = el("div", "campo");
+  campoIp.innerHTML =
+    '<label for="fip">Indirizzo del Fire Stick</label>' +
+    '<textarea id="fip" rows="1" inputmode="decimal" autocapitalize="off" ' +
+    'autocomplete="off" spellcheck="false" placeholder="192.168.0.118">' +
+    "</textarea>";
+  pad.appendChild(campoIp);
+  document.getElementById("fip").value = chiavi.fireip;
+
+  const campoScF = el("div", "campo");
+  campoScF.innerHTML =
+    '<label for="fsc">Nome della Scorciatoia per il Fire Stick</label>' +
+    '<textarea id="fsc" rows="1" autocapitalize="off" autocomplete="off" ' +
+    'spellcheck="false" placeholder="Fire"></textarea>';
+  pad.appendChild(campoScF);
+  document.getElementById("fsc").value = chiavi.scorciatoiaFire;
+  pad.appendChild(el("p", "nota",
+    "Un\u2019altra Scorciatoia, non la stessa della TV Samsung: il " +
+    "comando da eseguire \u00e8 un altro."));
+
+  const boxCmdF = el("div", "diagnosi");
+
+  const salva = el("button", "svuota", "Salva");
+  salva.style.cssText = "width:100%;margin:4px 0 0";
+  salva.onclick = () => {
+    chiavi.fireip = document.getElementById("fip").value;
+    chiavi.scorciatoiaFire = document.getElementById("fsc").value;
+    document.getElementById("fip").value = chiavi.fireip;
+    boxCmdF.textContent = comandoScorciatoiaFire("TITOLO");
+    salva.textContent = "Salvato";
+    setTimeout(() => { salva.textContent = "Salva"; }, 1600);
+  };
+  pad.appendChild(salva);
+
+  pad.appendChild(el("p", "sezione", "Dove si ferma"));
+  const spiegaF = el("div", "gusto");
+  spiegaF.innerHTML =
+    "La catena \u00e8 fatta di tocchi a coordinate fisse, misurate una " +
+    "volta sullo schermo vero. Pi\u00f9 avanti va, pi\u00f9 si fida del " +
+    "<b>primo</b> risultato.";
+  pad.appendChild(spiegaF);
+  pad.appendChild(fasciaChip(
+    FERMATE_FIRE.map(([v, etichetta]) => ({ etichetta, valore: v })),
+    chiavi.firefino,
+    v => { chiavi.firefino = v; schermoImpostazioni(); }));
+  const quale = FERMATE_FIRE.find(f => f[0] === chiavi.firefino)
+    || FERMATE_FIRE[0];
+  pad.appendChild(el("p", "nota", quale[2] + "."));
+
+  pad.appendChild(el("p", "sezione", "Il comando per la Scorciatoia"));
+  const spiegaCmdF = el("div", "gusto");
+  spiegaCmdF.innerHTML =
+    "Nella Scorciatoia serve una sola azione: <b>a-Shell \u203a Esegui " +
+    "comando</b>. Incolla qui sotto, poi <b>al posto di <code>TITOLO</code> " +
+    "inserisci la variabile «Ingresso comando rapido»</b> lasciando le " +
+    "virgolette.";
+  pad.appendChild(spiegaCmdF);
+
+  boxCmdF.style.cssText = "white-space:pre-wrap;word-break:break-all";
+  boxCmdF.textContent = comandoScorciatoiaFire("TITOLO");
+  pad.appendChild(boxCmdF);
+
+  const copiaF = el("button", "svuota", "Copia il comando");
+  copiaF.style.cssText = "width:100%;margin:4px 0 0";
+  copiaF.onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(boxCmdF.textContent);
+      copiaF.textContent = "Copiato";
+    } catch (e) {
+      copiaF.textContent = "Copia a mano qui sopra";
+    }
+    setTimeout(() => { copiaF.textContent = "Copia il comando"; }, 2000);
+  };
+  pad.appendChild(copiaF);
+
+  pad.appendChild(el("p", "nota",
+    "Quello che l\u2019app NON pu\u00f2 fare per il Fire Stick: vedere " +
+    "lo schermo. Dentro le app di streaming la schermata \u00e8 protetta " +
+    "e torna nera \u2014 provato. Quindi qui non c\u2019\u00e8 nessuna " +
+    "conferma automatica: il comando parte, e il riscontro sei tu che " +
+    "guardi la TV."));
+}
+
 // Cosa sa l'app di se stessa. Serve quando si rompe sul telefono di
 // qualcun altro e non hai un server a cui chiedere.
 // NON contiene mai le chiavi: solo se ci sono.
@@ -4487,8 +4720,16 @@ function bloccoDiagnosi(pad) {
   riga("Da guardare", String(lista.tutto.length));
   riga("Titoli votati", String(visti.tutto.length));
   riga("Servizi noti", String(Object.keys(PROVIDER).length));
-  riga("Scorciatoia per scrivere", chiavi.scorciatoia || "non impostata",
-       !!chiavi.scorciatoia);
+  riga("Strada scelta", chiavi.strada === "fire" ? "Fire Stick" : "TV Samsung");
+  if (chiavi.strada === "fire") {
+    riga("Indirizzo Fire Stick", chiavi.fireip || "manca", !!chiavi.fireip);
+    riga("Scorciatoia Fire", chiavi.scorciatoiaFire || "non impostata",
+         !!chiavi.scorciatoiaFire);
+    riga("Si ferma", chiavi.firefino);
+  } else {
+    riga("Scorciatoia per scrivere", chiavi.scorciatoia || "non impostata",
+         !!chiavi.scorciatoia);
+  }
   riga("Rete", navigator.onLine === false ? "assente" : "presente",
        navigator.onLine !== false);
   riga("Funziona offline", (navigator.serviceWorker && navigator.serviceWorker.controller)
