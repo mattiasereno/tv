@@ -60,15 +60,25 @@ def opzioni_da_argv():
             "app": "TV_APP", "tastiere": "TV_TASTIERE",
             "prima": "TV_PRIMA", "normalizza": "TV_NORMALIZZA",
             "primapausa": "TV_PRIMA_PAUSA"}
+    # Si guarda PAROLA per parola, non argomento per argomento: la
+    # Scorciatoia iOS passa tutto in un pezzo unico, quindi
+    # "netflix --carica=2 the bear" arriva come UN argomento solo. E'
+    # l'unico modo che l'app ha di dire qualcosa allo script, perche'
+    # il comando nella Scorciatoia e' fisso e varia solo il testo.
     resto, ignote = [sys.argv[0] if sys.argv else ""], []
     for pezzo in sys.argv[1:]:
-        if pezzo.startswith("--") and "=" in pezzo:
-            chiave, valore = pezzo[2:].split("=", 1)
-            if chiave in nomi:
-                os.environ[nomi[chiave]] = valore
-                continue
-            ignote.append(pezzo)
-        resto.append(pezzo)
+        tenute = []
+        for parola in pezzo.split(" "):
+            if parola.startswith("--") and "=" in parola:
+                chiave, valore = parola[2:].split("=", 1)
+                if chiave in nomi:
+                    os.environ[nomi[chiave]] = valore
+                    continue
+                ignote.append(parola)
+            tenute.append(parola)
+        rimasto = " ".join(x for x in tenute if x)
+        if rimasto or not pezzo.strip():
+            resto.append(rimasto)
     sys.argv[:] = resto
     # Un'opzione scritta male non va ignorata in silenzio: finirebbe
     # fra gli argomenti e, nel peggiore dei casi, dentro il titolo.
@@ -778,6 +788,18 @@ def main():
         print(__doc__)
         return
     try:
+        # PRIMA di qualsiasi ramo: i comandi escono presto, e messo
+        # piu' in basso questo controllo non veniva raggiunto da
+        # --percorso. Il risultato era che "--caricaa=2" scritto male
+        # finiva DENTRO IL TITOLO, che e' proprio il guasto per cui il
+        # controllo esiste.
+        if OPZIONI_IGNOTE:
+            raise ConnectionError(
+                "non conosco l'opzione " + " ".join(OPZIONI_IGNOTE) + "\n"
+                "  Le opzioni si scrivono --chiave=valore, e sono:\n"
+                "     --nome= --token= --ip= --porta= --passo= --naviga=\n"
+                "     --carica= --tastiera= --azzera= --app= --tastiere=")
+
         if sys.argv[1] == "--cerca":
             testo = " ".join(sys.argv[2:])
             dopo = os.environ.get("TV_DOPO", "")
@@ -1141,12 +1163,6 @@ def main():
             if saltati:
                 print("  fuori tastiera, saltati: " + "".join(saltati))
             return
-        if OPZIONI_IGNOTE:
-            raise ConnectionError(
-                "non conosco l'opzione " + " ".join(OPZIONI_IGNOTE) + "\n"
-                "  Le opzioni si scrivono --chiave=valore, e sono:\n"
-                "     --nome= --token= --ip= --porta= --passo= --naviga=\n"
-                "     --carica= --tastiera= --azzera= --app= --tastiere=")
         if sys.argv[1].startswith("-") and sys.argv[1] not in COMANDI:
             raise ConnectionError(
                 f'"{sys.argv[1]}" non e\' un comando che conosco, e non lo\n'

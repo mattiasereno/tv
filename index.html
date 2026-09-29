@@ -763,6 +763,18 @@ const POSIZIONE_SCRIPT =
 // E' una funzione e non una stringa perche' le prove devono poterlo
 // ESEGUIRE: un comando che l'utente incolla a mano e che nessuno
 // prova e' un comando che non funziona.
+// Il testo da passare alla Scorciatoia: la disposizione, le opzioni
+// e il titolo. In una funzione perche' le prove devono poter usare
+// QUESTA e non una copia - e perche' e' l'unico canale che l'app ha
+// verso lo script: il comando nella Scorciatoia e' fisso e varia solo
+// il testo.
+function testoPerScorciatoia(tastiera, comeEAndata, titolo) {
+  // Se l'app era GIA' APERTA non deve caricare, e i quattordici
+  // secondi di attesa sono sprecati.
+  const fretta = comeEAndata === "gia" ? " --carica=2" : "";
+  return tastiera + fretta + " " + titolo;
+}
+
 function comandoScorciatoia(titolo) {
   // Tutto passa come ARGOMENTI, non nell'ambiente: a-Shell non e' una
   // shell completa e il prefisso VAR=valore davanti al comando non lo
@@ -861,7 +873,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20260929153337";
+const VERSIONE = "20260929160235";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -1485,7 +1497,11 @@ async function lancia(appId, nomeAtteso) {
     commands: [{ component: "main", capability: "custom.launchapp",
                  command: "launchApp", arguments: [appId] }],
   });
-  if (giaAperta) return true;
+  // Ritorna COME e' andata, non solo se: "gia" vale quanto "aperta"
+  // per chi controlla la verita' del risultato, ma permette a chi
+  // chiama di sapere che l'app non deve caricare - e quindi di non
+  // aspettare i quattordici secondi che servono solo all'avvio.
+  if (giaAperta) return "gia";
 
   for (let i = 0; i < 5; i++) {
     await new Promise(r => setTimeout(r, 1800));
@@ -1493,9 +1509,9 @@ async function lancia(appId, nomeAtteso) {
     // l'app precedente, e un lancio riuscito sembra fallito. E'
     // successo davvero: NOW aperta e stato fermo su Netflix.
     const adesso = await appInPrimoPiano(true).catch(() => "");
-    if (adesso === appId) return true;
-    if (nomeAtteso && nomeApp(adesso) === nomeAtteso) return true;
-    if (adesso && adesso !== prima) return true;
+    if (adesso === appId) return "aperta";
+    if (nomeAtteso && nomeApp(adesso) === nomeAtteso) return "aperta";
+    if (adesso && adesso !== prima) return "aperta";
   }
   return false;
 }
@@ -2610,7 +2626,8 @@ function pulsanteLancio(i, d) {
     b.disabled = true;
     b.querySelector(".etichetta").innerHTML = "Apro " + esc(i.nome) + "…<small>Controllo che si apra davvero</small>";
     try {
-      if (await lancia(i.app, i.nome)) {
+      const comeEAndata = await lancia(i.app, i.nome);
+      if (comeEAndata) {
         b.className = "apri fatto";
         if (cercaDentro) {
           // Qui si chiude il cerchio: l'app e' aperta, e il titolo
@@ -2620,7 +2637,8 @@ function pulsanteLancio(i, d) {
           // sulla ricerca e scrive il titolo lettera per lettera.
           b.querySelector(".etichetta").innerHTML = esc(i.nome) +
             " è aperta<small>Passo «" + esc(d.titolo) + "» alla Scorciatoia…</small>";
-          scriviConScorciatoia(tastiera + " " + d.titolo);
+          scriviConScorciatoia(
+            testoPerScorciatoia(tastiera, comeEAndata, d.titolo));
           return;
         }
         b.querySelector(".etichetta").innerHTML = esc(i.nome) +
