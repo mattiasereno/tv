@@ -370,7 +370,12 @@
   .pallina.viva { background: var(--verde); }
   .pallina.morta { background: var(--rosso); }
   .stato .quale { color: var(--tenue); }
-  .stato button { margin-left: auto; color: var(--tenue); font-size: 13px; text-decoration: underline; }
+  /* 66x22 misurati: troppo poco per un dito. Il bersaglio arriva a 44
+     senza ingrossare la barra, coi margini negativi. */
+  .stato button {
+    margin: -13px -4px -13px auto; padding: 13px 4px;
+    color: var(--tenue); font-size: 13px; text-decoration: underline;
+  }
 
   /* ------------------------------------------------------- stasera */
   .stasera {
@@ -492,6 +497,60 @@
   .stelle svg { width: 27px; height: 27px; stroke: var(--debole); stroke-width: 1.5; fill: none; }
   .stelle button.piena svg { fill: var(--acceso); stroke: var(--acceso); }
   .stelle button:active { background: var(--piano); }
+  /* La fila per votare in fretta: serve a votarne venti di fila,
+     quindi conta la densita' - una scheda intera per titolo sarebbe
+     troppo lenta - ma NON a costo del dito: le stelle stanno su una
+     riga loro, larghe 44px, che e' la misura sotto la quale si sbaglia
+     stella. Titolo, anno e spunta «notte» stanno sopra, su una riga
+     sola. */
+  .fila2 {
+    display: flex; gap: 11px; align-items: flex-start;
+    padding: 9px 0; border-bottom: 1px solid var(--bordo);
+  }
+  .fila2 .apri2 {
+    padding: 0; background: none; border: 0; flex: none;
+    width: 50px; display: block;
+  }
+  .fila2 .apri2 img, .fila2 .manca2 {
+    width: 50px; height: 75px; border-radius: 7px; object-fit: cover;
+    background: var(--piano); display: block;
+  }
+  .fila2 .chi { flex: 1; min-width: 0; }
+  .fila2 .su2 { display: flex; gap: 8px; align-items: flex-start; }
+  .fila2 .su2 > div { flex: 1; min-width: 0; }
+  .fila2 h3 {
+    margin: 0; font-size: 15px; font-weight: 600; line-height: 1.3;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .fila2 .anno2 {
+    margin: 1px 0 0; font-size: 12.5px; color: var(--tenue);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .fila2 .stelle { margin: 2px 0 0; justify-content: space-between; }
+  .fila2 .stelle button { width: 44px; height: 44px; }
+  .fila2 .notte {
+    position: relative; flex: none; padding: 5px 11px; font-size: 12.5px;
+    min-height: 32px; border-radius: 999px; border: 1px solid var(--bordo);
+    color: var(--tenue); background: none;
+  }
+  /* La pillola resta piccola - se fosse alta 44 la riga crescerebbe di
+     altrettanto - ma il bersaglio arriva a 44. */
+  .fila2 .notte::before {
+    content: ""; position: absolute; inset: -6px -4px; border-radius: 999px;
+  }
+  .fila2 .notte[aria-pressed=true] {
+    color: var(--acceso); border-color: var(--acceso);
+    background: rgba(242, 233, 216, .08);
+  }
+  .fila2 .fatto2 {
+    margin: 8px 0 0; font-size: 14px; color: var(--acceso);
+    min-height: 34px; display: flex; align-items: center; gap: 14px;
+  }
+  .fila2 .fatto2 button {
+    background: none; border: 0; padding: 0; min-height: 34px;
+    color: var(--tenue); font-size: 13.5px; text-decoration: underline;
+  }
+
   .visto .togli {
     margin: 10px 0 0; padding: 0; color: var(--tenue);
     font-size: 13.5px; text-decoration: underline; min-height: 32px;
@@ -884,7 +943,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20260929161832";
+const VERSIONE = "20260929183353";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -1082,6 +1141,34 @@ const visti = {
   },
   togli(tipo, id) {
     this.tutto = this.tutto.filter(x => !(x.tipo === tipo && String(x.id) === String(id)));
+  },
+};
+
+// I titoli spuntati come «da dormire». Sono la CURATELA di chi usa
+// l'app, e vengono prima dei miei conti sui generi: un film puo'
+// essere una commedia e comunque tenerti sveglio, e uno thriller
+// essere quello che ti fa crollare da sempre. Questo lo sa solo chi
+// guarda.
+// Tengo titolo e locandina come fa `lista`, cosi' la pesca non deve
+// chiedere niente a TMDB per mostrarli.
+const dormire = {
+  get tutto() {
+    try {
+      const v = JSON.parse(localStorage.getItem("dormire") || "[]");
+      return Array.isArray(v) ? v : [];
+    } catch (e) { return []; }
+  },
+  set tutto(a) { localStorage.setItem("dormire", JSON.stringify(a)); },
+  ha(tipo, id) {
+    return this.tutto.some(x => x.tipo === tipo && String(x.id) === String(id));
+  },
+  aggiungi(v) {
+    if (this.ha(v.tipo, v.id)) return;
+    this.tutto = [{ ...v, quando: Date.now() }, ...this.tutto];
+  },
+  togli(tipo, id) {
+    this.tutto = this.tutto.filter(
+      x => !(x.tipo === tipo && String(x.id) === String(id)));
   },
 };
 
@@ -1363,6 +1450,10 @@ function quandoEsce(iso) {
   return scritta + (d.getFullYear() !== oggi.getFullYear() ? " " + d.getFullYear() : "");
 }
 
+// «1 voti» e «servono 1 spunte» si leggono male, e sono le righe che
+// si leggono piu' spesso.
+function quanti(n, uno, molti) { return n === 1 ? uno : molti; }
+
 function locandina(percorso, larghezza = "w342") {
   return percorso ? '<img loading="lazy" src="' + IMG + "/" + larghezza + percorso + '" alt="">' : "";
 }
@@ -1371,7 +1462,7 @@ function locandina(percorso, larghezza = "w342") {
 /* ------------------------------------------------------------- chiamate */
 
 async function tmdb(percorso, parametri = {}) {
-  if (!chiavi.tmdb) throw new Error("Manca la chiave TMDB: vai in Impostazioni.");
+  if (!chiavi.tmdb) throw new Error("Manca la chiave TMDB: vai in Opzioni.");
   // Senza rete la fetch dice solo "Failed to fetch": meglio dirlo
   // in italiano, e ricordare che la Lista funziona comunque.
   if (navigator.onLine === false)
@@ -1660,12 +1751,20 @@ async function caricaProvider(forza = false) {
   return PROVIDER;
 }
 
+// TMDB traduce i generi in italiano, ma non tutti bene: 10770 arriva
+// come «televisione film», e in mezzo agli altri sembra un errore
+// dell'app. Correggo solo quelli sbagliati, e per id: cambiare la
+// lista intera vorrebbe dire mantenerla.
+const GENERI_RIBATTEZZATI = { "10770": "Film TV", "10402": "Musical" };
+
 async function generi(tipo) {
   const memoria = "generi_" + tipo;
   const salvati = sessionStorage.getItem(memoria);
   if (salvati) return JSON.parse(salvati);
   const dati = await tmdb("/genre/" + tipo + "/list", { language: LINGUA });
-  const lista = dati.genres || [];
+  const lista = (dati.genres || []).map(
+    g => Object.assign({}, g, GENERI_RIBATTEZZATI[String(g.id)]
+      ? { name: GENERI_RIBATTEZZATI[String(g.id)] } : null));
   sessionStorage.setItem(memoria, JSON.stringify(lista));
   return lista;
 }
@@ -1962,12 +2061,26 @@ function grigliaDi(elementi, mostraMio = false) {
 
 function fasciaChip(voci, attuale, scegli) {
   const f = el("div", "generi");
+  let scelto = null;
   voci.forEach(({ etichetta, valore }) => {
     const b = el("button", "chip", esc(etichetta));
     b.setAttribute("aria-pressed", String(valore === attuale));
+    if (valore === attuale) scelto = b;
     b.onclick = () => scegli(valore);
     f.appendChild(b);
   });
+  // Scegliendo una voce in fondo alla fascia, lo schermo si rifa' e la
+  // fascia riparte da sinistra: la scelta finiva fuori vista, e non si
+  // capiva piu' cosa fosse attivo. Qui la riporto al centro.
+  // Il rinvio serve perche' finche' il pezzo non e' attaccato allo
+  // schermo non c'e' niente da scorrere. Un setTimeout e non un
+  // requestAnimationFrame: a pagina nascosta i fotogrammi non arrivano
+  // (misurato: zero chiamate), e la fascia resterebbe storta al
+  // ritorno.
+  if (scelto) setTimeout(() => {
+    if (scelto.scrollIntoView)
+      scelto.scrollIntoView({ inline: "center", block: "nearest" });
+  }, 0);
   return f;
 }
 
@@ -2333,23 +2446,47 @@ async function schermoStasera() {
     const quanti = visti.tutto.filter(v => (v.mio || 0) >= 4).length;
     const p = el("div", "gusto");
     p.innerHTML = quanti
-      ? "Pesco fra i <b>" + quanti + "</b> titoli che hai votato 4 o 5 stelle, " +
-        "e ti dico se sono ancora fra i tuoi abbonamenti."
+      ? "Pesco fra " + (quanti === 1
+          ? "<b>l\u2019unico</b> titolo che hai votato 4 o 5 stelle"
+          : "i <b>" + quanti + "</b> titoli che hai votato 4 o 5 stelle") +
+        ", e ti dico se sono ancora fra i tuoi abbonamenti."
       : "Non hai ancora votato niente con 4 o 5 stelle.";
     schermo.appendChild(p);
   }
 
   if (STASERA.modalita === "dormire") {
     const b = bacinoPerDormire();
+    const spuntati = dormire.tutto.length;
     const p = el("div", "gusto");
-    p.innerHTML = b.length
-      ? "Pesco fra <b>" + b.length + "</b> titoli che hai gi\u00e0 visto e votato, " +
-        "togliendo azione, thriller, horror, crime, guerra e mistero.<br>" +
-        "Il criterio pi\u00f9 forte non \u00e8 il genere ma il <b>rivisto</b>: " +
-        "un film che conosci non ti obbliga a seguirlo."
-      : "Non hai ancora visti abbastanza tranquilli in archivio, quindi pesco " +
-        "fra i titoli dei tuoi abbonamenti scegliendo generi calmi. " +
-        "Man mano che voti, comincer\u00f2 a pescare da quello che conosci gi\u00e0.";
+    // Dov'e' la spunta: sulla scheda di ogni titolo, ma il modo rapido
+    // e' la sezione Da votare - e se non lo dico qui non si scopre.
+    const dove = "La spunta e\u0300 sulla scheda di ogni titolo accanto alle " +
+      "stelle, e in <b>Lista \u203a Da votare</b>, che \u00e8 il modo " +
+      "rapido di metterne molte.";
+    if (spuntati) {
+      const altri = b.length - spuntati;
+      p.innerHTML = "Pesco fra " +
+        quanti(spuntati,
+          "<b>l\u2019unico</b> titolo che hai spuntato come buono per dormire",
+          "i <b>" + spuntati + "</b> titoli che hai spuntato come buoni " +
+            "per dormire") +
+        (altri > 0
+          ? ", pi\u00f9 " + quanti(altri, "<b>un altro</b> dai tuoi visti " +
+              "tranquilli", "altri <b>" + altri + "</b> dai tuoi visti " +
+              "tranquilli") + "."
+          : ".") +
+        "<br>Vale pi\u00f9 di qualsiasi conto sui generi. " + dove;
+    } else if (b.length) {
+      p.innerHTML = "Pesco fra " +
+        quanti(b.length, "<b>un</b> titolo che hai gi\u00e0 visto e votato",
+          "<b>" + b.length + "</b> titoli che hai gi\u00e0 visto e votato") +
+        ", togliendo azione, thriller, horror, crime, guerra e mistero." +
+        "<br>Ma il criterio migliore lo sai tu. " + dove;
+    } else {
+      p.innerHTML = "Non hai ancora n\u00e9 spunte n\u00e9 visti tranquilli, " +
+        "quindi pesco fra i titoli dei tuoi abbonamenti scegliendo generi " +
+        "calmi.<br>" + dove;
+    }
     schermo.appendChild(p);
   }
 
@@ -2466,11 +2603,50 @@ async function schermoStasera() {
 // magro. In una funzione perche' le prove devono poter usare QUESTO e
 // non una copia scritta a mano: una prova che ricostruisce il filtro
 // non si accorge se quello vero cambia.
+// Cosa ho IMPARATO dalle tue spunte: conto generi e keyword dei
+// titoli che hai segnato come buoni per dormire. Non e' magia, e' un
+// conteggio - come profiloGusto().
+//
+// La parte che conta davvero e' `smentiti`: i generi che io avevo
+// messo fra quelli che tengono sveglio e che TU hai spuntato
+// comunque. Quelli smettono di essere esclusi, perche' il tuo
+// giudizio su un titolo che conosci vale piu' di una mia regola
+// generale. Se per te un certo thriller e' il film che ti fa
+// crollare, il thriller non e' piu' un motivo di esclusione.
+function profiloDormire() {
+  const marchi = dormire.tutto;
+  const generi = {}, keyword = {};
+  marchi.forEach(v => {
+    (v.generiId || []).forEach(g => { generi[g] = (generi[g] || 0) + 1; });
+    (v.keyword || []).forEach(k => { keyword[k] = (keyword[k] || 0) + 1; });
+  });
+  const cima = o => Object.entries(o)
+    .sort((a, b) => b[1] - a[1]).slice(0, 4).map(x => x[0]);
+  return {
+    quanti: marchi.length,
+    generi: cima(generi),
+    keyword: cima(keyword),
+    smentiti: DORMIRE.sveglia.filter(g => generi[String(g)]),
+  };
+}
+
+// Quanti titoli spuntati servono prima di fidarsi dei tuoi generi
+// invece dei miei. Tre: sotto, un singolo titolo strano sposterebbe
+// tutto. E' la stessa soglia che "Sul mio gusto" usa per i voti.
+const DORMIRE_SOGLIA = 3;
+
+
 function filtroPerDormire() {
+  const p = profiloDormire();
+  // Coi tuoi generi al posto dei miei, quando le spunte bastano.
+  const chiesti = p.quanti >= DORMIRE_SOGLIA && p.generi.length
+    ? p.generi : DORMIRE.calmano;
+  // E senza escludere quelli che hai smentito spuntandoli.
+  const esclusi = DORMIRE.sveglia.filter(g => !p.smentiti.includes(g));
   return {
     tipo: "movie",
-    genere: DORMIRE.calmano.join("|"),
-    senzaGenere: DORMIRE.sveglia.join(","),
+    genere: chiesti.join("|"),
+    senzaGenere: esclusi.join(","),
     keyword: "",
     ordine: "vote_average.desc",
     servizio: "",
@@ -2484,15 +2660,35 @@ function filtroPerDormire() {
 }
 
 function bacinoPerDormire() {
-  const sveglia = new Set(DORMIRE.sveglia.map(String));
-  const calmano = new Set(DORMIRE.calmano.map(String));
-  const buoni = visti.tutto.filter(v => {
+  const p = profiloDormire();
+  // I generi che tengono sveglio, MENO quelli che hai smentito
+  // spuntando un titolo che li ha.
+  const sveglia = new Set(DORMIRE.sveglia
+    .filter(g => !p.smentiti.includes(g)).map(String));
+  // E fra i calmi metto anche i tuoi, imparati dalle spunte: cosi'
+  // l'ordine dei visti segue il tuo gusto e non il mio.
+  const calmano = new Set(DORMIRE.calmano.map(String)
+    .concat(p.quanti >= DORMIRE_SOGLIA ? p.generi.map(String) : []));
+
+  // I titoli SPUNTATI a mano vengono prima di tutto, e senza filtri:
+  // sono un giudizio di chi guarda, e vale piu' di qualunque conto sui
+  // generi. Un film puo' essere una commedia e comunque tenerti
+  // sveglio, e viceversa.
+  const scelti = dormire.tutto.slice();
+  const gia = new Set(scelti.map(x => x.tipo + x.id));
+
+  // Poi i visti tranquilli, per non restare a secco quando le spunte
+  // sono ancora poche.
+  const dai_generi = visti.tutto.filter(v => {
+    if (gia.has(v.tipo + v.id)) return false;
     if ((v.mio || 0) < DORMIRE.votoMinimo) return false;
     return !(v.generiId || []).some(g => sveglia.has(String(g)));
   });
   const punteggio = v =>
     (v.generiId || []).filter(g => calmano.has(String(g))).length;
-  return buoni.slice().sort((a, b) => punteggio(b) - punteggio(a));
+  dai_generi.sort((a, b) => punteggio(b) - punteggio(a));
+
+  return scelti.concat(dai_generi);
 }
 
 // Il pescato: locandina, dati, e i pulsanti per aprirlo sulla TV
@@ -2827,6 +3023,30 @@ async function schermoDettaglio(tipo, id, torna) {
       t.onclick = () => { visti.togli(d.tipo, d.id); rifaiVisto(); };
       blocco.appendChild(t);
     }
+
+    // La spunta «da dormire». Sta qui e non fra le azioni in alto
+    // perche' e' un giudizio sul titolo, come il voto - e si mette
+    // nello stesso momento.
+    const notte = el("button", "togli");
+    const disegnaNotte = () => {
+      const dentro = dormire.ha(d.tipo, d.id);
+      notte.className = "togli" + (dentro ? " acceso" : "");
+      notte.setAttribute("aria-pressed", String(dentro));
+      notte.textContent = dentro
+        ? "\u2713 Buono per dormire"
+        : "Buono per dormire";
+    };
+    notte.onclick = () => {
+      if (dormire.ha(d.tipo, d.id)) dormire.togli(d.tipo, d.id);
+      else dormire.aggiungi({
+        tipo: d.tipo, id: d.id, titolo: d.titolo, anno: d.anno,
+        voto: d.voto, locandina: d.locandina,
+        generiId: d.generiId, keyword: d.keyword,
+      });
+      disegnaNotte();
+    };
+    disegnaNotte();
+    blocco.appendChild(notte);
   };
   rifaiVisto();
   pad.appendChild(blocco);
@@ -3078,13 +3298,24 @@ function nomeKeyword(k) {
 
 let vistaLista = "da guardare";
 
+// Le viste della Lista, dichiarate una volta sola: l'interruttore e
+// lo smistamento leggono la stessa cosa, cosi' non puo' succedere che
+// compaia un pulsante che non porta da nessuna parte.
+// La prima non ha una «parte»: e' quella disegnata da schermoLista.
+const VISTE_LISTA = [
+  ["da guardare", "Da guardare"],
+  ["visti", "Visti"],
+  ["votare", "Da votare"],
+];
+const PARTI_LISTA = { visti: parteVisti, votare: parteVotare };
+
 function schermoLista() {
   schermo.innerHTML = "";
   const pad = el("div", "pad");
   pad.appendChild(el("h1", "titolone", "La tua lista"));
 
   const sw = el("div", "interruttore");
-  [["da guardare", "Da guardare"], ["visti", "Visti"]].forEach(([v, etichetta]) => {
+  VISTE_LISTA.forEach(([v, etichetta]) => {
     const b = el("button", null, etichetta);
     b.setAttribute("aria-pressed", String(vistaLista === v));
     b.onclick = () => { vistaLista = v; schermoLista(); };
@@ -3093,7 +3324,8 @@ function schermoLista() {
   pad.appendChild(sw);
   schermo.appendChild(pad);
 
-  if (vistaLista === "visti") return parteVisti();
+  const parte = PARTI_LISTA[vistaLista];
+  if (parte) return parte();
 
   const voci = lista.tutto;
   if (!voci.length) {
@@ -3170,8 +3402,11 @@ function parteVisti() {
     }
   } else {
     const p = el("div", "gusto");
+    // e dico anche DOVE votarne in fretta: «Da votare» e' la
+    // linguetta accanto, ma se non lo scrivo qui non si trova
     p.innerHTML = "Vota almeno <b>3 titoli con 4 o 5 stelle</b> e «Stasera» " +
-      "comincia a pescare sul tuo gusto. Ne hai " + g.quanti + ".";
+      "comincia a pescare sul tuo gusto. Ne hai " + g.quanti + ".<br>" +
+      "Il modo rapido \u00e8 la linguetta <b>Da votare</b>, qui sopra.";
     schermo.appendChild(p);
   }
 
@@ -3205,6 +3440,259 @@ function pulsanteManda(voci, sonoVisti) {
 // i dati li prendo da TMDB, e per i visti prendo anche generi e
 // keyword, altrimenti i titoli importati non contribuirebbero al
 // profilo di gusto.
+// Votare in fretta, per riempire l'archivio. Una scheda per titolo
+// sarebbe troppo lenta: qui ogni titolo e' una riga con locandina,
+// stelle e la spunta «notte».
+//
+// Da dove pesca: i titoli PIU' VOTATI dei tuoi abbonamenti, non i piu'
+// popolari. Provato sul telefono: «popolari» vuol dire popolari
+// QUESTA settimana, e la fila veniva piena di uscite del 2026 che non
+// puoi aver visto - e su un titolo che non conosci non c'e' niente da
+// votare. I piu' votati su TMDB sono invece i piu' visti di sempre.
+// Alterna film e serie, che altrimenti verrebbero solo film.
+// Due mazzi. Il primo - i piu' votati - e' quello che massimizza le
+// probabilita' che tu l'abbia visto, ma sono tutti blockbuster: una
+// pagina intera di Marvel, e da spuntare «notte» non c'e' niente. Il
+// secondo pesca nello STESSO bacino di «Per dormire», cosi' le spunte
+// che metti li' finiscono dritte nella modalita' che le usa.
+const MAZZI_VOTARE = [
+  ["famosi", "I pi\u00f9 visti", {}],
+  ["calmi", "Da dormire", () => ({
+    genere: DORMIRE.calmano.join("|"),
+    senzaGenere: DORMIRE.sveglia.join(","),
+  })],
+];
+
+let mazzoVotare = "famosi";
+let paginaVotare = 0;
+let daVotare = [];
+
+function filtroMazzoVotare(tipo, mazzo) {
+  const scelto = MAZZI_VOTARE.find(m => m[0] === (mazzo || mazzoVotare));
+  const extra = typeof scelto[2] === "function" ? scelto[2]() : scelto[2];
+  return Object.assign({
+    tipo, genere: "", keyword: "", ordine: "vote_count.desc",
+    servizio: "", decennio: "Tutti", durata: "Qualsiasi",
+  }, extra);
+}
+
+// La coda visibile: quello che hai gia' votato esce, cosi' la fila si
+// accorcia mentre la riempi. La spunta «notte» invece NON fa uscire:
+// spuntare non e' votare, e una riga che sparisce sotto il dito
+// mentre la spunti e' solo fastidiosa.
+function codaDaVotare() {
+  return daVotare.filter(v => !visti.voto(v.tipo, v.id));
+}
+
+async function altroDaVotare() {
+  paginaVotare += 1;
+  // alterno film e serie: chiedendo solo film, le serie non
+  // arriverebbero mai
+  const tipo = paginaVotare % 2 ? "movie" : "tv";
+  const pagina = Math.ceil(paginaVotare / 2);
+  const r = await sfoglia(filtroMazzoVotare(tipo), pagina);
+  const gia = new Set(daVotare.map(x => x.tipo + x.id));
+  r.elementi.forEach(x => {
+    if (!gia.has(x.tipo + x.id)) daVotare.push(x);
+  });
+  return codaDaVotare();
+}
+
+// Quanto e' pieno l'archivio, e a cosa serve esserlo. Le due soglie
+// sono le stesse che usano davvero le due modalita', prese da loro e
+// non ricopiate: se cambiano la', cambia anche qui.
+function quantoArchivio() {
+  const voti = visti.tutto.filter(v => v.mio).length;
+  const spunte = dormire.tutto.length;
+  return {
+    voti, spunte,
+    gustoPronto: voti >= 3,
+    dormirePronto: spunte >= DORMIRE_SOGLIA,
+  };
+}
+
+// Il conto, e a cosa serve: senza questo non sai se stai votando a
+// vuoto o se hai gia' abbastanza roba perche' le due modalita'
+// lavorino. «Ne manca una» e' l'unica cosa che fa venire voglia di
+// metterne una.
+function testoArchivio() {
+  const q = quantoArchivio();
+  const mancaGusto = 3 - q.voti, mancaNotte = DORMIRE_SOGLIA - q.spunte;
+  const conto = "<b>" + q.voti + "</b> " + quanti(q.voti, "voto", "voti") +
+    " \u00b7 <b>" + q.spunte + "</b> " +
+    quanti(q.spunte, "spunta notte", "spunte notte");
+  // Quando sono a posto tutte e due, il conto torna una riga sola: su
+  // un telefono ogni riga in cima e' una riga di titoli in meno.
+  if (q.gustoPronto && q.dormirePronto)
+    return conto + " \u00b7 \u2713 le modalit\u00e0 imparano da qui";
+  return conto + "<br>" +
+    (q.gustoPronto ? "\u2713 Sul mio gusto sceglie dai tuoi voti"
+       : "Sul mio gusto: " + quanti(mancaGusto, "manca un voto",
+           "mancano " + mancaGusto + " voti")) + "<br>" +
+    (q.dormirePronto ? "\u2713 Per dormire impara dalle tue spunte"
+       : "Per dormire: " + quanti(mancaNotte, "manca una spunta",
+           "mancano " + mancaNotte + " spunte"));
+}
+
+async function parteVotare() {
+  if (!chiavi.servizi.length) {
+    schermo.appendChild(el("p", "vuoto",
+      "Prima scegli gli abbonamenti in Opzioni."));
+    return;
+  }
+
+  const spiega = el("div", "gusto");
+  spiega.style.cssText = "margin:0 16px 4px";
+  spiega.innerHTML = testoArchivio();
+  schermo.appendChild(spiega);
+  // si riscrive a ogni voto: vedere il numero salire mentre voti e'
+  // la cosa che fa votare il prossimo
+  const aggiorna = () => { spiega.innerHTML = testoArchivio(); };
+
+  const chips = el("div", "generi");
+  MAZZI_VOTARE.forEach(([v, etichetta]) => {
+    const c = el("button", "chip", etichetta);
+    c.setAttribute("aria-pressed", String(mazzoVotare === v));
+    c.onclick = () => {
+      if (mazzoVotare === v) return;
+      mazzoVotare = v;
+      // mazzo nuovo, fila nuova: mescolare i due bacini non vorrebbe
+      // dire niente
+      paginaVotare = 0;
+      daVotare = [];
+      schermoLista();
+    };
+    chips.appendChild(c);
+  });
+  schermo.appendChild(chips);
+
+  const zona = el("div");
+  zona.style.cssText = "padding:0 16px";
+  schermo.appendChild(zona);
+
+  const attesa = el("div", "caricamento");
+  attesa.innerHTML = '<div class="giro"></div>';
+  zona.appendChild(attesa);
+
+  const disegna = () => {
+    zona.innerHTML = "";
+    const coda = codaDaVotare();
+    if (!coda.length)
+      zona.appendChild(el("p", "altri", "Nessun titolo da mostrare."));
+    coda.forEach(v => zona.appendChild(filaPerVotare(v, aggiorna)));
+
+    const b = el("button", "altri", "Carica altri titoli");
+    b.style.cssText = "width:100%;margin:14px 0 6px";
+    b.onclick = async () => {
+      b.disabled = true;
+      b.textContent = "Carico\u2026";
+      try { await altroDaVotare(); disegna(); }
+      catch (e) {
+        b.disabled = false;
+        b.textContent = "Riprova";
+      }
+    };
+    zona.appendChild(b);
+  };
+
+  try {
+    if (!daVotare.length) await altroDaVotare();
+    disegna();
+  } catch (e) {
+    zona.innerHTML = "";
+    zona.appendChild(el("p", "nota", esc(e.message)));
+  }
+}
+
+// Una riga. Si ridisegna da sola invece di rifare tutta la lista:
+// cosi' la pagina non salta sotto il dito mentre voti.
+function filaPerVotare(v, cambiato) {
+  const f = el("div", "fila2");
+  const dati = {
+    tipo: v.tipo, id: v.id, titolo: v.titolo, anno: v.anno,
+    voto: v.voto, locandina: v.locandina,
+    generiId: v.generiId, keyword: v.keyword,
+  };
+
+  // La locandina apre la scheda: se non riconosci un titolo dal nome
+  // devi poterlo guardare, e tornando indietro la fila e' dov'era.
+  const loc = el("button", "apri2");
+  loc.setAttribute("aria-label", "Apri " + v.titolo);
+  loc.innerHTML = v.locandina
+    ? locandina(v.locandina, "w154")
+    : '<div class="manca2"></div>';
+  loc.onclick = () => schermoDettaglio(v.tipo, v.id, () => schermoLista());
+
+  const notte = el("button", "notte");
+  const disegnaNotte = () => {
+    const dentro = dormire.ha(v.tipo, v.id);
+    notte.setAttribute("aria-pressed", String(dentro));
+    notte.textContent = dentro ? "\u2713 notte" : "notte";
+  };
+  notte.onclick = () => {
+    if (dormire.ha(v.tipo, v.id)) dormire.togli(v.tipo, v.id);
+    else dormire.aggiungi(dati);
+    disegnaNotte();
+    if (cambiato) cambiato();
+  };
+
+  const chi = el("div", "chi");
+
+  const disegna = () => {
+    chi.innerHTML = "";
+
+    const su = el("div", "su2");
+    const testi = el("div");
+    testi.innerHTML = "<h3>" + esc(v.titolo) + "</h3>" +
+      '<p class="anno2">' + (v.anno || "\u2014") +
+      (v.tipo === "tv" ? " \u00b7 serie" : "") + "</p>";
+    su.appendChild(testi);
+    disegnaNotte();
+    su.appendChild(notte);
+    chi.appendChild(su);
+
+    const mio = visti.voto(v.tipo, v.id);
+    if (mio) {
+      // Votato: la riga resta, con il voto e un modo per tornare
+      // indietro - su un telefono il tocco sbagliato e' normale.
+      // Sparisce alla prossima apertura della sezione.
+      const fatto = el("div", "fatto2");
+      fatto.appendChild(el("span", null,
+        "\u2713 " + mio + (mio === 1 ? " stella" : " stelle")));
+      const ann = el("button", null, "annulla");
+      ann.onclick = () => {
+        visti.togli(v.tipo, v.id);
+        disegna();
+        if (cambiato) cambiato();
+      };
+      fatto.appendChild(ann);
+      chi.appendChild(fatto);
+    } else {
+      const stelle = el("div", "stelle");
+      for (let n = 1; n <= 5; n++) {
+        const b = el("button");
+        b.setAttribute("aria-label", n + (n === 1 ? " stella" : " stelle"));
+        b.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.7 6.2.6-4.7 4.2 1.4 6.1L12 16.9l-5.5 3.2 1.4-6.1L3.2 9.8l6.2-.6z"/></svg>';
+        b.onclick = () => {
+          visti.segna(dati, n);
+          // votato vuol dire visto: dalla lista «da guardare» non
+          // serve piu', come fa la scheda
+          if (lista.ha(v.tipo, v.id)) lista.togli(v.tipo, v.id);
+          disegna();
+          if (cambiato) cambiato();
+        };
+        stelle.appendChild(b);
+      }
+      chi.appendChild(stelle);
+    }
+  };
+
+  disegna();
+  f.appendChild(loc);
+  f.appendChild(chi);
+  return f;
+}
+
 async function schermoPrendi(quale, voci) {
   window.scrollTo(0, 0);
   if (!voci.length) return vuoto("Questo indirizzo non contiene nessun titolo.");
@@ -3288,9 +3776,12 @@ function schermoTelecomando() {
   }
 
   // Ogni tasto e' una POST: ottimista, ma se fallisce lo dice.
-  function tasto(etichetta, icona, azione, classe = "") {
+  function tasto(etichetta, icona, azione, classe = "", nome = "") {
     const b = el("button", "tasto " + classe);
     b.innerHTML = (icona || "") + (etichetta ? "<span>" + etichetta + "</span>" : "");
+    // I tasti del lettore hanno solo l'icona: senza questo, per chi
+    // usa VoiceOver sono cinque «pulsante» identici.
+    if (!etichetta && nome) b.setAttribute("aria-label", nome);
     b.onclick = async () => {
       b.classList.add("acceso");
       setTimeout(() => b.classList.remove("acceso"), 170);
@@ -3446,11 +3937,11 @@ function schermoTelecomando() {
 
   corpoTel.appendChild(el("p", "sezione", "Riproduzione"));
   corpoTel.appendChild(fila(
-    tasto("", ICONE.indre, key("REWIND")),
-    tasto("", ICONE.play, key("PLAY")),
-    tasto("", ICONE.pausa, key("PAUSE")),
-    tasto("", ICONE.stop, key("STOP")),
-    tasto("", ICONE.avan, key("FF")),
+    tasto("", ICONE.indre, key("REWIND"), "", "Riavvolgi"),
+    tasto("", ICONE.play, key("PLAY"), "", "Riproduci"),
+    tasto("", ICONE.pausa, key("PAUSE"), "", "Pausa"),
+    tasto("", ICONE.stop, key("STOP"), "", "Stop"),
+    tasto("", ICONE.avan, key("FF"), "", "Avanti veloce"),
   ));
 
   // ---------------------------------------------------------- tastiera
@@ -3762,7 +4253,7 @@ function bloccoCollegamento(pad) {
     pad.appendChild(avviso);
 
     const dove = el("div", "gusto");
-    dove.innerHTML = "Samsung ti rimandera' a <b>" + esc(indirizzoDiRitorno()) +
+    dove.innerHTML = "Samsung ti rimander\u00e0 a <b>" + esc(indirizzoDiRitorno()) +
       "</b>, che deve essere esattamente il redirect URI registrato " +
       "nell'app. Dall'indirizzo locale non funziona.";
     pad.appendChild(dove);
@@ -3815,7 +4306,7 @@ function bloccoCollegamento(pad) {
 function schermoImpostazioni() {
   schermo.innerHTML = "";
   const pad = el("div", "pad");
-  pad.appendChild(el("h1", "titolone", "Impostazioni"));
+  pad.appendChild(el("h1", "titolone", "Opzioni"));
   schermo.appendChild(pad);
   bloccoCollegamento(pad);
   bloccoAbbonamenti(pad);
