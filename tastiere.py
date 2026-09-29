@@ -21,6 +21,18 @@ bordi: dicevano che bloccano, invece GIRANO.
 
 SPAZIO = " "
 CANCELLA = "\b"
+# QUANTE VOLTE PREMERE CANCELLA dove NON c'e' il cestino: 30, cioe'
+# abbastanza per svuotare un titolo qualunque. Tre non bastavano, e
+# si e' visto: il campo aveva "the bear", tre cancella hanno lasciato
+# "the b" e il titolo nuovo si e' attaccato in coda.
+# Il campo di ricerca CONSERVA la query fra un'apertura e l'altra
+# (visto su Netflix e su Infinity), quindi svuotare non e' una
+# precauzione: e' necessario. E non c'e' modo di sapere quanto c'e'
+# dentro, perche' la TV non dice niente del proprio schermo - quindi
+# si esagera.
+# Dove il cestino c'e' (HBO Max, Discovery+, Prime) basta UNA
+# pressione, ed e' meglio: nessun dubbio e nessuna pressione sprecata.
+
 # Un tasto che esiste, occupa una casella, ma non scrive testo: "123",
 # i simboli, le maiuscole. Serve che stia nella griglia perche' i
 # passi si contano anche sopra di lui, ma non deve mai essere una
@@ -101,7 +113,7 @@ DISPOSIZIONI = {
         # li' al giro dopo). Su Netflix CANCELLA e' un tasto largo e ci
         # si arriva da sotto, salendo dalla colonna centrale.
         # NON ANCORA PROVATO SULLA TV su Netflix, a differenza di NOW.
-        "azzera": 3,
+        "azzera": 30,
         # MISURATO: BACK porta il fuoco sul tasto Home in alto, e un
         # BACK in piu' quando e' gia' la' NON FA NIENTE. Quindi e' un
         # fondo idempotente, e questo risolve il problema dello stato
@@ -231,7 +243,7 @@ DISPOSIZIONI = {
         # il risultato indipendente da cosa c'era prima.
         # Su NOW il cancella e' un tasto SINGOLO in riga 1 colonna 9,
         # quindi raggiungerlo costa poco e non ha ambiguita'.
-        "azzera": 3,
+        "azzera": 30,
         "normalizza": ["OK"] + ["BACK"] * 6,
         "strada": ["UP", "OK", "UP", "OK"],
     },
@@ -279,7 +291,7 @@ DISPOSIZIONI = {
         "ancoraggio": None,
         # L'ultima riga ha il solo "0": scendendoci la colonna si
         # schiaccia, ed e' proprio quello che ha fatto la sonda.
-        "azzera": 3,
+        "azzera": 30,
         # MISURATO, e Disney+ e' il caso FORTUNATO: il suo menu a
         # tendina e' BLOCCATO sopra e sotto, non gira come quello di
         # NOW. Percio' "su a fondo corsa" atterra sempre sulla prima
@@ -402,17 +414,94 @@ DISPOSIZIONI = {
             SPAZIO * 2 + CANCELLA * 2 + SVUOTA * 2,
         ],
         "partenza": (0, 0),       # la a
-        # DA MISURARE: i bordi, e quindi se esiste un'ancora.
+        # I BORDI, misurati muovendo SENZA premere. Identici a HBO Max:
+        #   destra    PERDE, esce sui RISULTATI
+        #   sinistra  PERDE, esce sul MENU A TENDINA
+        #   alto      BLOCCA (otto su dalla m restano sulla a)
         "bordi": "fermano",
         "larghi": {SPAZIO, CANCELLA, SVUOTA},
-        "ancoraggio": None,
+        # L'ancora usa il bordo che perde come porta, come su HBO Max:
+        #   sinistra a fondo corsa -> esce sul menu
+        #   destra                 -> rientra in PRIMA COLONNA
+        #                             mantenendo la riga (visto: dalla m)
+        #   su a fondo corsa       -> riga 0, perche' l'alto blocca
+        # Otto righe qui contro sette su HBO Max, quindi un su in piu'.
+        "ancoraggio": {"tasti": ["LEFT"] * 12 + ["RIGHT"] + ["UP"] * 9,
+                       "arrivo": (0, 0)},
         "azzera": 1,              # c'e' il cestino
         # PROVATO: a 0,3s "the bear" esce giusto. Si potrebbe
         # stringere, non provato.
         "passo": 0.3,
-        # DA MISURARE
-        "normalizza": [],
-        "strada": [],
+        # MISURATO. Su Prime la ricerca NON e' nel menu dei BACK: sta
+        # nel MENU DI SINISTRA, che si apre dalla home andando a
+        # sinistra.
+        #
+        # LA CONVERGENZA, e non preme mai OK al buio:
+        #   BACK x8   -> home OPPURE conferma d'uscita
+        #   LEFT      -> dalla home apre il menu; nella conferma non fa
+        #                niente, perche' quella e' VERTICALE (Annulla
+        #                sta sotto)
+        #   BACK      -> dal menu torna alla home; dalla conferma la
+        #                ANNULLA
+        # Entrambi gli stati finiscono sulla HOME, in modo certo.
+        #
+        # Nella conferma d'uscita di Prime e' selezionato il pulsante
+        # che ESCE, con Annulla sotto: un OK al buio chiuderebbe
+        # l'app, e per questo la convergenza usa solo LEFT e BACK.
+        "normalizza": ["BACK"] * 8 + ["LEFT", "BACK"],
+        # Dalla home: sinistra apre il menu, su a fondo corsa atterra
+        # sulla prima voce perche' il menu BLOCCA (come Disney+ e HBO
+        # Max, non come NOW), e la ricerca e' la SECONDA.
+        "strada": ["LEFT"] + ["UP"] * 8 + ["DOWN", "OK"],
+    },
+    "infinity": {
+        "nome": "Mediaset Infinity",
+        # MISURATO SULLA TV il 28/09/2026. Diversa da tutte: DUE RIGHE
+        # lunghe 21 caselle, non una griglia quadrata.
+        #   riga 0   a..o  CANCELLA  0..4
+        #   riga 1   SPAZIO  p..z à è '  SPAZIO  5..9
+        # Alfabeto completo, numeri, accenti E L'APOSTROFO: e' la
+        # tastiera piu' ricca delle sette.
+        # NESSUN TASTO LARGO: sono tutte caselle singole, e gli SPAZI
+        # SONO DUE, uno per riga - detto da chi guardava lo schermo,
+        # e io non ci credevo. La sonda gli ha dato ragione.
+        #
+        # Le sonde: quindici OK dalla a hanno scritto "bcdefghijklmno"
+        # (la prima pressione persa, vedi sotto), poi altri otto hanno
+        # CANCELLATO la o e scritto "0123444" - due 4 di troppo, cioe'
+        # il bordo destro BLOCCA. Poi dalla a: giu' e sedici passi a
+        # destra hanno dato "a pqrstuvwxyzàè' 5", diciotto caratteri
+        # per diciotto OK.
+        "griglia": [
+            "abcdefghijklmno" + CANCELLA + "01234",
+            SPAZIO + "pqrstuvwxyz\u00e0\u00e8'" + SPAZIO + "56789",
+        ],
+        "partenza": (0, 0),       # la a
+        # I BORDI: destra e ALTO bloccano (il primo misurato dai due 4
+        # ripetuti, il secondo riferito da chi guarda la TV).
+        "bordi": "fermano",
+        "larghi": set(),
+        # E quei due bordi danno l'ancora: su a fondo corsa fissa la
+        # riga, destra a fondo corsa fissa la colonna, e si finisce
+        # sempre sul "4" in alto a destra. Con due righe sole costa
+        # poco.
+        "ancoraggio": {"tasti": ["UP"] * 4 + ["RIGHT"] * 25,
+                       "arrivo": (0, 20)},
+        # Niente cestino su questa tastiera: si preme cancella.
+        "azzera": 30,
+        # MISURATO, ed e' la strada piu' semplice delle sette - perche'
+        # su Infinity NON C'E' NESSUNA CONFERMA D'USCITA, quindi non
+        # esiste un OK che possa chiudere l'app.
+        #
+        # BACK alterna PAGINA DEI TITOLI e MENU A TENDINA. I due stati
+        # convergono con un SINISTRA:
+        #   dalla pagina dei titoli   -> apre il menu
+        #   col menu gia' aperto      -> il menu RESTA aperto
+        # Quindi dopo il sinistra si e' nel menu, in entrambi i casi.
+        "normalizza": ["BACK"] * 8 + ["LEFT"],
+        # Nel menu: su a fondo corsa atterra sulla prima voce, perche'
+        # BLOCCA in alto - e la ricerca E' la prima. Niente da contare.
+        "strada": ["UP"] * 6 + ["OK"],
     },
     # Griglia finta senza tasti larghi, per le prove.
     "prova": {
@@ -445,8 +534,8 @@ DISPOSIZIONI["discovery"] = dict(DISPOSIZIONI["hbomax"],
 # rifiutare il lavoro invece di scrivere il loro nome come se fosse un
 # titolo: ognuna ha una disposizione sua, e la TV non la sa dire.
 SENZA_DISPOSIZIONE = {
-    "apple", "appletv", "infinity",
-    "mediaset", "youtube",
+    "apple", "appletv", 
+    "youtube",
 }
 
 

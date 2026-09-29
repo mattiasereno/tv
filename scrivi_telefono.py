@@ -58,7 +58,8 @@ def opzioni_da_argv():
             "naviga": "TV_NAVIGA", "carica": "TV_CARICA",
             "tastiera": "TV_TASTIERA", "azzera": "TV_AZZERA",
             "app": "TV_APP", "tastiere": "TV_TASTIERE",
-            "prima": "TV_PRIMA", "normalizza": "TV_NORMALIZZA"}
+            "prima": "TV_PRIMA", "normalizza": "TV_NORMALIZZA",
+            "primapausa": "TV_PRIMA_PAUSA"}
     resto, ignote = [sys.argv[0] if sys.argv else ""], []
     for pezzo in sys.argv[1:]:
         if pezzo.startswith("--") and "=" in pezzo:
@@ -93,6 +94,13 @@ PORTA = int(os.environ.get("TV_PORTA", "8002"))
 # Se un popup scaduto ha registrato un rifiuto, presentarsi con un
 # nome nuovo fa ricomparire la richiesta di permesso.
 NOME = os.environ.get("TV_NOME", "TVProject")
+
+# Quanto aspettare fra il "collegato" della TV e la prima pressione.
+# La TV annuncia il collegamento PRIMA di essere pronta a ricevere, e
+# senza questa pausa la prima pressione si perde: misurato su Mediaset
+# Infinity, quindici OK ne hanno scritti quattordici e mancava il
+# primo.
+PRIMA_PAUSA = float(os.environ.get("TV_PRIMA_PAUSA", "0.7"))
 
 
 def inquadra(carico):
@@ -208,6 +216,14 @@ def manda(comandi, ascolta=0.0, scadenza=None, eco=False):
                 continue
             benvenuto = json.loads(carico.decode() or "{}")
             if benvenuto.get("event") == "ms.channel.connect":
+                # La TV dice "collegato" prima di essere pronta a
+                # ricevere: la PRIMA pressione dopo il collegamento si
+                # perde. Misurato su Mediaset Infinity, dove quindici
+                # OK ne hanno scritti quattordici e mancava proprio il
+                # primo. Una pausa qui la recupera, e vale per tutti i
+                # comandi invece di ricordarsene in ogni punto.
+                if comandi:
+                    time.sleep(PRIMA_PAUSA)
                 for c in comandi:
                     # una voce puo' essere ("pausa", secondi): la TV ha
                     # bisogno di tempo fra un tasto e il successivo, e
