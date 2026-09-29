@@ -1063,7 +1063,14 @@ def main():
                     "  Con la ricerca gia' aperta a mano, invece:\n"
                     f'     python3 {mio_nome()} '
                     f'--digita "{testo}"')
-            attesa = float(os.environ.get("TV_CARICA", "6"))
+            # Quanto aspettare che l'app sia PRONTA A RICEVERE, non
+            # solo aperta. Sei secondi non bastavano: la sequenza
+            # partiva mentre l'app stava ancora caricando e i primi
+            # tasti cadevano nel vuoto - peggio ancora se l'app si
+            # apre sul SELETTORE PROFILI, che compare dopo.
+            # Lo dice la disposizione, perche' non si caricano tutte
+            # allo stesso modo, e TV_CARICA lo sovrascrive.
+            attesa = float(os.environ.get("TV_CARICA", d.get("carica", 14)))
             print(f'  aspetto {attesa:.0f}s che {d["nome"]} finisca di '
                   "caricare")
             # Quanto cancellare prima di scrivere: lo dice la

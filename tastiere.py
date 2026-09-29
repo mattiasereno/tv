@@ -448,7 +448,14 @@ DISPOSIZIONI = {
         # Nella conferma d'uscita di Prime e' selezionato il pulsante
         # che ESCE, con Annulla sotto: un OK al buio chiuderebbe
         # l'app, e per questo la convergenza usa solo LEFT e BACK.
-        "normalizza": ["BACK"] * 8 + ["LEFT", "BACK"],
+        # L'OK IN TESTA serve al caso a freddo: TUTTE E SETTE le app
+        # partono dal SELETTORE PROFILI, e senza quell'OK la sequenza
+        # gira a vuoto sopra la schermata dei profili. Prime e
+        # Infinity ne erano rimaste senza, ed erano le due che non
+        # entravano.
+        # Nel caso a caldo l'OK cade su quello che e' a fuoco e i BACK
+        # dopo lo disfanno.
+        "normalizza": ["OK"] + ["BACK"] * 8 + ["LEFT", "BACK"],
         # Dalla home: sinistra apre il menu, su a fondo corsa atterra
         # sulla prima voce perche' il menu BLOCCA (come Disney+ e HBO
         # Max, non come NOW), e la ricerca e' la SECONDA.
@@ -498,7 +505,10 @@ DISPOSIZIONI = {
         #   dalla pagina dei titoli   -> apre il menu
         #   col menu gia' aperto      -> il menu RESTA aperto
         # Quindi dopo il sinistra si e' nel menu, in entrambi i casi.
-        "normalizza": ["BACK"] * 8 + ["LEFT"],
+        # L'OK IN TESTA per il selettore profili, come le altre. Qui e'
+        # anche senza rischi, perche' su Infinity la conferma d'uscita
+        # non esiste: non c'e' nessun OK che possa chiudere l'app.
+        "normalizza": ["OK"] + ["BACK"] * 8 + ["LEFT"],
         # Nel menu: su a fondo corsa atterra sulla prima voce, perche'
         # BLOCCA in alto - e la ricerca E' la prima. Niente da contare.
         "strada": ["UP"] * 6 + ["OK"],
