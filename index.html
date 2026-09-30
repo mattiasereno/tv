@@ -557,6 +557,10 @@
     margin: 4px 0 0; padding: 6px 0; color: var(--tenue);
     font-size: 13.5px; text-decoration: underline; min-height: 44px;
   }
+  .visto .altroVoto {
+    margin: 8px 0 0; font-size: 13.5px; color: var(--tenue);
+    letter-spacing: .5px;
+  }
   .visto .esito { margin: 10px 0 0; font-size: 14.5px; font-weight: 550; }
   .gusto {
     margin: 10px 16px 0; padding: 12px 14px; border-radius: 12px;
@@ -1022,7 +1026,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20260930091536";
+const VERSIONE = "20260930093609";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -1118,6 +1122,38 @@ const chiavi = {
   // chi usa la TV ha detto di non volere.
   get firefino() { return localStorage.getItem("fire_fino") || "risultati"; },
   set firefino(v) { localStorage.setItem("fire_fino", v); },
+  // ------------------------------------------------------- la famiglia
+  // L'indirizzo e la chiave di Supabase NON stanno nel codice
+  // pubblicato: li incolli su ogni telefono. La pagina e' pubblica su
+  // GitHub Pages, e una chiave dentro la pagina sarebbe una chiave in
+  // mano a chiunque. Cosi' ce l'hanno solo i telefoni di casa.
+  get supaUrl() {
+    return (localStorage.getItem("supa_url") || "").replace(/\/+$/, "");
+  },
+  set supaUrl(v) {
+    localStorage.setItem("supa_url", String(v).trim().replace(/\/+$/, ""));
+  },
+  get supaChiave() { return localStorage.getItem("supa_chiave") || ""; },
+  set supaChiave(v) {
+    localStorage.setItem("supa_chiave", String(v).trim());
+  },
+  // Il codice famiglia E' la password: chi ha chiave e codice legge
+  // la vostra lista. Per questo se lo genera l'app, lungo, e non lo
+  // si sceglie a mano.
+  get famiglia() { return localStorage.getItem("famiglia") || ""; },
+  set famiglia(v) {
+    localStorage.setItem("famiglia",
+      String(v).trim().toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 40));
+  },
+  // Chi sei: serve perche' i voti restano di chi li da'. Se due
+  // telefoni si chiamano uguale i voti si sovrascrivono a vicenda.
+  get io() { return localStorage.getItem("io") || ""; },
+  set io(v) {
+    localStorage.setItem("io", String(v).trim().slice(0, 24));
+  },
+  get ultimoScambio() { return Number(localStorage.getItem("ultimo_scambio") || 0); },
+  set ultimoScambio(v) { localStorage.setItem("ultimo_scambio", String(v)); },
+
   // Quale delle due strade usa l'app: "tv" (Samsung) o "fire".
   get strada() { return localStorage.getItem("strada") || "tv"; },
   set strada(v) {
@@ -1158,9 +1194,45 @@ const lista = {
     if (this.ha(v.tipo, v.id)) return;
     // i piu' recenti in cima: e' l'ordine in cui li cerchi
     this.tutto = [{ ...v, quando: Date.now() }, ...this.tutto];
+    tombe.leva("lista", v.tipo, v.id);
+    daMandare();
   },
   togli(tipo, id) {
     this.tutto = this.tutto.filter(x => !(x.tipo === tipo && String(x.id) === String(id)));
+    tombe.metti("lista", tipo, id);
+    daMandare();
+  },
+};
+
+// Le PIETRE TOMBALI. Senza queste la condivisione non funziona: se
+// togli un titolo dalla lista sul tuo telefono e l'altro telefono ha
+// ancora la sua riga, alla prossima sincronizzazione quella riga
+// torna su e il titolo RISORGE. Cancellare non e' un'assenza, e' un
+// fatto, e va registrato con la sua ora come tutti gli altri.
+const tombe = {
+  get tutto() {
+    try {
+      const v = JSON.parse(localStorage.getItem("tombe") || "[]");
+      return Array.isArray(v) ? v : [];
+    } catch (e) { return []; }
+  },
+  set tutto(a) { localStorage.setItem("tombe", JSON.stringify(a)); },
+  chiave(cosa, tipo, id) { return cosa + ":" + tipo + ":" + id; },
+  quando(cosa, tipo, id) {
+    const k = this.chiave(cosa, tipo, id);
+    const t = this.tutto.find(x => x.k === k);
+    return t ? t.quando : 0;
+  },
+  metti(cosa, tipo, id, quando) {
+    const k = this.chiave(cosa, tipo, id);
+    this.tutto = [{ k, cosa, tipo, id, quando: quando || Date.now() },
+                  ...this.tutto.filter(x => x.k !== k)];
+  },
+  // rimettere una cosa cancella la sua tomba: altrimenti la
+  // cancellazione vecchia vincerebbe per sempre
+  leva(cosa, tipo, id) {
+    const k = this.chiave(cosa, tipo, id);
+    this.tutto = this.tutto.filter(x => x.k !== k);
   },
 };
 
@@ -1259,9 +1331,13 @@ const visti = {
   segna(v, mio) {
     const resto = this.tutto.filter(x => !(x.tipo === v.tipo && String(x.id) === String(v.id)));
     this.tutto = [{ ...v, mio, quando: Date.now() }, ...resto];
+    tombe.leva("voto", v.tipo, v.id);
+    daMandare();
   },
   togli(tipo, id) {
     this.tutto = this.tutto.filter(x => !(x.tipo === tipo && String(x.id) === String(id)));
+    tombe.metti("voto", tipo, id);
+    daMandare();
   },
 };
 
@@ -1286,12 +1362,295 @@ const dormire = {
   aggiungi(v) {
     if (this.ha(v.tipo, v.id)) return;
     this.tutto = [{ ...v, quando: Date.now() }, ...this.tutto];
+    tombe.leva("dormire", v.tipo, v.id);
+    daMandare();
   },
   togli(tipo, id) {
     this.tutto = this.tutto.filter(
       x => !(x.tipo === tipo && String(x.id) === String(id)));
+    tombe.metti("dormire", tipo, id);
+    daMandare();
   },
 };
+
+/* ----------------------------------------------------- LA FAMIGLIA
+
+   Due telefoni, la stessa casa. Cosa si divide e cosa no non e' una
+   scelta tecnica:
+
+     lista e spunte notte  SONO DI CASA. Una lista di cose da vedere
+                           in due esemplari non e' una lista.
+     i voti                RESTANO DI CHI LI DA', ma si vedono
+                           entrambi. I tuoi cinque stelle non sono i
+                           suoi, e mediarli darebbe un profilo di
+                           gusto che non e' di nessuno.
+
+   Il magazzino e' una tabella di Supabase. Niente di acceso in casa,
+   e niente chiavi nel codice pubblicato: indirizzo e chiave si
+   incollano su ogni telefono.
+
+   La regola quando i due telefoni non sono d'accordo: vince il piu'
+   RECENTE, riga per riga. E cancellare e' un fatto con un'ora, non
+   un'assenza - vedi `tombe`, senza cui quello che togli qui torna
+   su da la'.                                                      */
+
+const SQL_FAMIGLIA = `create table if not exists voci (
+  famiglia text not null,
+  chi text not null default '',
+  cosa text not null,
+  tipo text not null,
+  id bigint not null,
+  valore int not null default 1,
+  tolto boolean not null default false,
+  titolo text, anno text, locandina text, generi text, keyword text,
+  quando bigint not null,
+  primary key (famiglia, chi, cosa, tipo, id)
+);
+alter table voci enable row level security;
+create policy "legge" on voci for select using (true);
+create policy "scrive" on voci for insert with check (true);
+create policy "aggiorna" on voci for update using (true);`;
+
+// I voti DEGLI ALTRI. Stanno in un magazzino a parte di proposito:
+// mescolati ai tuoi, «Sul mio gusto» diventerebbe il gusto medio di
+// due persone, che non e' il gusto di nessuno.
+const altrui = {
+  get tutto() {
+    try {
+      const v = JSON.parse(localStorage.getItem("altrui") || "[]");
+      return Array.isArray(v) ? v : [];
+    } catch (e) { return []; }
+  },
+  set tutto(a) { localStorage.setItem("altrui", JSON.stringify(a)); },
+  // tutti i voti di un titolo, di chiunque tranne te
+  di(tipo, id) {
+    return this.tutto.filter(
+      x => x.tipo === tipo && String(x.id) === String(id) && x.mio);
+  },
+  metti(r) {
+    const resto = this.tutto.filter(
+      x => !(x.chi === r.chi && x.tipo === r.tipo &&
+             String(x.id) === String(r.id)));
+    this.tutto = r.mio ? [r, ...resto] : resto;
+  },
+};
+
+const nuvola = {
+  get pronta() {
+    return !!(chiavi.supaUrl && chiavi.supaChiave && chiavi.famiglia &&
+              chiavi.io);
+  },
+  get ultimoMandato() {
+    return Number(localStorage.getItem("ultimo_mandato") || 0);
+  },
+  set ultimoMandato(v) { localStorage.setItem("ultimo_mandato", String(v)); },
+};
+
+// Un codice lungo e casuale, non scelto a mano: il codice E' la
+// password, e «casa» come password non e' una password.
+function nuovoCodiceFamiglia() {
+  const a = "abcdefghijkmnopqrstuvwxyz23456789";
+  let c = "";
+  for (let i = 0; i < 16; i++)
+    c += a[Math.floor(Math.random() * a.length)];
+  return c.slice(0, 8) + "-" + c.slice(8);
+}
+
+// Da uno dei magazzini locali a una riga della tabella, e ritorno.
+function rigaDa(cosa, chi, v, tolto, quando) {
+  return {
+    famiglia: chiavi.famiglia, chi, cosa,
+    tipo: v.tipo, id: Number(v.id),
+    valore: cosa === "voto" ? (v.mio || 0) : 1,
+    tolto: !!tolto,
+    titolo: v.titolo || null, anno: v.anno ? String(v.anno) : null,
+    locandina: v.locandina || null,
+    generi: (v.generiId || []).join(",") || null,
+    keyword: (v.keyword || []).join(",") || null,
+    quando: Number(quando || v.quando || 0),
+  };
+}
+
+function vociDaRiga(r) {
+  return {
+    tipo: r.tipo, id: r.id, titolo: r.titolo || "", anno: r.anno || "",
+    locandina: r.locandina || null,
+    generiId: (r.generi || "").split(",").filter(Boolean).map(Number),
+    keyword: (r.keyword || "").split(",").filter(Boolean).map(Number),
+    quando: Number(r.quando || 0),
+  };
+}
+
+// Tutto quello che questo telefono ha da dire, cambiato dopo `dopo`.
+// Le tombe viaggiano come righe con tolto=true: una cancellazione e'
+// un fatto, e se non viaggia l'altro telefono la disfa.
+function mieRighe(dopo) {
+  const d = Number(dopo || 0);
+  const fuori = [];
+  lista.tutto.forEach(v => {
+    if (v.quando > d) fuori.push(rigaDa("lista", "", v, false));
+  });
+  dormire.tutto.forEach(v => {
+    if (v.quando > d) fuori.push(rigaDa("dormire", "", v, false));
+  });
+  visti.tutto.forEach(v => {
+    if (v.quando > d) fuori.push(rigaDa("voto", chiavi.io, v, false));
+  });
+  tombe.tutto.forEach(t => {
+    if (t.quando > d)
+      fuori.push(rigaDa(t.cosa, t.cosa === "voto" ? chiavi.io : "",
+                        { tipo: t.tipo, id: t.id }, true, t.quando));
+  });
+  return fuori;
+}
+
+// Applica quello che dice l'altro telefono. Riga per riga, e solo se
+// e' piu' recente di quello che sappiamo qui: e' la regola che
+// permette a due telefoni di toccare le stesse cose senza un
+// arbitro.
+function applicaRighe(righe) {
+  let cambiato = 0, piuRecente = 0;
+  (righe || []).forEach(r => {
+    const quando = Number(r.quando || 0);
+    if (quando > piuRecente) piuRecente = quando;
+    const tipo = r.tipo, id = String(r.id);
+
+    // i voti degli altri: magazzino a parte, non mescolati ai miei
+    if (r.cosa === "voto" && r.chi && r.chi !== chiavi.io) {
+      const gia = altrui.tutto.find(
+        x => x.chi === r.chi && x.tipo === tipo && String(x.id) === id);
+      if (gia && Number(gia.quando || 0) >= quando) return;
+      altrui.metti(Object.assign(vociDaRiga(r),
+        { chi: r.chi, mio: r.tolto ? 0 : Number(r.valore || 0) }));
+      cambiato++;
+      return;
+    }
+    // le mie cose, da un altro mio telefono o dal telefono di casa
+    const dove = r.cosa === "lista" ? lista
+               : r.cosa === "dormire" ? dormire
+               : r.cosa === "voto" ? visti : null;
+    if (!dove) return;
+
+    const mia = dove.tutto.find(
+      x => x.tipo === tipo && String(x.id) === id);
+    const miaOra = mia ? Number(mia.quando || 0)
+                       : tombe.quando(r.cosa, tipo, id);
+    if (miaOra >= quando) return;      // qui sappiamo qualcosa di piu' nuovo
+
+    if (r.tolto) {
+      if (mia) dove.togli(tipo, r.id);
+      tombe.metti(r.cosa, tipo, id, quando);
+      cambiato++;
+      return;
+    }
+    const v = vociDaRiga(r);
+    tombe.leva(r.cosa, tipo, id);
+    if (r.cosa === "voto") {
+      if (mia) visti.togli(tipo, r.id);
+      visti.segna(v, Number(r.valore || 0));
+      // l'ora e' quella della riga, non di adesso: altrimenti ogni
+      // scambio farebbe sembrare tutto appena cambiato, e i due
+      // telefoni si rimanderebbero le stesse cose per sempre
+      visti.tutto = visti.tutto.map(x =>
+        (x.tipo === tipo && String(x.id) === id)
+          ? Object.assign({}, x, { quando }) : x);
+    } else {
+      if (mia) dove.togli(tipo, r.id);
+      dove.aggiungi(v);
+      dove.tutto = dove.tutto.map(x =>
+        (x.tipo === tipo && String(x.id) === id)
+          ? Object.assign({}, x, { quando }) : x);
+    }
+    cambiato++;
+  });
+  return { cambiato, piuRecente };
+}
+
+// Il giro completo: prima si prende, poi si manda. In quest'ordine,
+// perche' mandare per primo e poi prendere farebbe tornare indietro
+// quello che si e' appena mandato.
+// UN SOLO SCAMBIO PER VOLTA. Due giri in volo insieme - l'avvio e
+// una modifica appena fatta - si pestano i piedi: avanzano
+// `ultimoScambio` e `ultimoMandato` in ordine sparso, e una modifica
+// puo' finire dichiarata mandata senza esserlo. Chi chiama durante un
+// giro riceve LO STESSO giro.
+let scambioInCorso = null;
+
+function scambia() {
+  if (scambioInCorso) return scambioInCorso;
+  // Il lucchetto si apre DENTRO, in un finally: sbloccandolo con un
+  // .then attaccato da fuori si aggiunge un giro di coda, e chi
+  // aspettava il primo scambio riceverebbe ancora il vecchio
+  // risultato per il suo scambio nuovo.
+  scambioInCorso = (async () => {
+    try { return await unGiroDiScambio(); }
+    finally { scambioInCorso = null; }
+  })();
+  return scambioInCorso;
+}
+
+async function unGiroDiScambio() {
+  if (!nuvola.pronta) throw new Error("Manca qualcosa in Opzioni → Famiglia.");
+  const capo = {
+    apikey: chiavi.supaChiave,
+    Authorization: "Bearer " + chiavi.supaChiave,
+  };
+  const base = chiavi.supaUrl + "/rest/v1/voci";
+
+  const preso = await fetch(base + "?famiglia=eq." +
+    encodeURIComponent(chiavi.famiglia) + "&quando=gt." + chiavi.ultimoScambio,
+    { headers: capo });
+  if (!preso.ok) throw new Error(await spiegaSupabase(preso));
+  const righe = await preso.json();
+  const esito = applicaRighe(righe);
+  // L'ora piu' avanti e' quella delle RIGHE, non l'orologio di questo
+  // telefono: due telefoni non hanno lo stesso orologio, e usare il
+  // proprio farebbe perdere le righe scritte "nel passato".
+  if (esito.piuRecente > chiavi.ultimoScambio)
+    chiavi.ultimoScambio = esito.piuRecente;
+
+  const daMandareOra = mieRighe(nuvola.ultimoMandato);
+  if (daMandareOra.length) {
+    const messo = await fetch(base, {
+      method: "POST",
+      headers: Object.assign({}, capo, {
+        "Content-Type": "application/json",
+        Prefer: "resolution=merge-duplicates",
+      }),
+      body: JSON.stringify(daMandareOra),
+    });
+    if (!messo.ok) throw new Error(await spiegaSupabase(messo));
+    // si avanza SOLO se e' andata: se si avanzasse comunque, un
+    // errore di rete perderebbe le modifiche per sempre
+    nuvola.ultimoMandato = daMandareOra.reduce(
+      (m, r) => Math.max(m, r.quando), nuvola.ultimoMandato);
+  }
+  return { presi: righe.length, applicati: esito.cambiato,
+           mandati: daMandareOra.length };
+}
+
+async function spiegaSupabase(r) {
+  let testo = "";
+  try { testo = (await r.text()).slice(0, 200); } catch (e) { /* pazienza */ }
+  if (r.status === 401 || r.status === 403)
+    return "Supabase rifiuta la chiave (" + r.status + "). Controlla la " +
+           "chiave anon in Opzioni → Famiglia.";
+  if (r.status === 404)
+    return "Supabase non trova la tabella. Hai incollato il pezzo di SQL?";
+  return "Supabase ha risposto " + r.status + (testo ? ": " + testo : "");
+}
+
+// Si manda dopo un attimo e non subito: votando cinque titoli di
+// fila si farebbero cinque giri di rete invece di uno.
+let attesaMandare = null;
+function daMandare() {
+  if (!nuvola.pronta) return;
+  if (attesaMandare) clearTimeout(attesaMandare);
+  attesaMandare = setTimeout(() => {
+    attesaMandare = null;
+    scambia().catch(e => registro.aggiungi("famiglia", e.message));
+  }, 1500);
+}
 
 // Il gusto: conto generi e keyword dei titoli che hai votato bene,
 // pesando 4 stelle 1 e 5 stelle 2. Non e' magia, e' un conteggio.
@@ -1305,6 +1664,54 @@ function profiloGusto() {
   });
   const cima = o => Object.entries(o).sort((a, b) => b[1] - a[1]).slice(0, 4).map(x => x[0]);
   return { quanti: buoni.length, generi: cima(generi), keyword: cima(keyword) };
+}
+
+// Il gusto DI CASA: non la media dei due, ma l'INCROCIO. Un genere
+// entra solo se piace a tutti e due, e il punteggio e' il piu' BASSO
+// dei due: un genere che tu ami e l'altro tollera resta un genere
+// che l'altro tollera.
+//
+// Perche' non la somma: sommando, un genere che uno adora e l'altro
+// detesta batterebbe un genere che piace a entrambi - ed e'
+// esattamente il titolo che poi nessuno dei due vuole guardare.
+function profiloDiCasa() {
+  const pesa = (voci) => {
+    const g = {}, k = {};
+    voci.filter(v => (v.mio || 0) >= 4).forEach(v => {
+      const peso = v.mio >= 5 ? 2 : 1;
+      (v.generiId || []).forEach(x => { g[x] = (g[x] || 0) + peso; });
+      (v.keyword || []).forEach(x => { k[x] = (k[x] || 0) + peso; });
+    });
+    return { g, k, quanti: voci.filter(v => (v.mio || 0) >= 4).length };
+  };
+
+  const mio = pesa(visti.tutto);
+  // tutti gli altri di casa insieme: se in casa siete in tre, un
+  // genere deve piacere a tutti e tre
+  const chi = [...new Set(altrui.tutto.map(x => x.chi))];
+  const loro = chi.map(c => pesa(altrui.tutto.filter(x => x.chi === c)));
+
+  const incrocia = (campo) => {
+    const fuori = {};
+    Object.keys(mio[campo]).forEach(id => {
+      let minimo = mio[campo][id];
+      for (const l of loro) {
+        if (!l[campo][id]) return;      // a qualcuno non piace: fuori
+        minimo = Math.min(minimo, l[campo][id]);
+      }
+      fuori[id] = minimo;
+    });
+    return Object.entries(fuori).sort((a, b) => b[1] - a[1])
+      .slice(0, 4).map(x => x[0]);
+  };
+
+  return {
+    // «quanti» e' il minimo: se uno ha votato tre titoli e l'altro
+    // trenta, quello che sappiamo di sicuro sono tre
+    quanti: loro.length ? Math.min(mio.quanti, ...loro.map(l => l.quanti))
+                        : 0,
+    chi, generi: incrocia("g"), keyword: incrocia("k"),
+  };
 }
 
 // Senza server, quando qualcosa si rompe sul telefono di qualcun
@@ -2538,9 +2945,17 @@ const DORMIRE = {
 const MODALITA = [
   { v: "scopri",   n: "Scopri" },
   { v: "gusto",    n: "Sul mio gusto" },
+  // compare solo quando c'e' davvero qualcun altro in casa: una
+  // modalita' che non puo' funzionare e' peggio che non averla
+  { v: "casa",     n: "Sul nostro gusto", seCasa: true },
   { v: "rivedere", n: "Da rivedere" },
   { v: "dormire",  n: "Per dormire" },
 ];
+
+function modalitaVisibili() {
+  const c = profiloDiCasa();
+  return MODALITA.filter(m => !m.seCasa || c.chi.length > 0);
+}
 
 async function schermoStasera() {
   window.scrollTo(0, 0);
@@ -2563,7 +2978,7 @@ async function schermoStasera() {
   const gusto = profiloGusto();
 
   schermo.appendChild(fascia({
-    voci: MODALITA.map(m => ({ etichetta: m.n, valore: m.v })),
+    voci: modalitaVisibili().map(m => ({ etichetta: m.n, valore: m.v })),
     attuale: STASERA.modalita,
     scegli: v => { STASERA.modalita = v; schermoStasera(); },
   }));
@@ -2631,6 +3046,24 @@ async function schermoStasera() {
         " titoli che hai votato 4 o 5 stelle."
       : "Mi servono almeno <b>3 titoli votati 4 o 5 stelle</b> per sapere cosa ti piace. " +
         "Ne hai " + gusto.quanti + ": vota dalle schede, poi torna qui.";
+    schermo.appendChild(p);
+  }
+
+  if (STASERA.modalita === "casa") {
+    const c = profiloDiCasa();
+    const nomi = [...c.generi.map(nomeGenere), ...c.keyword.map(nomeKeyword)]
+      .filter(Boolean).slice(0, 4);
+    const p = el("div", "gusto");
+    p.innerHTML = c.quanti >= 3 && nomi.length
+      ? "Pesco fra <b>" + nomi.map(esc).join(", ") + "</b>: sono i generi " +
+        "che piacciono <b>a tutti e due</b>, non la media.<br>" +
+        "In casa: tu e " + c.chi.map(esc).join(", ") + "."
+      : "Per il gusto di casa servono <b>3 titoli votati 4 o 5 stelle a " +
+        "testa</b>, e almeno un genere in comune. Al momento ne contiamo " +
+        c.quanti + (c.chi.length
+          ? " in comune con " + c.chi.map(esc).join(", ") + "."
+          : ", e non vedo ancora i voti di nessun altro: controlla " +
+            "Opzioni \u203a Famiglia.");
     schermo.appendChild(p);
   }
 
@@ -2743,13 +3176,17 @@ async function schermoStasera() {
                     ordine: pref.ordine, servizio: "",
                     decennio: "Tutti", durata: STASERA.durata };
 
-        if (STASERA.modalita === "gusto") {
-          const g = profiloGusto();
+        if (STASERA.modalita === "gusto" || STASERA.modalita === "casa") {
+          const diCasa = STASERA.modalita === "casa";
+          const g = diCasa ? profiloDiCasa() : profiloGusto();
           const segnali = [...g.generi.map(x => ({ genere: x })),
                            ...g.keyword.map(x => ({ keyword: x }))];
           if (g.quanti < 3 || !segnali.length) {
-            risultato.innerHTML = '<p class="nota">Vota almeno 3 titoli con 4 o 5 stelle ' +
-              'e comincio a pescare sul tuo gusto.</p>';
+            risultato.innerHTML = '<p class="nota">' + (diCasa
+              ? "Per il gusto di casa servono 3 titoli votati 4 o 5 stelle " +
+                "a testa, e almeno un genere in comune."
+              : "Vota almeno 3 titoli con 4 o 5 stelle e comincio a " +
+                "pescare sul tuo gusto.") + "</p>";
             return;
           }
           // UN segnale per volta, scelto a caso: incrociare generi e
@@ -3253,6 +3690,19 @@ async function schermoDettaglio(tipo, id, torna) {
       fila.appendChild(b);
     }
     blocco.appendChild(fila);
+
+    // Il voto di chi altro sta in casa. Non si mescola col tuo: si
+    // affianca. E' l'unico modo perche' «Stasera» possa pescare
+    // quello che piace a tutti e due invece di una media che non e'
+    // il gusto di nessuno.
+    const loro = altrui.di(d.tipo, d.id);
+    if (loro.length) {
+      const p = el("p", "altroVoto");
+      p.innerHTML = loro.map(x => esc(x.chi) + ": " +
+        "\u2605".repeat(x.mio) + "\u2606".repeat(5 - x.mio)).join(" \u00b7 ");
+      blocco.appendChild(p);
+    }
+
     if (mio) {
       const t = el("button", "togli", "Non l'ho visto");
       t.onclick = () => { visti.togli(d.tipo, d.id); rifaiVisto(); };
@@ -4608,6 +5058,7 @@ function schermoImpostazioni() {
 
   if (chiavi.strada === "fire") {
     bloccoFire(pad);
+    bloccoFamiglia(pad);
     bloccoDiagnosi(pad);
     return;
   }
@@ -4714,6 +5165,7 @@ function schermoImpostazioni() {
   };
   pad.appendChild(copia);
 
+  bloccoFamiglia(pad);
   bloccoDiagnosi(pad);
 }
 
@@ -4848,6 +5300,134 @@ function bloccoFire(pad) {
     "guardi la TV."));
 }
 
+// Opzioni → Famiglia. Quattro cose da incollare una volta per
+// telefono, e poi non ci si pensa piu'.
+function bloccoFamiglia(pad) {
+  pad.appendChild(el("p", "sezione", "Famiglia"));
+
+  const spiega = el("div", "gusto");
+  spiega.innerHTML =
+    "Due telefoni, la stessa casa. <b>La lista e le spunte notte " +
+    "diventano di casa</b>; <b>i voti restano di chi li d\u00e0</b> ma si " +
+    "vedono entrambi, cos\u00ec «Stasera» pu\u00f2 pescare quello che " +
+    "piace a tutti e due.<br>" +
+    "Il magazzino \u00e8 una tabella su Supabase: niente di acceso in " +
+    "casa, piano gratuito. Quando i due telefoni non sono d\u2019accordo " +
+    "vince il pi\u00f9 recente, titolo per titolo.";
+  pad.appendChild(spiega);
+
+  const stato = el("div", "diagnosi");
+  const esito = el("p", "nota");
+
+  const campo = (id, etichetta, valore, nota) => {
+    const c = el("div", "campo");
+    c.innerHTML = '<label for="' + id + '">' + etichetta + "</label>" +
+      '<textarea id="' + id + '" rows="' + (id === "supak" ? 2 : 1) +
+      '" autocapitalize="off" autocomplete="off" spellcheck="false">' +
+      "</textarea>" + (nota ? "<p>" + nota + "</p>" : "");
+    pad.appendChild(c);
+    const t = document.getElementById(id);
+    t.value = valore;
+    return t;
+  };
+
+  const disegnaStato = () => {
+    const q = chiavi.ultimoScambio;
+    stato.innerHTML =
+      "<div>" + (nuvola.pronta ? "pronta" : "da finire") + "</div>" +
+      "<div>chi sei: " + (chiavi.io ? esc(chiavi.io) : "—") + "</div>" +
+      "<div>famiglia: " + (chiavi.famiglia ? esc(chiavi.famiglia) : "—") +
+      "</div>" +
+      "<div>ultimo scambio: " +
+      (q ? new Date(q).toLocaleString("it-IT") : "mai") + "</div>" +
+      "<div>voti degli altri in casa: " + altrui.tutto.length + "</div>";
+  };
+
+  const tUrl = campo("supau", "Indirizzo del progetto Supabase",
+    chiavi.supaUrl, "Settings \u203a API \u203a Project URL");
+  tUrl.oninput = () => { chiavi.supaUrl = tUrl.value; disegnaStato(); };
+
+  const tChiave = campo("supak", "Chiave anon", chiavi.supaChiave,
+    "Settings \u203a API \u203a anon public. Non sta nel codice " +
+    "pubblicato: la incolli su ogni telefono, cos\u00ec ce l\u2019hanno " +
+    "solo i vostri.");
+  tChiave.oninput = () => {
+    chiavi.supaChiave = tChiave.value; disegnaStato();
+  };
+
+  const tIo = campo("ionome", "Come ti chiami", chiavi.io,
+    "Serve perch\u00e9 i voti restano di chi li d\u00e0. Due telefoni " +
+    "con lo stesso nome si sovrascrivono i voti a vicenda.");
+  tIo.oninput = () => { chiavi.io = tIo.value; disegnaStato(); };
+
+  const tFam = campo("fam", "Codice famiglia", chiavi.famiglia,
+    "Lo stesso sui due telefoni. <b>\u00c8 la password</b>: chi ha " +
+    "chiave e codice legge la vostra lista, quindi non scriverci " +
+    "«casa».");
+  tFam.oninput = () => { chiavi.famiglia = tFam.value; disegnaStato(); };
+
+  const genera = el("button", "svuota", "Generane uno nuovo");
+  genera.style.cssText = "width:100%;margin:4px 0 0";
+  genera.onclick = () => {
+    chiavi.famiglia = nuovoCodiceFamiglia();
+    tFam.value = chiavi.famiglia;
+    disegnaStato();
+  };
+  pad.appendChild(genera);
+
+  pad.appendChild(el("p", "sezione", "Stato"));
+  disegnaStato();
+  pad.appendChild(stato);
+
+  const ora = el("button", "primario", "Scambia adesso");
+  ora.style.cssText = "width:100%;margin:8px 0 0";
+  ora.onclick = async () => {
+    ora.disabled = true;
+    ora.textContent = "Scambio\u2026";
+    esito.textContent = "";
+    try {
+      const r = await scambia();
+      esito.innerHTML = "\u2713 presi <b>" + r.presi + "</b>, applicati <b>" +
+        r.applicati + "</b>, mandati <b>" + r.mandati + "</b>.";
+    } catch (e) {
+      esito.textContent = e.message;
+      registro.aggiungi("famiglia", e.message);
+    }
+    disegnaStato();
+    ora.disabled = false;
+    ora.textContent = "Scambia adesso";
+  };
+  pad.appendChild(ora);
+  pad.appendChild(esito);
+
+  pad.appendChild(el("p", "sezione", "Da fare una volta sola su Supabase"));
+  const passi = el("div", "gusto");
+  passi.innerHTML =
+    "1. <b>supabase.com</b> \u2192 crea un progetto (piano gratuito).<br>" +
+    "2. <b>SQL Editor</b> \u2192 incolla il pezzo qui sotto \u2192 Run.<br>" +
+    "3. <b>Settings \u203a API</b> \u2192 copia Project URL e chiave anon " +
+    "qui sopra.<br>" +
+    "4. Sul telefono di tua moglie: stesso indirizzo, stessa chiave, " +
+    "<b>stesso codice famiglia</b>, nome diverso.";
+  pad.appendChild(passi);
+
+  const boxSql = el("div", "diagnosi");
+  boxSql.style.cssText = "white-space:pre-wrap;word-break:break-word";
+  boxSql.textContent = SQL_FAMIGLIA;
+  pad.appendChild(boxSql);
+
+  const copiaSql = el("button", "svuota", "Copia l\u2019SQL");
+  copiaSql.style.cssText = "width:100%;margin:4px 0 0";
+  copiaSql.onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(SQL_FAMIGLIA);
+      copiaSql.textContent = "Copiato";
+    } catch (e) { copiaSql.textContent = "Copia a mano qui sopra"; }
+    setTimeout(() => { copiaSql.textContent = "Copia l\u2019SQL"; }, 2000);
+  };
+  pad.appendChild(copiaSql);
+}
+
 // Cosa sa l'app di se stessa. Serve quando si rompe sul telefono di
 // qualcun altro e non hai un server a cui chiedere.
 // NON contiene mai le chiavi: solo se ci sono.
@@ -4875,6 +5455,13 @@ function bloccoDiagnosi(pad) {
   riga("Da guardare", String(lista.tutto.length));
   riga("Titoli votati", String(visti.tutto.length));
   riga("Servizi noti", String(Object.keys(PROVIDER).length));
+  riga("Famiglia", nuvola.pronta ? "pronta" : "non impostata", nuvola.pronta);
+  if (nuvola.pronta) {
+    riga("Ultimo scambio", chiavi.ultimoScambio
+      ? new Date(chiavi.ultimoScambio).toLocaleString("it-IT") : "mai",
+      chiavi.ultimoScambio > 0);
+    riga("Voti degli altri", String(altrui.tutto.length));
+  }
   riga("Strada scelta", chiavi.strada === "fire" ? "Fire Stick" : "TV Samsung");
   if (chiavi.strada === "fire") {
     riga("Indirizzo Fire Stick", chiavi.fireip || "manca", !!chiavi.fireip);
@@ -4999,6 +5586,14 @@ window.addEventListener("hashchange", () => {
   else vai(chiavi.tmdb ? "sfoglia" : "impostazioni");
   // permesso fresco per quando servira', senza far aspettare nessuno
   if (oauth.collegato) rinnovaSeServe().catch(() => {});
+
+  // Lo scambio con l'altro telefono, DOPO aver disegnato: se si
+  // aspettasse la rete prima di mostrare qualcosa, l'app sembrerebbe
+  // lenta per una cosa che di solito non cambia niente.
+  if (nuvola.pronta)
+    scambia()
+      .then(r => { if (r.applicati) vai(scheda_attiva); })
+      .catch(e => registro.aggiungi("famiglia", e.message));
 })();
 
 // Il service worker serve solo a far aprire l'app senza rete: vedi
