@@ -405,7 +405,10 @@
   }
   .stasera svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.9;
                  stroke-linecap: round; stroke-linejoin: round; }
-  .pescato { padding: 0 16px; }
+  .pescato { padding: 0 16px; scroll-margin-top: 12px; }
+  /* Quando c'è un pescato, riservo altezza: senza, la pagina non
+     scorre abbastanza per portarlo davanti e resta in fondo. */
+  .pescato:not(:empty) { min-height: 82vh; }
   .pescato .grande {
     display: flex; gap: 15px; margin: 6px 0 0;
   }
@@ -1211,7 +1214,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20260930161621";
+const VERSIONE = "20260930162607";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -3614,6 +3617,18 @@ async function schermoStasera() {
       }
 
       await mostraPescato(risultato, v, pesca);
+      // il pescato appariva IN FONDO, sotto i filtri e il pulsante:
+      // sembrava che il tocco non facesse niente. Glielo porto davanti.
+      // Due volte, a distanza: la prima puo' cadere prima che la
+      // locandina carichi e la pagina abbia la sua altezza vera.
+      const portaDavanti = () =>
+        risultato.scrollIntoView({ behavior: "smooth", block: "start" });
+      // due colpi: uno subito (smooth, gentile se la pagina e' gia'
+      // pronta) e uno dopo, ISTANTANEO, che chiude la partita se la
+      // locandina ha appena finito di caricare e spostato tutto.
+      setTimeout(portaDavanti, 80);
+      setTimeout(() =>
+        risultato.scrollIntoView({ behavior: "auto", block: "start" }), 400);
     } catch (e) {
       risultato.innerHTML = '<p class="nota">' + esc(e.message) + "</p>";
     } finally {
