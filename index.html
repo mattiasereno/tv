@@ -92,7 +92,14 @@
     margin: 26px 0 10px;
   }
   .nota { color: var(--tenue); font-size: 15px; margin: 18px 0; }
-  .vuoto { color: var(--debole); text-align: center; padding: 16vh 24px; line-height: 1.6; }
+  .vuoto { color: var(--debole); text-align: center; padding: 16vh 24px; line-height: 1.6; display: flex; flex-direction: column; align-items: center; }
+  .vuoto p { margin: 0; white-space: pre-line; }
+  .benvenuto {
+    margin: 2px 0 18px; padding: 14px 16px; border-radius: 14px;
+    background: var(--fondo-alto); border: 1px solid var(--bordo);
+    color: var(--tenue); font-size: 14.5px; line-height: 1.6;
+  }
+  .benvenuto b { color: var(--testo); font-weight: 600; }
 
   /* ------------------------------------------------------ barra in basso */
   nav {
@@ -1135,7 +1142,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20260930153101";
+const VERSIONE = "20260930154226";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -4286,8 +4293,16 @@ function schermoLista() {
 
   const voci = lista.tutto;
   if (!voci.length) {
-    schermo.appendChild(el("p", "vuoto",
+    const v = el("div", "vuoto");
+    v.appendChild(el("p", null,
       "Qui finiscono i titoli che segni col cuore.\nCosì non li perdi quando li trovi e non hai tempo."));
+    // uno stato vuoto che spiega e basta e' un vicolo cieco: da qui
+    // si parte.
+    const b = el("button", "primario", "Cerca un titolo");
+    b.style.cssText = "margin:14px auto 0";
+    b.onclick = () => vai("cerca");
+    v.appendChild(b);
+    schermo.appendChild(v);
     return;
   }
 
@@ -4341,8 +4356,16 @@ function schermoLista() {
 function parteVisti() {
   const voci = visti.tutto;
   if (!voci.length) {
-    schermo.appendChild(el("p", "vuoto",
-      "Qui finiscono i titoli che hai votato.\nDalla scheda di un film, tocca le stelle.\nPiù ne voti, meglio «Stasera» ti conosce."));
+    const v = el("div", "vuoto");
+    v.appendChild(el("p", null,
+      "Qui finiscono i titoli che hai votato.\nPiù ne voti, meglio «Stasera» ti conosce."));
+    // il modo rapido e' la linguetta accanto: mandaci, invece di dire
+    // «vai su una scheda»
+    const b = el("button", "primario", "Vota in fretta");
+    b.style.cssText = "margin:14px auto 0";
+    b.onclick = () => { vistaLista = "votare"; schermoLista(); };
+    v.appendChild(b);
+    schermo.appendChild(v);
     return;
   }
 
@@ -5396,9 +5419,27 @@ function schermoImpostazioni() {
   pad.appendChild(el("h1", "titolone", "Opzioni"));
   schermo.appendChild(pad);
 
-  bloccoStanza(pad);
-  bloccoAbbonamenti(pad);
-  bloccoTmdb(pad);
+  // Al primo avvio l'app arriva qui perche' manca la chiave, ma senza
+  // dirlo sembra solo una schermata di impostazioni capitata a caso.
+  // Un cappello spiega perche' sei qui e cosa cambia il gioco.
+  if (!chiavi.tmdb) {
+    const ben = el("div", "benvenuto");
+    ben.innerHTML =
+      "<b>Benvenuto.</b> Per cominciare serve una <b>chiave TMDB</b> " +
+      "— è gratis, e senza l’app non sa niente di nessun " +
+      "film. La metti qui sotto, in <b>Chiave TMDB</b>. Poi scegli i " +
+      "tuoi abbonamenti, e sei pronto.";
+    pad.appendChild(ben);
+    // e quando manca la chiave, quella viene PRIMA: e' l'unica cosa
+    // che blocca tutto, gli abbonamenti si sistemano dopo.
+    bloccoTmdb(pad);
+    bloccoStanza(pad);
+    bloccoAbbonamenti(pad);
+  } else {
+    bloccoStanza(pad);
+    bloccoAbbonamenti(pad);
+    bloccoTmdb(pad);
+  }
 
   // Prima la stanza in cui sei, APERTA. L'altra resta sotto ma
   // CHIUSA: c'e' se la cerchi, e non ti fa scorrere due schermate di
