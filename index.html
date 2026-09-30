@@ -578,10 +578,16 @@
   .sottoCarta p { margin: 3px 0 0; color: #cdd8e0; font-size: 14px; }
   .cartaV .stelle { justify-content: space-between; padding: 10px 16px 4px; }
   .cartaV .stelle button { width: 46px; height: 46px; }
-  .azioniCarta {
-    display: flex; align-items: center; justify-content: space-around;
-    padding: 6px 16px 16px;
+  .didascStelle {
+    text-align: center; margin: 0; padding: 0 16px;
+    font-size: 11.5px; color: var(--tenue);
   }
+  .azioniCarta {
+    display: flex; align-items: flex-start; justify-content: space-around;
+    padding: 8px 16px 16px;
+  }
+  .azioneCol { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+  .azioneCol .didasc { font-size: 11px; color: var(--tenue); white-space: nowrap; }
   .tondo {
     width: 58px; height: 58px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
@@ -1317,7 +1323,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20260930174105";
+const VERSIONE = "20260930174948";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -4999,25 +5005,18 @@ function pulsanteManda(voci, sonoVisti) {
 // pagina intera di Marvel, e da spuntare «notte» non c'e' niente. Il
 // secondo pesca nello STESSO bacino di «Per dormire», cosi' le spunte
 // che metti li' finiscono dritte nella modalita' che le usa.
-const MAZZI_VOTARE = [
-  ["famosi", "I pi\u00f9 visti", {}],
-  ["calmi", "Da dormire", () => ({
-    genere: DORMIRE.calmano.join("|"),
-    senzaGenere: DORMIRE.sveglia.join(","),
-  })],
-];
-
-let mazzoVotare = "famosi";
 let paginaVotare = 0;
 let daVotare = [];
 
-function filtroMazzoVotare(tipo, mazzo) {
-  const scelto = MAZZI_VOTARE.find(m => m[0] === (mazzo || mazzoVotare));
-  const extra = typeof scelto[2] === "function" ? scelto[2]() : scelto[2];
-  return Object.assign({
+// I titoli da votare: i piu' visti (vote_count alto), quelli che hai
+// piu' probabilita' di aver gia' visto. UN MAZZO SOLO: prima c'era
+// anche «Da dormire», ma la divisione confondeva e il tasto 🌙 sulla
+// carta basta a segnare i calmi per «Per dormire».
+function filtroDaVotare(tipo) {
+  return {
     tipo, genere: "", keyword: "", ordine: "vote_count.desc",
     servizio: "", decennio: "Tutti", durata: "Qualsiasi",
-  }, extra);
+  };
 }
 
 // La coda visibile: quello che hai gia' votato esce, cosi' la fila si
@@ -5041,7 +5040,7 @@ async function altroDaVotare() {
   // arriverebbero mai
   const tipo = paginaVotare % 2 ? "movie" : "tv";
   const pagina = Math.ceil(paginaVotare / 2);
-  const r = await sfoglia(filtroMazzoVotare(tipo), pagina);
+  const r = await sfoglia(filtroDaVotare(tipo), pagina);
   const gia = new Set(daVotare.map(x => x.tipo + x.id));
   r.elementi.forEach(x => {
     if (!gia.has(x.tipo + x.id)) daVotare.push(x);
@@ -5109,34 +5108,14 @@ async function parteVotare() {
   // la cosa che fa votare il prossimo
   const aggiorna = scriviConta;
 
-  const chips = el("div", "generi");
-  MAZZI_VOTARE.forEach(([v, etichetta]) => {
-    const c = el("button", "chip", etichetta);
-    c.setAttribute("aria-pressed", String(mazzoVotare === v));
-    c.onclick = () => {
-      if (mazzoVotare === v) return;
-      mazzoVotare = v;
-      // mazzo nuovo, fila nuova: mescolare i due bacini non vorrebbe
-      // dire niente
-      paginaVotare = 0;
-      daVotare = [];
-      schermoLista();
-    };
-    chips.appendChild(c);
-  });
-  schermo.appendChild(chips);
-
   // Una riga che dice a COSA serve, per chi non ha progettato l'app:
-  // votare non e' fine a se', riempie le due modalita' di Stasera.
+  // votare non e' fine a se', riempie «Stasera». Un mazzo solo, una
+  // spiegazione sola.
   const perche = el("p", "spiegaMazzo");
-  const scriviPerche = () => {
-    perche.innerHTML = mazzoVotare === "calmi"
-      ? "Titoli <b>calmi</b>, buoni per addormentarsi. Spunta 🌙 su " +
-        "quelli giusti: «Stasera › Per dormire» pesca da lì."
-      : "I titoli che hai più probabilità di <b>aver visto</b>. " +
-        "Votandoli, «Stasera › Sul mio gusto» impara cosa ti piace.";
-  };
-  scriviPerche();
+  perche.innerHTML =
+    "I titoli che hai più probabilità di <b>aver visto</b>: votali e " +
+    "«Stasera › Sul mio gusto» impara cosa ti piace. Il 🌙 segna quelli " +
+    "<b>calmi</b> per «Per dormire».";
   schermo.appendChild(perche);
 
   // Un link, discreto, agli scartati: «non per sempre» vuol dire che
@@ -5254,6 +5233,9 @@ function cardaPerVotare(v, avanza) {
     stelle.appendChild(b);
   }
   c.appendChild(stelle);
+  // Legenda fissa: le stelle sono per «l'ho visto». Sempre visibile,
+  // cosi' non si deve indovinare a cosa servono.
+  c.appendChild(el("p", "didascStelle", "L’ho visto — dai un voto"));
 
   // le tre azioni grosse: scarta, notte, cuore
   const azioni = el("div", "azioniCarta");
@@ -5280,9 +5262,17 @@ function cardaPerVotare(v, avanza) {
   cuore.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 20.5s-7.5-4.6-7.5-9.7A4.3 4.3 0 0112 8.4a4.3 4.3 0 017.5 2.4c0 5.1-7.5 9.7-7.5 9.7z"/></svg>';
   cuore.onclick = () => { lista.aggiungi(dati); via("dx"); };
 
-  azioni.appendChild(noVisto);
-  azioni.appendChild(notte);
-  azioni.appendChild(cuore);
+  // Ogni pulsante con la sua etichetta sotto: le frecce ← → dicono che
+  // si puo' anche TRASCINARE la carta (swipe), oltre a toccare.
+  const colonna = (btn, testo) => {
+    const col = el("div", "azioneCol");
+    col.appendChild(btn);
+    col.appendChild(el("span", "didasc", testo));
+    return col;
+  };
+  azioni.appendChild(colonna(noVisto, "← non visto"));
+  azioni.appendChild(colonna(notte, "per dormire"));
+  azioni.appendChild(colonna(cuore, "lo voglio →"));
   c.appendChild(azioni);
 
   // l'uscita: la carta scivola via nella direzione dell'azione, poi
