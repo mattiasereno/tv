@@ -100,6 +100,14 @@
     color: var(--tenue); font-size: 14.5px; line-height: 1.6;
   }
   .benvenuto b { color: var(--testo); font-weight: 600; }
+  .forse { margin: 4px 16px 0; color: var(--tenue); font-size: 13.5px; }
+  .cercaLista { padding: 2px 16px 4px; }
+  .cercaLista input {
+    width: 100%; padding: 11px 14px; font-size: 16px;
+    background: var(--fondo-alto); border: 1px solid var(--bordo);
+    border-radius: 12px; color: var(--testo);
+  }
+  .cercaLista input::placeholder { color: var(--debole); }
 
   /* ------------------------------------------------------ barra in basso */
   nav {
@@ -514,6 +522,67 @@
      riga loro, larghe 44px, che e' la misura sotto la quale si sbaglia
      stella. Titolo, anno e spunta «notte» stanno sopra, su una riga
      sola. */
+  /* Le carte «Da votare», tipo Tinder: una per volta, grande, e si
+     trascina. La pila si intuisce dalla carta appena dietro. */
+  .mazzoCarte { position: relative; padding: 4px 16px 0; }
+  .contaVotare { color: var(--tenue); font-size: 13.5px; text-align: center; }
+  .contaVotare b { color: var(--testo); font-weight: 640; }
+  .cartaV {
+    position: relative; z-index: 2;
+    background: var(--piano); border: 1px solid var(--bordo);
+    border-radius: 20px; overflow: hidden; touch-action: pan-y;
+    will-change: transform;
+  }
+  .cartaV.dietro {
+    position: absolute; top: 12px; left: 22px; right: 22px; z-index: 1;
+    opacity: .5; transform: scale(.97); pointer-events: none;
+  }
+  .cartaV.dietro img { width: 100%; display: block; border-radius: 20px; }
+  /* Il poster e' CAPPATO in altezza: su un telefono, se e' alto quanto
+     vuole, le stelle e i tasti finiscono sotto la piega e il colpo
+     d'occhio si perde. Object-fit cover riempie senza deformare, e il
+     titolo sta in sovrimpressione sul fondo. */
+  .posterCarta {
+    display: block; width: 100%; padding: 0; border: 0; background: none;
+    position: relative; height: 42vh; min-height: 240px;
+  }
+  .posterCarta img { width: 100%; height: 100%; display: block; object-fit: cover; }
+  .mancaCarta { width: 100%; height: 100%; background: var(--piano-alto); }
+  .sottoCarta {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 2;
+    padding: 40px 16px 12px; text-align: left; pointer-events: none;
+    background: linear-gradient(transparent, rgba(9,14,18,.92));
+  }
+  .sottoCarta h3 { margin: 0; font-size: 21px; font-weight: 680; line-height: 1.15;
+    text-shadow: 0 1px 8px rgba(0,0,0,.6); }
+  .sottoCarta p { margin: 3px 0 0; color: #cdd8e0; font-size: 14px; }
+  .cartaV .stelle { justify-content: space-between; padding: 10px 16px 4px; }
+  .cartaV .stelle button { width: 46px; height: 46px; }
+  .azioniCarta {
+    display: flex; align-items: center; justify-content: space-around;
+    padding: 6px 16px 16px;
+  }
+  .tondo {
+    width: 58px; height: 58px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--piano-alto); border: 1px solid var(--bordo);
+  }
+  .tondo svg { width: 26px; height: 26px; fill: none; stroke-width: 2.2; }
+  .tondo.salta svg { stroke: var(--rosso); }
+  .tondo.voglio { width: 66px; height: 66px; }
+  .tondo.voglio svg { width: 30px; height: 30px; stroke: var(--verde); }
+  .tondo.notte svg { stroke: var(--tenue); }
+  .tondo.notte[aria-pressed=true] { border-color: var(--acceso); }
+  .tondo.notte[aria-pressed=true] svg { stroke: var(--acceso); fill: var(--acceso); }
+  .tondo:active { background: var(--bordo); }
+  .etichettaSwipe {
+    position: absolute; top: 16px; z-index: 3; left: 16px;
+    padding: 6px 12px; border-radius: 8px; font-weight: 700; font-size: 15px;
+    letter-spacing: 1px; opacity: 0; transition: opacity .1s; pointer-events: none;
+  }
+  .etichettaSwipe.si { opacity: 1; color: var(--verde); border: 2px solid var(--verde); }
+  .etichettaSwipe.no { opacity: 1; right: 16px; left: auto; color: var(--rosso); border: 2px solid var(--rosso); }
+
   .fila2 {
     display: flex; gap: 11px; align-items: flex-start;
     padding: 9px 0; border-bottom: 1px solid var(--bordo);
@@ -1142,7 +1211,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20260930154226";
+const VERSIONE = "20260930161621";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -1503,6 +1572,35 @@ const dormire = {
       x => !(x.tipo === tipo && String(x.id) === String(id)));
     tombe.metti("dormire", tipo, id);
     daMandare();
+  },
+};
+
+// Gli SCARTATI: i titoli che hai marcato «non visto» in Da votare,
+// per non vederteli riproposti ogni volta. Ma NON per sempre: si
+// possono ripescare, quindi tengo titolo e locandina come fa `lista`,
+// cosi' la schermata «rivedi gli scartati» non deve chiedere niente a
+// TMDB. Locali e basta: NON viaggiano in famiglia, uno scarto e' un
+// gusto personale.
+const scartati = {
+  get tutto() {
+    try {
+      const v = JSON.parse(localStorage.getItem("scartati") || "[]");
+      return Array.isArray(v) ? v : [];
+    } catch (e) { return []; }
+  },
+  set tutto(a) { localStorage.setItem("scartati", JSON.stringify(a)); },
+  ha(tipo, id) {
+    return this.tutto.some(x => x.tipo === tipo && String(x.id) === String(id));
+  },
+  aggiungi(v) {
+    if (this.ha(v.tipo, v.id)) return;
+    // ne tengo al massimo 400: e' una lista di scarti, non un
+    // archivio, e non deve gonfiarsi all'infinito
+    this.tutto = [{ ...v, quando: Date.now() }, ...this.tutto].slice(0, 400);
+  },
+  togli(tipo, id) {
+    this.tutto = this.tutto.filter(
+      x => !(x.tipo === tipo && String(x.id) === String(id)));
   },
 };
 
@@ -2582,8 +2680,9 @@ function normalizza(v, tipoNoto) {
   };
 }
 
-async function cercaTitoli(query) {
-  const dati = await tmdb("/search/multi", { query, language: LINGUA, include_adult: "false" });
+async function unaRicerca(query) {
+  const dati = await tmdb("/search/multi",
+    { query, language: LINGUA, include_adult: "false" });
   return (dati.results || [])
     .filter(v => v.media_type === "movie" || v.media_type === "tv")
     // TMDB non ordina per rilevanza: senza questo "Bikini Inception"
@@ -2591,6 +2690,39 @@ async function cercaTitoli(query) {
     .sort((a, b) => (b.popularity || 0) - (a.popularity || 0))
     .slice(0, 12)
     .map(v => normalizza(v));
+}
+
+// TMDB non perdona i typo: «intersteller» non trova niente. Ma i
+// PREFISSI funzionano, quindi se il testo esatto non da' niente
+// riprovo accorciandolo - questo recupera i refusi verso la FINE, che
+// sono i piu' comuni (stai ancora scrivendo e sbagli l'ultimo pezzo).
+// Un typo nella PRIMA parola resta difficile, e li' non fingo: torno
+// vuoto e la schermata lo dice con garbo, senza vicolo cieco.
+async function cercaTitoli(query) {
+  const q = query.trim();
+  const esatta = await unaRicerca(q);
+  if (esatta.length) return esatta;
+
+  // Due ripieghi, dal piu' simile al piu' largo:
+  //   1. prefissi a caratteri (85%, 70%) - recupera i refusi in coda
+  //   2. le prime parole (n-1, n-2, ...) - recupera un refuso a meta',
+  //      tipo «il signore DELI anelli»: «il signore» ritrova il titolo
+  const parole = q.split(/\s+/);
+  const tentativi = [
+    q.slice(0, Math.round(q.length * 0.85)).trim(),
+    q.slice(0, Math.round(q.length * 0.7)).trim(),
+  ];
+  for (let k = parole.length - 1; k >= 1; k--)
+    tentativi.push(parole.slice(0, k).join(" "));
+
+  const visti = new Set([q.toLowerCase()]);
+  for (const t of tentativi) {
+    if (t.length < 3 || visti.has(t.toLowerCase())) continue;
+    visti.add(t.toLowerCase());
+    const r = await unaRicerca(t);
+    if (r.length) { r.approssimata = true; return r; }
+  }
+  return [];
 }
 
 async function scheda(tipo, id) {
@@ -3660,9 +3792,18 @@ function schermoCerca() {
   function disegnaEsiti(risultati) {
     esiti.innerHTML = "";
     if (!risultati.length) {
-      esiti.appendChild(el("p", "vuoto", "Nessun titolo con questo nome.\nProva a scriverlo diversamente."));
+      const v = el("div", "vuoto");
+      v.appendChild(el("p", null,
+        "Nessun titolo con questo nome.\nControlla l’inizio della parola: " +
+        "un refuso lì è l’unica cosa che blocca la ricerca."));
+      esiti.appendChild(v);
       return;
     }
+    // se il risultato viene da un prefisso (l'esatto non trovava
+    // niente), lo dico: cosi' un refuso non blocca, ma si capisce
+    // perche' i titoli non sono esattamente quello che hai scritto.
+    if (risultati.approssimata)
+      esiti.appendChild(el("p", "forse", "Forse cercavi…"));
     const lista = el("div", "pad");
     risultati.forEach(v => {
       const r = el("button", "riga");
@@ -4310,11 +4451,63 @@ function schermoLista() {
   const zonaArrivo = el("div");
   schermo.appendChild(zonaArrivo);
 
+  // Cercare DENTRO la lista, e filtrarla per tipo. Compare da un po'
+  // di titoli in su: sotto quella soglia scorrere e' piu' veloce che
+  // filtrare, e la barra sarebbe solo un ingombro.
   const intestazione = el("p", "sezione pad");
-  intestazione.innerHTML = voci.length + (voci.length === 1 ? " titolo" : " titoli") +
-    ' <span class="conteggio">· i più recenti in cima</span>';
   schermo.appendChild(intestazione);
-  schermo.appendChild(grigliaDi(voci));
+  const grigliaZona = el("div");
+  schermo.appendChild(grigliaZona);
+
+  let cerca = "", tipoLista = "tutti";
+  const senzaAccenti = (t) => (t || "").toLowerCase()
+    .normalize("NFD").replace(/[̀-ͯ]/g, "");
+  const disegnaGriglia = () => {
+    const q = senzaAccenti(cerca.trim());
+    const filtrati = voci.filter(v =>
+      (tipoLista === "tutti" || v.tipo === tipoLista) &&
+      (!q || senzaAccenti(v.titolo).includes(q)));
+    intestazione.innerHTML = filtrati.length +
+      (filtrati.length === 1 ? " titolo" : " titoli") +
+      (cerca || tipoLista !== "tutti"
+        ? ' <span class="conteggio">· di ' + voci.length + "</span>"
+        : ' <span class="conteggio">· i più recenti in cima</span>');
+    grigliaZona.innerHTML = "";
+    if (!filtrati.length)
+      grigliaZona.appendChild(el("p", "altri", "Nessuno con questo filtro."));
+    else grigliaZona.appendChild(grigliaDi(filtrati));
+  };
+
+  if (voci.length >= 8) {
+    const barra = el("div", "cercaLista");
+    const inp = el("input");
+    inp.type = "search";
+    inp.placeholder = "Cerca nella lista";
+    inp.setAttribute("aria-label", "Cerca nella tua lista");
+    inp.autocomplete = "off";
+    inp.oninput = () => { cerca = inp.value; disegnaGriglia(); };
+    barra.appendChild(inp);
+    schermo.insertBefore(barra, intestazione);
+
+    const chips = el("div", "generi");
+    chips.style.cssText = "padding:2px 16px 2px";
+    [["tutti", "Tutti"], ["movie", "Film"], ["tv", "Serie"]].forEach(
+      ([v, etichetta]) => {
+        const c = el("button", "chip", etichetta);
+        c.setAttribute("aria-pressed", String(tipoLista === v));
+        c.onclick = () => {
+          tipoLista = v;
+          chips.querySelectorAll(".chip").forEach(x =>
+            x.setAttribute("aria-pressed",
+              String(x.textContent === etichetta)));
+          disegnaGriglia();
+        };
+        chips.appendChild(c);
+      });
+    schermo.insertBefore(chips, intestazione);
+  }
+
+  disegnaGriglia();
 
   inArrivo(voci).then(prossimi => {
     if (!prossimi.length) return;
@@ -4461,7 +4654,14 @@ function filtroMazzoVotare(tipo, mazzo) {
 // spuntare non e' votare, e una riga che sparisce sotto il dito
 // mentre la spunti e' solo fastidiosa.
 function codaDaVotare() {
-  return daVotare.filter(v => !visti.voto(v.tipo, v.id));
+  // Esce dalla coda quello che hai gia' sistemato:
+  //   votato   -> l'hai visto, il voto c'e'
+  //   scartato -> «non l'ho visto», non me lo far votare
+  //   nel cuore -> lo vuoi vedere, non l'hai ancora visto: niente voto
+  return daVotare.filter(v =>
+    !visti.voto(v.tipo, v.id) &&
+    !scartati.ha(v.tipo, v.id) &&
+    !lista.ha(v.tipo, v.id));
 }
 
 async function altroDaVotare() {
@@ -4521,13 +4721,22 @@ async function parteVotare() {
     return;
   }
 
-  const spiega = el("div", "gusto");
-  spiega.style.cssText = "margin:0 16px 4px";
-  spiega.innerHTML = testoArchivio();
+  // Compatto: su una carta a tutto schermo, tre righe di contatore
+  // rubano il poster. Una riga basta a far vedere il numero salire.
+  const spiega = el("p", "contaVotare");
+  spiega.style.cssText = "margin:2px 16px 6px";
+  const scriviConta = () => {
+    const q = quantoArchivio();
+    spiega.innerHTML = "<b>" + q.voti + "</b> " +
+      quanti(q.voti, "voto", "voti") + " · <b>" + q.spunte + "</b> " +
+      quanti(q.spunte, "spunta notte", "spunte notte") +
+      (q.gustoPronto && q.dormirePronto ? " · ✓ imparano da qui" : "");
+  };
+  scriviConta();
   schermo.appendChild(spiega);
   // si riscrive a ogni voto: vedere il numero salire mentre voti e'
   // la cosa che fa votare il prossimo
-  const aggiorna = () => { spiega.innerHTML = testoArchivio(); };
+  const aggiorna = scriviConta;
 
   const chips = el("div", "generi");
   MAZZI_VOTARE.forEach(([v, etichetta]) => {
@@ -4546,33 +4755,70 @@ async function parteVotare() {
   });
   schermo.appendChild(chips);
 
-  const zona = el("div");
-  zona.style.cssText = "padding:0 16px";
+  // Un link, discreto, agli scartati: «non per sempre» vuol dire che
+  // si devono poter ripescare.
+  const zonaScartati = el("div");
+  zonaScartati.style.cssText = "padding:0 16px";
+  schermo.appendChild(zonaScartati);
+  const disegnaScartati = () => {
+    zonaScartati.innerHTML = "";
+    const n = scartati.tutto.length;
+    if (!n) return;
+    const b = el("button", "altri", "Non visti: " + n + " · rivedi");
+    b.style.cssText = "width:100%;margin:0 0 4px;padding:10px";
+    b.onclick = () => schermoScartati();
+    zonaScartati.appendChild(b);
+  };
+  disegnaScartati();
+
+  const zona = el("div", "mazzoCarte");
   schermo.appendChild(zona);
 
   const attesa = el("div", "caricamento");
   attesa.innerHTML = '<div class="giro"></div>';
   zona.appendChild(attesa);
 
+  // Il mazzo: una carta per volta, come Tinder. Ogni azione avanza al
+  // titolo dopo, e quando ne restano pochi ne carico altri in
+  // sottofondo, cosi' non ci si ferma mai.
+  let inArrivo = false;
+  const dopoUnAzione = () => { aggiorna(); disegnaScartati(); prossima(); };
+
+  const prossima = () => {
+    const coda = codaDaVotare();
+    if (coda.length < 4 && !inArrivo) {
+      inArrivo = true;
+      altroDaVotare().catch(() => {}).then(() => {
+        inArrivo = false;
+        if (codaDaVotare().length && !zona.querySelector(".cartaV"))
+          disegna();
+      });
+    }
+    disegna();
+  };
+
   const disegna = () => {
     zona.innerHTML = "";
     const coda = codaDaVotare();
-    if (!coda.length)
-      zona.appendChild(el("p", "altri", "Nessun titolo da mostrare."));
-    coda.forEach(v => zona.appendChild(filaPerVotare(v, aggiorna)));
-
-    const b = el("button", "altri", "Carica altri titoli");
-    b.style.cssText = "width:100%;margin:14px 0 6px";
-    b.onclick = async () => {
-      b.disabled = true;
-      b.textContent = "Carico\u2026";
-      try { await altroDaVotare(); disegna(); }
-      catch (e) {
-        b.disabled = false;
-        b.textContent = "Riprova";
+    if (!coda.length) {
+      if (inArrivo) {
+        const a = el("div", "caricamento");
+        a.innerHTML = '<div class="giro"></div>';
+        zona.appendChild(a);
+      } else {
+        zona.appendChild(el("p", "altri",
+          "Per ora è tutto. Torna dopo, o cambia mazzo qui sopra."));
       }
-    };
-    zona.appendChild(b);
+      return;
+    }
+    // la carta dietro, come suggerimento di pila; poi quella davanti
+    if (coda[1]) {
+      const dietro = el("div", "cartaV dietro");
+      dietro.innerHTML = coda[1].locandina
+        ? locandina(coda[1].locandina, "w342") : "";
+      zona.appendChild(dietro);
+    }
+    zona.appendChild(cardaPerVotare(coda[0], dopoUnAzione));
   };
 
   try {
@@ -4584,95 +4830,167 @@ async function parteVotare() {
   }
 }
 
-// Una riga. Si ridisegna da sola invece di rifare tutta la lista:
-// cosi' la pagina non salta sotto il dito mentre voti.
-function filaPerVotare(v, cambiato) {
-  const f = el("div", "fila2");
+// UNA CARTA, tipo Tinder. Sotto la locandina: le stelle («l'ho
+// visto»), il cuore («lo voglio»), «non visto» (scarta). E si puo'
+// trascinare: a sinistra scarta, a destra la mette nel cuore - con
+// una mano sola il pollice arriva li'.
+function cardaPerVotare(v, avanza) {
   const dati = {
     tipo: v.tipo, id: v.id, titolo: v.titolo, anno: v.anno,
     voto: v.voto, locandina: v.locandina,
     generiId: v.generiId, keyword: v.keyword,
   };
 
-  // La locandina apre la scheda: se non riconosci un titolo dal nome
-  // devi poterlo guardare, e tornando indietro la fila e' dov'era.
-  const loc = el("button", "apri2");
-  loc.setAttribute("aria-label", "Apri " + v.titolo);
-  loc.innerHTML = v.locandina
-    ? locandina(v.locandina, "w154")
-    : '<div class="manca2"></div>';
-  loc.onclick = () => schermoDettaglio(v.tipo, v.id, () => schermoLista());
+  const c = el("div", "cartaV");
 
-  const notte = el("button", "notte");
-  const disegnaNotte = () => {
-    const dentro = dormire.ha(v.tipo, v.id);
-    notte.setAttribute("aria-pressed", String(dentro));
-    notte.textContent = dentro ? "\u2713 notte" : "notte";
-  };
+  const eti = el("div", "etichettaSwipe");
+  c.appendChild(eti);
+
+  const poster = el("button", "posterCarta");
+  poster.setAttribute("aria-label", "Apri " + v.titolo);
+  poster.innerHTML = (v.locandina
+    ? locandina(v.locandina, "w342")
+    : '<div class="mancaCarta"></div>') +
+    '<div class="sottoCarta"><h3>' + esc(v.titolo) + "</h3><p>" +
+    (v.anno || "—") + (v.tipo === "tv" ? " · serie" : "") + "</p></div>";
+  poster.onclick = () => schermoDettaglio(v.tipo, v.id, () => vai("lista"));
+  c.appendChild(poster);
+
+  // le stelle: «l'ho visto, ecco il voto» -> ai Visti
+  const stelle = el("div", "stelle");
+  for (let n = 1; n <= 5; n++) {
+    const b = el("button");
+    b.setAttribute("aria-label", n + (n === 1 ? " stella" : " stelle"));
+    b.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.7 6.2.6-4.7 4.2 1.4 6.1L12 16.9l-5.5 3.2 1.4-6.1L3.2 9.8l6.2-.6z"/></svg>';
+    b.onclick = () => {
+      visti.segna(dati, n);
+      if (lista.ha(v.tipo, v.id)) lista.togli(v.tipo, v.id);
+      via("su");
+    };
+    stelle.appendChild(b);
+  }
+  c.appendChild(stelle);
+
+  // le tre azioni grosse: scarta, notte, cuore
+  const azioni = el("div", "azioniCarta");
+
+  const noVisto = el("button", "tondo salta");
+  noVisto.setAttribute("aria-label", "Non l’ho visto");
+  noVisto.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+  noVisto.onclick = () => { scartati.aggiungi(dati); via("sx"); };
+
+  const notte = el("button", "tondo notte");
+  const disNotte = () => notte.setAttribute("aria-pressed",
+    String(dormire.ha(v.tipo, v.id)));
+  notte.setAttribute("aria-label", "Buono per dormire");
+  notte.innerHTML = '<svg viewBox="0 0 24 24"><path d="M20 13a8 8 0 1 1-9-9 6 6 0 0 0 9 9z"/></svg>';
   notte.onclick = () => {
     if (dormire.ha(v.tipo, v.id)) dormire.togli(v.tipo, v.id);
     else dormire.aggiungi(dati);
-    disegnaNotte();
-    if (cambiato) cambiato();
+    disNotte();
+  };
+  disNotte();
+
+  const cuore = el("button", "tondo voglio");
+  cuore.setAttribute("aria-label", "Lo voglio vedere");
+  cuore.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 20.5s-7.5-4.6-7.5-9.7A4.3 4.3 0 0112 8.4a4.3 4.3 0 017.5 2.4c0 5.1-7.5 9.7-7.5 9.7z"/></svg>';
+  cuore.onclick = () => { lista.aggiungi(dati); via("dx"); };
+
+  azioni.appendChild(noVisto);
+  azioni.appendChild(notte);
+  azioni.appendChild(cuore);
+  c.appendChild(azioni);
+
+  // l'uscita: la carta scivola via nella direzione dell'azione, poi
+  // avanza. Un attimo, cosi' si vede cosa e' successo.
+  let uscita = false;
+  const via = (dir) => {
+    if (uscita) return;
+    uscita = true;
+    c.style.transition = "transform .22s ease, opacity .22s ease";
+    c.style.transform = dir === "dx" ? "translateX(120%) rotate(8deg)"
+      : dir === "sx" ? "translateX(-120%) rotate(-8deg)"
+      : "translateY(-30%) scale(.9)";
+    c.style.opacity = "0";
+    setTimeout(avanza, 200);
   };
 
-  const chi = el("div", "chi");
-
-  const disegna = () => {
-    chi.innerHTML = "";
-
-    const su = el("div", "su2");
-    const testi = el("div");
-    testi.innerHTML = "<h3>" + esc(v.titolo) + "</h3>" +
-      '<p class="anno2">' + (v.anno || "\u2014") +
-      (v.tipo === "tv" ? " \u00b7 serie" : "") + "</p>";
-    su.appendChild(testi);
-    disegnaNotte();
-    su.appendChild(notte);
-    chi.appendChild(su);
-
-    const mio = visti.voto(v.tipo, v.id);
-    if (mio) {
-      // Votato: la riga resta, con il voto e un modo per tornare
-      // indietro - su un telefono il tocco sbagliato e' normale.
-      // Sparisce alla prossima apertura della sezione.
-      const fatto = el("div", "fatto2");
-      fatto.appendChild(el("span", null,
-        "\u2713 " + mio + (mio === 1 ? " stella" : " stelle")));
-      const ann = el("button", null, "annulla");
-      ann.onclick = () => {
-        visti.togli(v.tipo, v.id);
-        disegna();
-        if (cambiato) cambiato();
-      };
-      fatto.appendChild(ann);
-      chi.appendChild(fatto);
-    } else {
-      const stelle = el("div", "stelle");
-      for (let n = 1; n <= 5; n++) {
-        const b = el("button");
-        b.setAttribute("aria-label", n + (n === 1 ? " stella" : " stelle"));
-        b.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.7 6.2.6-4.7 4.2 1.4 6.1L12 16.9l-5.5 3.2 1.4-6.1L3.2 9.8l6.2-.6z"/></svg>';
-        b.onclick = () => {
-          visti.segna(dati, n);
-          // votato vuol dire visto: dalla lista «da guardare» non
-          // serve piu', come fa la scheda
-          if (lista.ha(v.tipo, v.id)) lista.togli(v.tipo, v.id);
-          disegna();
-          if (cambiato) cambiato();
-        };
-        stelle.appendChild(b);
-      }
-      chi.appendChild(stelle);
+  // il trascinamento: segue il dito, e oltre soglia commette.
+  let x0 = null, dx = 0;
+  c.addEventListener("pointerdown", (e) => {
+    if (e.target.closest && e.target.closest("button")) return;
+    x0 = e.clientX; dx = 0;
+    c.style.transition = "none";
+    try { c.setPointerCapture(e.pointerId); } catch (err) { /* pazienza */ }
+  });
+  c.addEventListener("pointermove", (e) => {
+    if (x0 === null) return;
+    dx = e.clientX - x0;
+    c.style.transform = "translateX(" + dx + "px) rotate(" + (dx / 22) + "deg)";
+    eti.textContent = dx > 40 ? "LO VOGLIO" : dx < -40 ? "NON VISTO" : "";
+    eti.className = "etichettaSwipe" +
+      (dx > 40 ? " si" : dx < -40 ? " no" : "");
+  });
+  const rilascia = () => {
+    if (x0 === null) return;
+    if (dx > 90) { lista.aggiungi(dati); via("dx"); }
+    else if (dx < -90) { scartati.aggiungi(dati); via("sx"); }
+    else {
+      c.style.transition = "transform .18s ease";
+      c.style.transform = "";
+      eti.textContent = ""; eti.className = "etichettaSwipe";
     }
+    x0 = null;
   };
+  c.addEventListener("pointerup", rilascia);
+  c.addEventListener("pointercancel", rilascia);
 
-  disegna();
-  f.appendChild(loc);
-  f.appendChild(chi);
-  return f;
+  return c;
 }
 
+// Rivedere gli scartati e ripescarli: «non visto» non e' per sempre.
+function schermoScartati() {
+  schermo.innerHTML = "";
+  const pad = el("div", "pad");
+  const su = el("button", "indietro", "← Da votare");
+  su.onclick = () => { vistaLista = "votare"; vai("lista"); };
+  pad.appendChild(su);
+  pad.appendChild(el("h1", "titolone", "Non visti"));
+  pad.appendChild(el("p", "nota",
+    "Titoli che hai saltato perché non li hai visti. Ripescane uno " +
+    "e torna nella coda da votare."));
+  schermo.appendChild(pad);
+
+  const zona = el("div");
+  zona.style.cssText = "padding:0 16px";
+  schermo.appendChild(zona);
+
+  const disegna = () => {
+    zona.innerHTML = "";
+    const tutti = scartati.tutto;
+    if (!tutti.length) {
+      zona.appendChild(el("p", "altri", "Nessuno scartato."));
+      return;
+    }
+    tutti.forEach(v => {
+      const f = el("div", "fila2");
+      const loc = el("button", "apri2");
+      loc.innerHTML = v.locandina ? locandina(v.locandina, "w154")
+        : '<div class="manca2"></div>';
+      loc.onclick = () => schermoDettaglio(v.tipo, v.id, schermoScartati);
+      const chi = el("div", "chi");
+      chi.innerHTML = "<h3>" + esc(v.titolo || "?") + "</h3>" +
+        '<p class="anno2">' + (v.anno || "—") + "</p>";
+      const ripesca = el("button", "notte", "↺ rimetti");
+      ripesca.onclick = () => { scartati.togli(v.tipo, v.id); disegna(); };
+      chi.appendChild(ripesca);
+      f.appendChild(loc);
+      f.appendChild(chi);
+      zona.appendChild(f);
+    });
+  };
+  disegna();
+}
 // La schermata che accoglie un telefono nuovo. NON scrive niente da
 // sola: fa vedere cosa metterebbe e aspetta un tocco. Aprire un link
 // e trovarsi le impostazioni cambiate sarebbe una sorpresa, e su un
