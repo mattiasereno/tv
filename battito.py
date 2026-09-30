@@ -1,39 +1,49 @@
 #!/usr/bin/env python3
 """
-BATTITO: bussa al Mac una volta al secondo, per un minuto e mezzo.
+BATTITO: il telefono scrive un'ora al secondo SUL FIRE STICK.
 
-Serve perche' a-Shell, sul telefono, NON MOSTRA l'uscita dei comandi
-lanciati a mano: nemmeno `python3 -c "print(123)"` stampa qualcosa.
-Verificato da chi la usa. Quindi ogni prova che dipende dallo schermo
-di a-Shell non misura niente.
+Perche' cosi', dopo tre tentativi falliti:
+  1. stampare a schermo non serve: a-Shell, sul telefono, NON MOSTRA
+     l'uscita dei comandi lanciati a mano - nemmeno print(123).
+  2. bussare al Mac non serve: il firewall del Mac blocca le
+     connessioni in arrivo, e non e' roba da spegnere per una prova.
+  3. il Fire Stick invece il telefono lo raggiunge GIA' - e' la
+     strada che fa funzionare la ricerca dei titoli. Quindi il
+     testimone e' lui: il telefono gli scrive dentro un file, e il
+     file si legge dal Mac.
 
-Allora la misura la legge l'altro capo: questo script bussa a un
-server sul Mac, e il Mac scrive l'ora di ogni colpo. Dopo, il file
-dei colpi si guarda dal Mac.
-
-DUE RISPOSTE IN UNA:
-  1. se arriva anche UN solo colpo -> il comando gira, ed e' solo
-     l'uscita che non si vede
-  2. se i colpi continuano mentre il telefono e' su un'altra app ->
-     iOS lascia vivo a-Shell, e il telecomando del Fire Stick si
-     puo' fare. Se si fermano quando esci e riprendono quando torni,
-     no.
-
-L'indirizzo del Mac e' scritto dentro di proposito: gli argomenti
-dietro a `python3 -c` passano da due interpreti e almeno uno se li
-mangia - e' il motivo per cui `--vivo` non ha funzionato.
+E questa prova e' anche il PROTOTIPO del ponte: apre UN collegamento
+ADB e lo tiene aperto per novanta secondi, scrivendo una riga al
+secondo. Se regge mentre il telefono e' su un'altra app, il
+telecomando vero si puo' fare - perche' e' esattamente quello che
+dovrebbe fare.
 
     python3 -c "import urllib.request as u;exec(u.urlopen('https://mattiasereno.github.io/tv/battito.py').read())"
 """
 import time
 import urllib.request
 
-DOVE = "http://192.168.0.98:8123/b"
+IP = "192.168.0.121"
+DOVE = "/sdcard/battito.txt"
 GIRI = 90
+
+# firestick.py fa il mestiere difficile: ADB da zero.
+_f = {}
+exec(urllib.request.urlopen(
+    "https://mattiasereno.github.io/tv/firestick.py").read(), _f)
+
+a, chi = _f["collega"](IP, "tvproject", 5555, b"tvproject@telefono",
+                       timeout=60)
+
+# si riparte da zero a ogni prova
+_f["comanda"](a, "rm -f " + DOVE, 15)
 
 for n in range(1, GIRI + 1):
     try:
-        urllib.request.urlopen(DOVE + "?n=%d" % n, timeout=3).read()
+        _f["comanda"](a, "echo $(date +%H:%M:%S) riga " + str(n) +
+                      " >> " + DOVE, 15)
     except Exception:
-        pass          # rete via: si riprova al giro dopo
+        # il collegamento e' caduto: da qui in poi non scrive piu',
+        # e il file dira' fino a dove e' arrivato
+        break
     time.sleep(1)
