@@ -1274,7 +1274,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20260930171234";
+const VERSIONE = "20260930172502";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -2155,28 +2155,38 @@ function profiloDiCasa() {
   };
 }
 
-// I «simili» di TMDB, impilati. Prendo le liste di consigliati dei tuoi
-// titoli preferiti (una lista per seme) e le fondo in una sola,
-// ordinata per QUANTE VOLTE ricorre un titolo: uno che esce dai simili
-// di due film che ami vale piu' di uno che esce da uno solo. A parita'
-// di ricorrenze vince il voto piu' alto. `esclusi` e' un Set di
-// «tipo+id» da buttare via: quelli gia' visti, in lista, scartati, e i
-// semi stessi (un film non e' simile a se stesso).
+// I «simili» di TMDB, mescolati A GIRO. Prendo le liste di consigliati
+// dei tuoi titoli preferiti (una lista per seme) e le intreccio: prima
+// il piu' simile di OGNI seme (uno per ognuno), poi il secondo di
+// ognuno, e cosi' via. Cosi' i cinque titoli rispecchiano la VARIETA'
+// dei tuoi gusti.
 //
-// Pura di proposito: e' il cuore del consiglio e si prova senza rete.
-function impilaSimili(liste, esclusi) {
-  const conto = new Map();
-  for (const lista of liste)
-    for (const v of lista || []) {
+// PERCHE' NON un mucchio unico ordinato per ricorrenza e voto, come
+// facevo prima: l'animazione (Pixar, Ghibli, Disney) ha voti TMDB
+// altissimi E fra «simili» si richiama sempre a vicenda, quindi un
+// ordinamento globale la spingeva tutta in cima e allagava la lista,
+// anche quando fra i tuoi preferiti era solo una parte. A giro, un solo
+// filone non puo' dominare: al massimo un titolo per seme a passata.
+// Chi esce dai simili di PIU' semi compare comunque presto (nella prima
+// passata) e si deduplica: la ricorrenza resta un vantaggio, implicito.
+//
+// `esclusi` e' un Set di «tipo+id» da saltare: gia' visti, in lista,
+// scartati, e i semi stessi. Pura di proposito: e' il cuore del
+// consiglio e si prova senza rete.
+function mescolaAGiro(liste, esclusi) {
+  const out = [];
+  const visto = new Set(esclusi || []);
+  const massimo = liste.reduce((m, l) => Math.max(m, (l || []).length), 0);
+  for (let i = 0; i < massimo; i++)
+    for (const l of liste) {
+      const v = (l || [])[i];
+      if (!v) continue;
       const k = v.tipo + v.id;
-      if (esclusi && esclusi.has(k)) continue;
-      const gia = conto.get(k);
-      if (gia) gia.ricorre++;
-      else conto.set(k, { v, ricorre: 1 });
+      if (visto.has(k)) continue;      // gia' preso (da un altro seme) o escluso
+      visto.add(k);
+      out.push(v);
     }
-  return [...conto.values()]
-    .sort((a, b) => b.ricorre - a.ricorre || (b.v.voto || 0) - (a.v.voto || 0))
-    .map(x => Object.assign(x.v, { ricorre: x.ricorre }));
+  return out;
 }
 
 // Senza server, quando qualcosa si rompe sul telefono di qualcun
@@ -2725,7 +2735,7 @@ async function cinqueDaDiscover(f, quanti = 5) {
 }
 
 // Il motore «simili»: prendo i CONSIGLIATI di TMDB per i tuoi titoli
-// preferiti (voto 4-5), li impilo per ricorrenza, e TENGO SOLO QUELLI
+// preferiti (voto 4-5), li mescolo a giro, e TENGO SOLO QUELLI
 // CHE PAGHI. /recommendations non filtra per abbonamento come fa
 // /discover, quindi il filtro «lo paghi gia'» lo faccio a mano con la
 // scheda - ma non frugo all'infinito: un tetto alle chiamate. Torna
@@ -2750,7 +2760,7 @@ async function cinqueSimili(tipo, quanti = 5) {
     ...semi.map(x => x.tipo + x.id),
     ...pescatiDiRecente,
   ]);
-  const pool = impilaSimili(liste, esclusi);
+  const pool = mescolaAGiro(liste, esclusi);
 
   const durata = (DURATE.movie || []).find(x => x.n === STASERA.durata);
   const scelti = [];
@@ -3583,6 +3593,14 @@ function disegnaGriglia(contenitore) {
 let STASERA = { tipo: "movie", durata: "Qualsiasi", genere: "",
                 keyword: "", preferenza: "Popolari", modalita: "scopri" };
 
+// Gli ultimi 5 consigliati, per ritrovarli tornando indietro da una
+// scheda: aprivi un titolo, tornavi, ed erano spariti (schermoStasera
+// si ridisegna da capo). Li ricordo con la FIRMA dei filtri di allora,
+// cosi' se cambi modalita' o un filtro NON ti rimostro i vecchi.
+let ultimaPesca = { firma: null, elenco: [] };
+const firmaStasera = () => [STASERA.modalita, STASERA.tipo, STASERA.durata,
+  STASERA.genere, STASERA.keyword, STASERA.preferenza].join("|");
+
 // Per addormentarsi serve il contrario di quello che tiene attaccati
 // allo schermo. Questi sono gli id dei generi di TMDB.
 //
@@ -3796,6 +3814,15 @@ async function schermoStasera() {
   schermo.appendChild(pulsante);
   schermo.appendChild(risultato);
 
+  // Tornando da una scheda ritrovi gli stessi 5 (stessi filtri), senza
+  // ripescarne altri. Niente scroll qui: solo se li peschi davvero.
+  if (ultimaPesca.elenco.length && ultimaPesca.firma === firmaStasera()) {
+    pulsante.innerHTML =
+      '<svg viewBox="0 0 24 24"><path d="M12 3l2.4 5.6 6 .5-4.6 4 1.4 5.9L12 15.9 6.8 19l1.4-5.9-4.6-4 6-.5z"/></svg>' +
+      "Altri 5 titoli";
+    mostraCinque(risultato, ultimaPesca.elenco);
+  }
+
   async function pesca() {
     pulsante.disabled = true;
     pulsante.textContent = "Pesco…";
@@ -3876,6 +3903,7 @@ async function schermoStasera() {
         return;
       }
 
+      ultimaPesca = { firma: firmaStasera(), elenco };
       await mostraCinque(risultato, elenco);
       // La lista appariva IN FONDO, sotto i filtri e il pulsante: sembrava
       // che il tocco non facesse niente. La porto davanti. Due volte: la
