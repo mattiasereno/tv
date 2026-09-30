@@ -409,22 +409,35 @@
   /* Quando c'è un pescato, riservo altezza: senza, la pagina non
      scorre abbastanza per portarlo davanti e resta in fondo. */
   .pescato:not(:empty) { min-height: 82vh; }
-  .pescato .grande {
-    display: flex; gap: 15px; margin: 6px 0 0;
+  /* Le cinque righe consigliate: locandina piccola, titolo, dove lo
+     paghi, e il tuo voto. Si toccano e aprono la scheda. */
+  .cinque { display: flex; flex-direction: column; gap: 10px; margin: 6px 0 0; }
+  .rigaPesca {
+    background: var(--fondo-alto); border: 1px solid var(--bordo);
+    border-radius: 14px; overflow: hidden;
   }
-  .pescato .grande .locandina {
-    flex: 0 0 132px; aspect-ratio: 2/3; border-radius: 12px; overflow: hidden;
-    background: var(--piano); box-shadow: var(--ombra);
+  .capoPesca {
+    display: flex; gap: 13px; align-items: center; width: 100%;
+    text-align: left; padding: 11px 13px;
   }
-  .pescato .grande .locandina img { width: 100%; height: 100%; object-fit: cover; }
-  .pescato h2 { font-size: 21px; font-weight: 660; letter-spacing: -.017em; margin: 0 0 6px; line-height: 1.18; }
-  .pescato .dentro { align-self: center; min-width: 0; }
-  .ancora {
-    display: block; width: 100%; margin: 12px 0 0; padding: 15px;
-    background: var(--piano); border: 1px solid var(--bordo);
-    border-radius: 13px; font-size: 16px; font-weight: 560; color: var(--testo);
+  .capoPesca:active { background: var(--piano); }
+  .rigaPesca .mini {
+    flex: 0 0 54px; aspect-ratio: 2/3; border-radius: 9px; overflow: hidden;
+    background: var(--piano);
   }
-  .ancora:active { background: var(--piano-alto); }
+  .rigaPesca .mini img { width: 100%; height: 100%; object-fit: cover; }
+  .rigaPesca .dati { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .rigaPesca .dati b {
+    font-size: 15.5px; font-weight: 600; line-height: 1.25;
+    overflow: hidden; text-overflow: ellipsis; display: -webkit-box;
+    -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  }
+  .rigaPesca .dati .meta { font-size: 12.5px; color: var(--debole); }
+  .rigaPesca .dati .dove { font-size: 12.5px; color: var(--verde); font-weight: 560; }
+  .rigaPesca .dati .dove.fuori { color: var(--tenue); font-weight: 500; }
+  .rigaPesca .dati .tuo { font-size: 12px; color: var(--tenue); }
+  .rigaPesca .dati .freccia { font-size: 12px; color: var(--acceso); font-weight: 560; margin-top: 3px; }
+  .caricamento.piccolo { padding: 22px 0; }
 
   /* ----------------------------------------------- stagioni/episodi */
   .prossimo {
@@ -1261,7 +1274,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20260930164630";
+const VERSIONE = "20260930171234";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -2142,6 +2155,30 @@ function profiloDiCasa() {
   };
 }
 
+// I «simili» di TMDB, impilati. Prendo le liste di consigliati dei tuoi
+// titoli preferiti (una lista per seme) e le fondo in una sola,
+// ordinata per QUANTE VOLTE ricorre un titolo: uno che esce dai simili
+// di due film che ami vale piu' di uno che esce da uno solo. A parita'
+// di ricorrenze vince il voto piu' alto. `esclusi` e' un Set di
+// «tipo+id» da buttare via: quelli gia' visti, in lista, scartati, e i
+// semi stessi (un film non e' simile a se stesso).
+//
+// Pura di proposito: e' il cuore del consiglio e si prova senza rete.
+function impilaSimili(liste, esclusi) {
+  const conto = new Map();
+  for (const lista of liste)
+    for (const v of lista || []) {
+      const k = v.tipo + v.id;
+      if (esclusi && esclusi.has(k)) continue;
+      const gia = conto.get(k);
+      if (gia) gia.ricorre++;
+      else conto.set(k, { v, ricorre: 1 });
+    }
+  return [...conto.values()]
+    .sort((a, b) => b.ricorre - a.ricorre || (b.v.voto || 0) - (a.v.voto || 0))
+    .map(x => Object.assign(x.v, { ricorre: x.ricorre }));
+}
+
 // Senza server, quando qualcosa si rompe sul telefono di qualcun
 // altro non c'e' modo di saperlo. Quindi l'app tiene gli ultimi 20
 // problemi e li mostra in Opzioni. NON registro mai le chiavi.
@@ -2631,34 +2668,107 @@ const paginePerFiltro = {};
 // Gli ultimi pescati, per non riproporre lo stesso due volte di fila.
 const pescatiDiRecente = [];
 
-async function pescaUno(f, profondita = 500) {
+// Segna un titolo come «appena pescato», per non riproporlo subito. Ne
+// tengo una ventina: adesso ne pesco 5 per volta, con 12 si svuotava
+// dopo due giri e tornavano gli stessi.
+function ricorda(v) {
+  pescatiDiRecente.push(v.tipo + v.id);
+  while (pescatiDiRecente.length > 20) pescatiDiRecente.shift();
+}
+
+// N titoli a caso da un bacino LOCALE (i visti, i calmi per dormire):
+// nessuna rete. Mescolo e prendo i primi n, evitando gli ultimi
+// pescati finche' ce n'e' abbastanza di nuovi.
+function pescaTanti(bacino, n) {
+  const nuovi = bacino.filter(v => !pescatiDiRecente.includes(v.tipo + v.id));
+  const fonte = (nuovi.length >= n ? nuovi : bacino).slice();
+  for (let i = fonte.length - 1; i > 0; i--) {   // mescolo (Fisher-Yates)
+    const j = Math.floor(Math.random() * (i + 1));
+    [fonte[i], fonte[j]] = [fonte[j], fonte[i]];
+  }
+  const scelti = fonte.slice(0, n);
+  scelti.forEach(ricorda);
+  return scelti;
+}
+
+// Fino a 5 titoli dal discover, cioe' SOLO fra quelli che paghi (il
+// filtro sugli abbonamenti lo mette TMDB). Una pagina a caso per
+// varieta', la 1 come rete di sicurezza se quella pagina ne da' pochi.
+async function cinqueDaDiscover(f, quanti = 5) {
   const chiave = JSON.stringify(f);
   let pagine = paginePerFiltro[chiave];
-  let primaPagina = null;
-
+  let prima = null;
   if (pagine === undefined) {
-    primaPagina = await sfoglia(f, 1);
-    if (!primaPagina.elementi.length) return null;
-    pagine = Math.min(primaPagina.pagine, 500);
+    prima = await sfoglia(f, 1);
+    if (!prima.elementi.length) return [];
+    pagine = Math.min(prima.pagine, 500);
     paginePerFiltro[chiave] = pagine;
   }
-  const tetto = Math.max(1, Math.min(pagine, profondita));
+  const tetto = Math.max(1, Math.min(pagine, 500));
+  const p = 1 + Math.floor(Math.random() * tetto);
+  const r = (p === 1 && prima) ? prima : await sfoglia(f, p);
+  let pool = r.elementi.slice();
+  if (pool.length < quanti && prima && p !== 1) pool = pool.concat(prima.elementi);
 
-  // Fino a 4 tentativi per evitare gli ultimi pescati. Se il bacino e'
-  // piccolo si arrende e ripropone: meglio un doppione che un "niente".
-  for (let giro = 0; giro < 4; giro++) {
-    const p = 1 + Math.floor(Math.random() * tetto);
-    const r = (p === 1 && primaPagina) ? primaPagina : await sfoglia(f, p);
-    const nuovi = r.elementi.filter(v => !pescatiDiRecente.includes(v.tipo + v.id));
-    const scelti = nuovi.length ? nuovi : (giro === 3 ? r.elementi : []);
-    if (scelti.length) {
-      const v = scelti[Math.floor(Math.random() * scelti.length)];
-      pescatiDiRecente.push(v.tipo + v.id);
-      if (pescatiDiRecente.length > 12) pescatiDiRecente.shift();
-      return v;
-    }
+  const visto = new Set(pescatiDiRecente);
+  const scelti = [];
+  for (const v of pool) {
+    const k = v.tipo + v.id;
+    if (visto.has(k)) continue;
+    visto.add(k);
+    scelti.push(v);
+    if (scelti.length >= quanti) break;
   }
-  return null;
+  const finali = scelti.length ? scelti : pool.slice(0, quanti);
+  finali.forEach(ricorda);
+  return finali;
+}
+
+// Il motore «simili»: prendo i CONSIGLIATI di TMDB per i tuoi titoli
+// preferiti (voto 4-5), li impilo per ricorrenza, e TENGO SOLO QUELLI
+// CHE PAGHI. /recommendations non filtra per abbonamento come fa
+// /discover, quindi il filtro «lo paghi gia'» lo faccio a mano con la
+// scheda - ma non frugo all'infinito: un tetto alle chiamate. Torna
+// coppie { v, d } con la scheda gia' in mano, cosi' il disegno non la
+// richiede una seconda volta. Se torna vuoto, chi chiama ripiega.
+async function cinqueSimili(tipo, quanti = 5) {
+  const semi = visti.tutto
+    .filter(v => (v.mio || 0) >= 4 && v.tipo === tipo)
+    .sort((a, b) => (b.mio || 0) - (a.mio || 0))
+    .slice(0, 6);
+  if (!semi.length) return [];
+
+  const liste = await Promise.all(semi.map(sm =>
+    tmdb("/" + tipo + "/" + sm.id + "/recommendations", { language: LINGUA, page: 1 })
+      .then(d => (d.results || []).map(r => normalizza(r, tipo)))
+      .catch(() => [])));
+
+  const esclusi = new Set([
+    ...visti.tutto.map(x => x.tipo + x.id),
+    ...lista.tutto.map(x => x.tipo + x.id),
+    ...scartati.tutto.map(x => x.tipo + x.id),
+    ...semi.map(x => x.tipo + x.id),
+    ...pescatiDiRecente,
+  ]);
+  const pool = impilaSimili(liste, esclusi);
+
+  const durata = (DURATE.movie || []).find(x => x.n === STASERA.durata);
+  const scelti = [];
+  let chiamate = 0;
+  for (const v of pool) {
+    if (scelti.length >= quanti || chiamate >= 16) break;
+    chiamate++;
+    let d;
+    try { d = await scheda(v.tipo, v.id); } catch (e) { continue; }
+    if (!d.compresi.length) continue;                 // non lo paghi: fuori
+    if (tipo === "movie" && durata && d.minuti) {      // rispetta la durata
+      if (durata.gte && d.minuti < durata.gte) continue;
+      if (durata.lte && d.minuti > durata.lte) continue;
+    }
+    scelti.push({ v, d });
+  }
+  scelti.forEach(x => ricorda(x.v));
+  return scelti;
 }
 
 // Un comando qualsiasi alla TV, per il telecomando.
@@ -2781,7 +2891,26 @@ async function cercaTitoli(query) {
   return [];
 }
 
-async function scheda(tipo, id) {
+// La scheda di un titolo, tenuta in cache per la sessione. Mostrare 5
+// titoli vuol dire chiederle a raffica, e la STESSA scheda serve due
+// volte: a verificare se lo paghi e a disegnarlo. TMDB non cambia nel
+// giro di un minuto. La cache tiene la PROMESSA, non il valore: due
+// richieste vicine per lo stesso titolo aspettano la stessa chiamata.
+// (Il verdetto «lo paghi» dipende dagli abbonamenti: sono nella chiave.)
+const _cacheScheda = new Map();
+function scheda(tipo, id) {
+  // Nella chiave anche gli abbonamenti: se li cambi, «lo paghi gia'»
+  // cambia, e la scheda in cache non deve raccontare il vecchio.
+  const k = tipo + ":" + id + ":" + chiavi.servizi.join(",");
+  if (!_cacheScheda.has(k)) {
+    const p = schedaGrezza(tipo, id);
+    p.catch(() => _cacheScheda.delete(k));   // un errore non resta in cache
+    _cacheScheda.set(k, p);
+  }
+  return _cacheScheda.get(k);
+}
+
+async function schedaGrezza(tipo, id) {
   const d = await tmdb("/" + tipo + "/" + id, {
     language: LINGUA,
     append_to_response: "credits,watch/providers,videos,keywords",
@@ -2849,6 +2978,9 @@ async function scheda(tipo, id) {
     quanti: d.vote_count || 0,
     durata,
     generi: (d.genres || []).map(g => g.name),
+    // i minuti grezzi, per filtrare la durata sui simili (solo film:
+    // per le serie la durata e' per episodio e non sta qui)
+    minuti: tipo === "movie" ? (d.runtime || 0) : 0,
     trama: d.overview || "",
     locandina: d.poster_path,
     sfondo: d.backdrop_path,
@@ -3660,7 +3792,7 @@ async function schermoStasera() {
   pulsante.style.marginTop = "18px";
   pulsante.innerHTML =
     '<svg viewBox="0 0 24 24"><path d="M12 3l2.4 5.6 6 .5-4.6 4 1.4 5.9L12 15.9 6.8 19l1.4-5.9-4.6-4 6-.5z"/></svg>' +
-    "Pescane uno";
+    "Consigliami 5 titoli";
   schermo.appendChild(pulsante);
   schermo.appendChild(risultato);
 
@@ -3669,30 +3801,26 @@ async function schermoStasera() {
     pulsante.textContent = "Pesco…";
     risultato.innerHTML = '<div class="caricamento"><div class="giro"></div></div>';
     try {
-      let v = null;
+      // Ogni modalita' riempie `elenco`: fino a 5 coppie { v, d? }, dove
+      // d e' la scheda gia' pronta (il motore simili ce l'ha in mano)
+      // oppure niente, e allora la chiede il disegno.
+      let elenco = [];
 
       if (STASERA.modalita === "dormire") {
         const b = bacinoPerDormire();
         if (b.length) {
-          // Niente rete: i visti ce li ho in mano, generi compresi.
-          const nuovi = b.filter(x => !pescatiDiRecente.includes(x.tipo + x.id));
-          const bacino = nuovi.length ? nuovi : b;
-          // Fra i piu' calmi, a caso - non il primo. Prendo la meta'
-          // piu' tranquilla (almeno cinque titoli, se ci sono):
-          // pescare sempre il massimo darebbe sempre lo stesso film.
-          const testa = bacino.slice(0, Math.max(5, Math.ceil(bacino.length / 2)));
-          v = testa[Math.floor(Math.random() * testa.length)];
-          pescatiDiRecente.push(v.tipo + v.id);
-          if (pescatiDiRecente.length > 12) pescatiDiRecente.shift();
+          // Niente rete: i visti ce li ho in mano. Fra i piu' calmi (la
+          // meta' piu' tranquilla, almeno 5) ne prendo cinque a caso.
+          const testa = b.slice(0, Math.max(5, Math.ceil(b.length / 2)));
+          elenco = pescaTanti(testa, 5).map(v => ({ v }));
         } else {
-          // Archivio ancora magro: si pesca fra i titoli che paghi,
-          // con gli stessi criteri. Film e non serie, e non troppo
-          // lunghi: per addormentarsi tre ore sono un impegno.
-          v = await pescaUno(filtroPerDormire(), 10);
-          if (!v) {
+          // Archivio ancora magro: pesco fra i titoli che paghi, con gli
+          // stessi criteri (film, non troppo lunghi).
+          elenco = (await cinqueDaDiscover(filtroPerDormire())).map(v => ({ v }));
+          if (!elenco.length) {
             risultato.innerHTML = '<p class="nota">Non trovo niente di ' +
               'tranquillo fra i tuoi abbonamenti. Provane un altro in ' +
-              'Opzioni, o vota qualche titolo che hai gi\u00e0 visto.</p>';
+              'Opzioni, o vota qualche titolo che hai già visto.</p>';
             return;
           }
         }
@@ -3704,60 +3832,56 @@ async function schermoStasera() {
           risultato.innerHTML = '<p class="nota">Vota qualcosa con 4 o 5 stelle, poi torna.</p>';
           return;
         }
-        const nuovi = buoni.filter(x => !pescatiDiRecente.includes(x.tipo + x.id));
-        const bacino = nuovi.length ? nuovi : buoni;
-        v = bacino[Math.floor(Math.random() * bacino.length)];
-        pescatiDiRecente.push(v.tipo + v.id);
-        if (pescatiDiRecente.length > 12) pescatiDiRecente.shift();
+        elenco = pescaTanti(buoni, 5).map(v => ({ v }));
 
-      } else {
-        const pref = PREFERENZE.find(p => p.n === STASERA.preferenza) || PREFERENZE[0];
-        const f = { tipo: STASERA.tipo, genere: STASERA.genere, keyword: STASERA.keyword,
-                    ordine: pref.ordine, servizio: "",
-                    decennio: "Tutti", durata: STASERA.durata };
-
-        if (STASERA.modalita === "gusto" || STASERA.modalita === "casa") {
-          const diCasa = STASERA.modalita === "casa";
-          const g = diCasa ? profiloDiCasa() : profiloGusto();
-          const segnali = [...g.generi.map(x => ({ genere: x })),
-                           ...g.keyword.map(x => ({ keyword: x }))];
-          if (g.quanti < 3 || !segnali.length) {
-            risultato.innerHTML = '<p class="nota">' + (diCasa
-              ? "Per il gusto di casa servono 3 titoli votati 4 o 5 stelle " +
-                "a testa, e almeno un genere in comune."
-              : "Vota almeno 3 titoli con 4 o 5 stelle e comincio a " +
-                "pescare sul tuo gusto.") + "</p>";
-            return;
-          }
-          // UN segnale per volta, scelto a caso: incrociare generi e
-          // keyword in TMDB e' un AND, e restringerebbe a niente.
-          const scelto = segnali[Math.floor(Math.random() * segnali.length)];
-          f.genere = scelto.genere || "";
-          f.keyword = scelto.keyword || "";
-          // sul gusto preferisco il voto alto: e' roba che dovrebbe piacerti
-          f.ordine = "vote_average.desc";
-          v = await pescaUno(f, 10);
-        } else {
-          v = await pescaUno(f, pref.pagine);
-        }
-
-        if (!v) {
-          risultato.innerHTML = '<p class="nota">Niente con questi criteri. Allarga il tiro.</p>';
+      } else if (STASERA.modalita === "gusto" || STASERA.modalita === "casa") {
+        const diCasa = STASERA.modalita === "casa";
+        const g = diCasa ? profiloDiCasa() : profiloGusto();
+        const segnali = [...g.generi.map(x => ({ genere: x })),
+                         ...g.keyword.map(x => ({ keyword: x }))];
+        if (g.quanti < 3 || !segnali.length) {
+          risultato.innerHTML = '<p class="nota">' + (diCasa
+            ? "Per il gusto di casa servono 3 titoli votati 4 o 5 stelle " +
+              "a testa, e almeno un genere in comune."
+            : "Vota almeno 3 titoli con 4 o 5 stelle e comincio a " +
+              "consigliarti sul tuo gusto.") + "</p>";
           return;
         }
+        // Sul MIO gusto uso il grafo dei SIMILI di TMDB: i consigliati
+        // dei miei preferiti, piu' precisi della somma di generi. Il
+        // gusto DI CASA resta sull'incrocio dei generi comuni (i simili
+        // di CHI, se i preferiti sono di due persone?), ma anch'esso a 5.
+        if (!diCasa) elenco = await cinqueSimili(STASERA.tipo);
+        if (!elenco.length) {
+          // Ripiego: il vecchio segnale (un genere/keyword a caso), che
+          // pesca dal discover ed e' garantito «lo paghi gia'». Serve al
+          // gusto di casa, e al mio quando i simili non bastano.
+          const scelto = segnali[Math.floor(Math.random() * segnali.length)];
+          const f = { tipo: STASERA.tipo, genere: scelto.genere || "",
+                      keyword: scelto.keyword || "", ordine: "vote_average.desc",
+                      servizio: "", decennio: "Tutti", durata: STASERA.durata };
+          elenco = (await cinqueDaDiscover(f)).map(v => ({ v }));
+        }
+
+      } else {
+        // Scopri: un po' di tutto dai tuoi abbonamenti, coi filtri scelti.
+        const pref = PREFERENZE.find(p => p.n === STASERA.preferenza) || PREFERENZE[0];
+        const f = { tipo: STASERA.tipo, genere: STASERA.genere, keyword: STASERA.keyword,
+                    ordine: pref.ordine, servizio: "", decennio: "Tutti", durata: STASERA.durata };
+        elenco = (await cinqueDaDiscover(f)).map(v => ({ v }));
       }
 
-      await mostraPescato(risultato, v, pesca);
-      // il pescato appariva IN FONDO, sotto i filtri e il pulsante:
-      // sembrava che il tocco non facesse niente. Glielo porto davanti.
-      // Due volte, a distanza: la prima puo' cadere prima che la
-      // locandina carichi e la pagina abbia la sua altezza vera.
-      const portaDavanti = () =>
-        risultato.scrollIntoView({ behavior: "smooth", block: "start" });
-      // due colpi: uno subito (smooth, gentile se la pagina e' gia'
-      // pronta) e uno dopo, ISTANTANEO, che chiude la partita se la
-      // locandina ha appena finito di caricare e spostato tutto.
-      setTimeout(portaDavanti, 80);
+      if (!elenco.length) {
+        risultato.innerHTML = '<p class="nota">Niente con questi criteri. Allarga il tiro.</p>';
+        return;
+      }
+
+      await mostraCinque(risultato, elenco);
+      // La lista appariva IN FONDO, sotto i filtri e il pulsante: sembrava
+      // che il tocco non facesse niente. La porto davanti. Due volte: la
+      // prima puo' cadere prima che le locandine diano l'altezza vera.
+      setTimeout(() =>
+        risultato.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
       setTimeout(() =>
         risultato.scrollIntoView({ behavior: "auto", block: "start" }), 400);
     } catch (e) {
@@ -3766,7 +3890,7 @@ async function schermoStasera() {
       pulsante.disabled = false;
       pulsante.innerHTML =
         '<svg viewBox="0 0 24 24"><path d="M12 3l2.4 5.6 6 .5-4.6 4 1.4 5.9L12 15.9 6.8 19l1.4-5.9-4.6-4 6-.5z"/></svg>' +
-        "Pescane un altro";
+        "Altri 5 titoli";
     }
   }
   pulsante.onclick = pesca;
@@ -3875,39 +3999,53 @@ function bacinoPerDormire() {
 // Il pescato: locandina, dati, e i pulsanti per aprirlo sulla TV
 // subito. Tutto cio' che esce da qui e' per costruzione fra i tuoi
 // abbonamenti, quindi il verdetto non serve ridirlo.
-async function mostraPescato(dove, v, ripesca) {
-  let d = null;
-  try { d = await scheda(v.tipo, v.id); } catch (e) { /* si vive anche senza */ }
-
+// Cinque titoli da scegliere, invece di pescarne uno alla volta. Ogni
+// riga si tocca e apre la scheda (dove ci sono i pulsanti per aprire
+// l'app sulla TV): a colpo d'occhio vedi titolo, dove lo paghi, e il
+// tuo voto se l'hai gia' visto. Le righe nascono SUBITO nell'ordine
+// giusto e poi si riempiono, cosi' l'ordine non dipende da quale
+// scheda torna prima dalla rete.
+async function mostraCinque(dove, elenco) {
   dove.innerHTML = "";
+  const lista5 = el("div", "cinque");
+  dove.appendChild(lista5);
+  const righe = elenco.map(item => {
+    const riga = el("div", "rigaPesca");
+    riga.innerHTML = '<div class="caricamento piccolo"><div class="giro"></div></div>';
+    lista5.appendChild(riga);
+    return { item, riga };
+  });
+  await Promise.all(righe.map(async ({ item, riga }) => {
+    let d = item.d || null;
+    if (!d) { try { d = await scheda(item.v.tipo, item.v.id); } catch (e) { d = null; } }
+    riempiRiga(riga, item.v, d);
+  }));
+}
+
+function riempiRiga(riga, v, d) {
+  riga.innerHTML = "";
   const mio = visti.voto(v.tipo, v.id);
-  const grande = el("div", "grande");
   const meta = [
     v.tipo === "tv" ? "Serie" : "Film",
     v.anno,
     d && d.durata ? d.durata : "",
     v.voto ? "★ " + v.voto.toFixed(1) : "",
   ].filter(Boolean).join(" · ");
-  grande.innerHTML =
-    '<div class="locandina">' + locandina(v.locandina, "w342") + "</div>" +
-    '<div class="dentro"><h2>' + esc(v.titolo) + "</h2>" +
-    '<div class="meta">' + esc(meta) + "</div>" +
-    (mio ? '<div class="meta" style="margin-top:6px">Il tuo voto: <b>' +
-           "★".repeat(mio) + "</b></div>" : "") +
-    (d && d.compresi.length
-      ? '<div class="meta" style="margin-top:6px">Su <b>' +
-        d.compresi.map(i => esc(i.nome)).join(", ") + "</b></div>"
-      : d ? '<div class="meta" style="margin-top:6px">Non è più fra i tuoi abbonamenti</div>' : "") +
+  const dove = d && d.compresi.length
+    ? "Su " + d.compresi.map(i => i.nome).join(", ")
+    : (d ? "Non è nei tuoi abbonamenti" : "");
+  const capo = el("button", "capoPesca");
+  capo.innerHTML =
+    '<div class="mini">' + locandina(v.locandina, "w154") + "</div>" +
+    '<div class="dati"><b>' + esc(v.titolo) + "</b>" +
+    '<span class="meta">' + esc(meta) + "</span>" +
+    (dove ? '<span class="dove' + (d && d.compresi.length ? "" : " fuori") +
+            '">' + esc(dove) + "</span>" : "") +
+    (mio ? '<span class="tuo">Il tuo voto: ' + "★".repeat(mio) + "</span>" : "") +
+    '<span class="freccia">Apri la scheda →</span>' +
     "</div>";
-  dove.appendChild(grande);
-
-  if (d) (d.compresi || []).filter(i => i.app).forEach(i => {
-    dove.appendChild(pulsanteLancio(i, d));
-  });
-
-  const apri = el("button", "ancora", "Apri la scheda");
-  apri.onclick = () => schermoDettaglio(v.tipo, v.id, () => schermoStasera());
-  dove.appendChild(apri);
+  capo.onclick = () => schermoDettaglio(v.tipo, v.id, () => schermoStasera());
+  riga.appendChild(capo);
 }
 
 // Cerca si ricordava niente: cercavi, aprivi un film, tornavi, e
