@@ -386,6 +386,14 @@ ACCENTI = str.maketrans({
 })
 
 
+def _apice(testo):
+    """Racchiude una stringa fra apici singoli per la shell, in modo
+    sicuro: l'unico carattere che un apice singolo non protegge e'
+    l'apice singolo stesso, e si chiude/riapre con la sequenza
+    '\\'' ."""
+    return "'" + testo.replace("'", "'\\''") + "'"
+
+
 def per_input_text(testo):
     """Il testo come lo vuole "input text": gli spazi diventano %s, e
     quello che potrebbe rompere la riga di shell si toglie.
@@ -780,6 +788,56 @@ def main():
             print("  " + comanda(a, "pm install -r -t " + dove + " 2>&1",
                                  120).strip())
             comanda(a, "rm -f " + dove, attesa)
+        elif comando == "--helper":
+            # L'AIUTANTE DELLE FRECCE. Un `nc -L` che gira come utente
+            # shell (uid 2000) e per ogni richiesta HTTP fa `input
+            # keyevent`. E' l'unico modo di iniettare le frecce nelle
+            # app: un'app non puo', un processo shell si'.
+            #
+            # Perche' via ADB e non dall'app: solo un processo START-ato
+            # da shell E' shell. L'app (uid app) non lo puo' generare;
+            # noi via ADB si'. Va (ri)acceso dopo un riavvio del Fire
+            # Stick - un processo non sopravvive a un reboot.
+            #
+            # LA FORMA CONTA, misurata: `nohup nc -L ... &` in UNA riga
+            # sopravvive alla chiusura della connessione; `setsid` da
+            # solo o un `while` in uno script no.
+            gestore = ("read line; "
+                       "k=$(echo \"$line\" | "
+                       "toybox sed -n 's/.*[?&]k=\\([0-9]*\\).*/\\1/p'); "
+                       "case \"$k\" in "
+                       "3|4|19|20|21|22|23|66|82|85|86|89|90) "
+                       "input keyevent \"$k\" ;; esac; "
+                       "printf 'HTTP/1.1 200 OK\\r\\n"
+                       "Content-Length: 2\\r\\n"
+                       "Access-Control-Allow-Origin: *\\r\\n"
+                       "Connection: close\\r\\n\\r\\nok'")
+            comanda(a, "printf '%s' " + _apice(gestore) +
+                    " > /data/local/tmp/hkey.sh; chmod 755 "
+                    "/data/local/tmp/hkey.sh", attesa)
+            # prima spengo un eventuale vecchio helper, in un comando A
+            # PARTE: nella stessa riga del lancio, il pkill ucciderebbe
+            # anche il nc appena nato.
+            comanda(a, "pkill -f 'nc -L -p 8081' 2>/dev/null; "
+                    "toybox true", attesa)
+            time.sleep(1)
+            # TUTTO IN UNA RIGA, e non e' pignoleria: il lancio in
+            # background e un seguito (sleep + netstat) devono stare
+            # nello STESSO comando. Il servizio «shell» di ADB uccide il
+            # gruppo quando il flusso si chiude; tenendo la riga viva un
+            # momento dopo il &, nc fa in tempo a farsi adottare da init
+            # (PPID 1) e sopravvive. Misurato: cosi' regge, con il
+            # lancio da solo no.
+            su = comanda(
+                a,
+                "nohup toybox nc -L -p 8081 /data/local/tmp/hkey.sh "
+                "</dev/null >/dev/null 2>&1 & "
+                "sleep 2; toybox netstat -ltn | grep 8081", attesa).strip()
+            if su:
+                print("  aiutante delle frecce ACCESO sulla 8081")
+            else:
+                print("  non sono riuscito ad accenderlo (riprova)")
+                return 1
         elif comando == "--shell":
             print(comanda(a, argomento, attesa))
         else:
