@@ -1030,10 +1030,14 @@ const SERVIZI_PREDEFINITI = ["8", "119", "337", "1899", "39", "359", "584"];
 // uno incrociati col filtro abbonamenti: nessuno torna vuoto.
 // I sottogeneri sono keyword TMDB. Ognuno porta con se' i generi
 // principali con cui ha senso (`g`): raro un film di fantascienza
-// «storia vera». Gli id sono sia dei FILM sia delle SERIE, che TMDB
+// «storia vera». Chi ha g:"*" e' TRASVERSALE e vale sotto ogni genere. Gli id sono sia dei FILM sia delle SERIE, che TMDB
 // numera diversi (es. Fantascienza film 878, serie «Sci-Fi & Fantasy»
 // 10765), cosi' la stessa lista vale per tutti e due. Verificati a mano.
 const SOTTOGENERI = [
+  // TRASVERSALI (g: "*"): il MODO in cui una storia e' raccontata, non
+  // di cosa parla, quindi valgono sotto ogni genere. «Basato su un
+  // libro» verificato: pesca in tutti i generi, dall'azione al dramma.
+  { n: "Basato su un libro", k: "818", g: "*" },
   { n: "Supereroi", k: "9715", g: ["28","878","12","14","10759","10765"] },
   { n: "Storia vera", k: "9672", g: ["18","36","80","10752","10768"] },
   { n: "Rapine", k: "10051", g: ["80","53","28","10759"] },
@@ -1054,6 +1058,21 @@ const SOTTOGENERI = [
   { n: "Anime", k: "210024", g: ["16"] },
   { n: "Dinosauri", k: "12616", g: ["12","878","28","10751","10765","10759","10762"] },
   { n: "Natale", k: "207317", g: ["10751","35","10749","10762"] },
+  // Temi piu' da DOCUMENTARIO (genere 99), che prima restava vuoto - ma
+  // utili anche altrove (Spazio/Scienza sotto Fantascienza, Biografie
+  // sotto Dramma...). Id e accoppiamenti verificati su TMDB: ogni
+  // coppia genere+keyword da' risultati veri, se no non c'e'.
+  { n: "True crime", k: "33722", g: ["99","80","18"] },
+  { n: "Natura", k: "18330", g: ["99","12","10751"] },
+  { n: "Sport", k: "6075", g: ["99","18","10751"] },
+  { n: "Musica", k: "283297", g: ["99","10402","10749"] },
+  { n: "Biografie", k: "5565", g: ["99","18","36"] },
+  { n: "Politica", k: "6078", g: ["99","18","10768"] },
+  { n: "Spazio", k: "9882", g: ["99","878","10765"] },
+  { n: "Scienza", k: "287067", g: ["99","878"] },
+  { n: "Arte", k: "14893", g: ["99","18"] },
+  { n: "Cibo", k: "10637", g: ["99","35"] },
+  { n: "Ambiente", k: "2210", g: ["99"] },
 ];
 
 // I sottogeneri che stanno bene col genere principale scelto. Senza
@@ -1061,7 +1080,8 @@ const SOTTOGENERI = [
 // nasconde del tutto la sezione: meglio niente che un filtro assurdo.
 function sottogeneriPer(genere) {
   if (!genere) return SOTTOGENERI;
-  return SOTTOGENERI.filter(s => s.g.includes(String(genere)));
+  // «*» = trasversale, sotto ogni genere; gli altri solo sotto i loro.
+  return SOTTOGENERI.filter(s => s.g === "*" || s.g.includes(String(genere)));
 }
 
 // tvChannelName restituisce il NOME PACCHETTO, mentre MAPPA contiene
@@ -1297,7 +1317,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20260930173111";
+const VERSIONE = "20260930174105";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
