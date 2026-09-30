@@ -503,6 +503,39 @@ def tasti(a, elenco, passo=0.35, attesa=15.0, eco=print):
     return fuori
 
 
+# --- la prova del ponte -----------------------------------------------
+
+BATTITO_DOVE = "/sdcard/battito.txt"
+
+
+def battito(a, giri=90, attesa=15.0, eco=print):
+    """Tiene aperto UN collegamento e scrive un'ora al secondo SUL
+    FIRE STICK.
+
+    Serve a rispondere alla domanda che decide se il telecomando si
+    puo' fare: iOS lascia girare a-Shell quando esci dall'app? Se le
+    righe non hanno buchi, si'.
+
+    Il testimone e' il Fire Stick e non lo schermo del telefono,
+    perche' a-Shell non mostra l'uscita dei comandi, e non e' il Mac
+    perche' il firewall del Mac blocca le connessioni in arrivo.
+
+    Ed e' il PROTOTIPO del ponte: un collegamento aperto a lungo con
+    tanti comandi dentro e' esattamente quello che dovrebbe fare."""
+    comanda(a, "rm -f " + BATTITO_DOVE, attesa)
+    fatti = 0
+    for n in range(1, giri + 1):
+        try:
+            comanda(a, "echo $(date +%H:%M:%S) riga " + str(n) +
+                    " >> " + BATTITO_DOVE, attesa)
+        except Exception:
+            break     # caduto: il file dira' fino a dove e' arrivato
+        fatti = n
+        time.sleep(1)
+    eco("  scritte %d righe in %s" % (fatti, BATTITO_DOVE))
+    return fatti
+
+
 # --- da riga di comando ------------------------------------------------
 
 def opzioni(argv):
@@ -550,6 +583,7 @@ AIUTO = """  FIRE TV STICK, dal telefono e senza dipendenze
     python3 firestick.py --ip=192.168.0.118 --scrivi "the bear"
     python3 firestick.py --ip=192.168.0.118 --tasto DOWN
     python3 firestick.py --ip=192.168.0.118 --tasti "DOWN DOWN RIGHT OK"
+    python3 firestick.py --ip=192.168.0.118 --battito
     python3 firestick.py --ip=192.168.0.118 --schermata foto.png
     python3 firestick.py --ip=192.168.0.118 --shell "dumpsys power | head"
 
@@ -672,6 +706,10 @@ def main():
                           "quello giusto e premi OK.",
                 "servizio": "Dovrebbe essere partito.",
             })[fino])
+        elif comando == "--battito":
+            print("  Tengo il collegamento aperto e scrivo una riga al")
+            print("  secondo. ESCI DALL'APP e resta fuori un minuto.")
+            battito(a, giri=int(argomento or 90), attesa=attesa)
         elif comando == "--shell":
             print(comanda(a, argomento, attesa))
         else:

@@ -1131,7 +1131,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20260930121429";
+const VERSIONE = "20260930121904";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -5779,6 +5779,27 @@ function bloccoFire(pad) {
     setTimeout(() => { copiaF.textContent = "Copia il comando"; }, 2000);
   };
   pad.appendChild(copiaF);
+  });
+
+  // PROVA, non funzione: serve a sapere se iOS lascia girare a-Shell
+  // quando esci dall'app. Se si', il telecomando vero si puo' fare.
+  // Passa dalla Scorciatoia perche' e' l'unica strada che sul telefono
+  // funziona davvero: i comandi incollati a mano in a-Shell non
+  // partono, e la sua uscita non si vede.
+  unaVoltaSola(pad, "Prova: iOS lascia girare a-Shell?", false, (pad) => {
+    pad.appendChild(el("p", "nota",
+      "Decide se il telecomando dall\u2019app si pu\u00f2 fare. Tocca, " +
+      "poi <b>esci dall\u2019app</b> e resta fuori un minuto. Scrive una " +
+      "riga al secondo sul Fire Stick, e quel file si legge dal " +
+      "computer."));
+    const b = el("button", "svuota", "Fai la prova (90 secondi)");
+    b.style.cssText = "width:100%;margin:4px 0 0";
+    b.onclick = () => {
+      if (!chiavi.fireip || !chiavi.scorciatoiaFire) return vai("impostazioni");
+      location.href = urlScorciatoia(chiavi.scorciatoiaFire,
+                                     testoFire("--battito 90"));
+    };
+    pad.appendChild(b);
   });
 
   pad.appendChild(el("p", "nota",
