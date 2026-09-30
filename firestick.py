@@ -305,24 +305,37 @@ def collega(ip, seme, porta=5555, nome=b"tvproject@telefono", timeout=10,
 
 
 def comanda(a, riga, attesa=15.0):
-    """Esegue un comando di shell sul Fire TV e restituisce l'uscita."""
+    """Esegue un comando di shell sul Fire TV e restituisce l'uscita.
+
+    OGNI MESSAGGIO PORTA L'ID DEL FLUSSO, e va guardato: dopo che noi
+    mandiamo il nostro CLSE, adbd manda il SUO, che resta nel
+    cuscinetto. Senza controllare l'id, quel CLSE avanzato chiudeva
+    subito il comando DOPO, che tornava vuoto - e l'uscita sembrava
+    spostata di uno.
+    Sintomo visto per davvero: un `pm install` che non diceva niente e
+    la sua «Success» che compariva al comando successivo."""
+    mio = a.locale
+    a.locale += 1
     a.s.settimeout(attesa)
-    a.manda(OPEN, a.locale, 0, b"shell:" + riga.encode() + b"\x00")
+    a.manda(OPEN, mio, 0, b"shell:" + riga.encode() + b"\x00")
     uscita, remoto = b"", 0
     for _ in range(4000):
         try:
             comando, arg0, arg1, dati = a.leggi()
         except (socket.timeout, OSError):
             break
+        # arg1 e' il NOSTRO id per i messaggi che riguardano noi.
+        # Quelli di un flusso vecchio si buttano.
+        if arg1 and arg1 != mio:
+            continue
         if comando == OKAY:
             remoto = arg0
         elif comando == WRTE:
             uscita += dati
-            a.manda(OKAY, a.locale, arg0 or remoto)
+            a.manda(OKAY, mio, arg0 or remoto)
         elif comando == CLSE:
-            a.manda(CLSE, a.locale, arg0 or remoto)
+            a.manda(CLSE, mio, arg0 or remoto)
             break
-    a.locale += 1
     return uscita.decode(errors="replace")
 
 
@@ -542,6 +555,39 @@ def battito(a, giri=90, attesa=15.0, eco=print):
     return fatti
 
 
+# --- mettere un file sul Fire TV ---------------------------------------
+
+
+def deposita(a, locale, remoto, pezzo=1500, attesa=30.0, eco=print):
+    """Copia un file sul Fire TV passando dalla shell.
+
+    Perche' non `adb push`: adb usa una chiave SUA, che il Fire TV non
+    ha autorizzato, e farla autorizzare vuol dire accettare un popup
+    stando davanti al proiettore. La nostra chiave invece e' gia'
+    autorizzata, ma il nostro client parla solo il servizio «shell».
+    Quindi il file viaggia in base64 a pezzi, e lo rimette insieme
+    `toybox base64 -d` dall'altra parte.
+
+    Lento (qualche decina di comandi) ma non chiede niente a nessuno."""
+    import base64 as _b64
+    dati = open(locale, "rb").read()
+    testo = _b64.b64encode(dati).decode()
+    b64 = remoto + ".b64"
+    comanda(a, "rm -f " + b64 + " " + remoto, attesa)
+    quanti = (len(testo) + pezzo - 1) // pezzo
+    for i in range(quanti):
+        fetta = testo[i * pezzo:(i + 1) * pezzo]
+        comanda(a, "echo -n " + fetta + " >> " + b64, attesa)
+        eco("  pezzo %d/%d" % (i + 1, quanti))
+    comanda(a, "toybox base64 -d " + b64 + " > " + remoto, attesa)
+    comanda(a, "rm -f " + b64, attesa)
+    detto = comanda(a, "wc -c < " + remoto, attesa).strip()
+    eco("  %s byte sul Fire TV (%d attesi)" % (detto, len(dati)))
+    if detto != str(len(dati)):
+        raise ValueError("il file e' arrivato incompleto")
+    return remoto
+
+
 # --- da riga di comando ------------------------------------------------
 
 def opzioni(argv):
@@ -590,6 +636,7 @@ AIUTO = """  FIRE TV STICK, dal telefono e senza dipendenze
     python3 firestick.py --ip=192.168.0.118 --tasto DOWN
     python3 firestick.py --ip=192.168.0.118 --tasti "DOWN DOWN RIGHT OK"
     python3 firestick.py --ip=192.168.0.118 --battito
+    python3 firestick.py --ip=192.168.0.118 --installa app.apk
     python3 firestick.py --ip=192.168.0.118 --schermata foto.png
     python3 firestick.py --ip=192.168.0.118 --shell "dumpsys power | head"
 
@@ -716,6 +763,23 @@ def main():
             print("  Tengo il collegamento aperto e scrivo una riga al")
             print("  secondo. ESCI DALL'APP e resta fuori un minuto.")
             battito(a, giri=int(argomento or 90), attesa=attesa)
+        elif comando == "--deposita":
+            pezzi = argomento.split()
+            if len(pezzi) != 2:
+                print("  --deposita <file locale> <percorso sul Fire TV>")
+                return 1
+            deposita(a, pezzi[0], pezzi[1], attesa=attesa)
+        elif comando == "--installa":
+            if not argomento:
+                print("  --installa <file.apk>")
+                return 1
+            dove = "/data/local/tmp/da-installare.apk"
+            deposita(a, argomento, dove, attesa=attesa)
+            print("  installo...")
+            # -t serve: senza, pm rifiuta in silenzio (uscita vuota).
+            print("  " + comanda(a, "pm install -r -t " + dove + " 2>&1",
+                                 120).strip())
+            comanda(a, "rm -f " + dove, attesa)
         elif comando == "--shell":
             print(comanda(a, argomento, attesa))
         else:

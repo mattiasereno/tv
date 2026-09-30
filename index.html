@@ -1131,7 +1131,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20260930124015";
+const VERSIONE = "20260930144904";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -5848,45 +5848,45 @@ function bloccoFireComandi(dove) {
   const p = el("div", "pad");
   p.style.cssText = "padding-top:0";
 
+  // L'HUB. Da qui si RAGGIUNGE il telecomando vero, non se ne fa una
+  // brutta copia. Il telecomando istantaneo lo serve l'app sul Fire
+  // Stick (play/pausa, indietro, home, apri le sette app), e questa
+  // pagina non puo' parlargli in fetch - e' https, lui e' http locale,
+  // stesso muro del ponte a-Shell. Ma puo' APRIRLO: una navigazione
+  // https->http e' permessa, e da li' i tasti sono istantanei.
+  const ip = chiavi.fireip;
+  if (!ip) {
+    p.appendChild(el("p", "nota",
+      "Dimmi l\u2019indirizzo del Fire Stick in Opzioni e qui compare " +
+      "il telecomando."));
+    dove.appendChild(p);
+    return;
+  }
+
+  const url = "http://" + ip + ":8080/";
   const spiega = el("div", "gusto");
   spiega.innerHTML =
-    "Sei in modo <b>Fire Stick</b>, che in questa casa vuol dire " +
-    "<b>la camera da letto</b>: il Fire Stick sta sul proiettore.<br>" +
-    "Questi tasti vanno al Fire Stick, uno per volta, e ognuno esce " +
-    "dall\u2019app per <b>circa due secondi</b>. Per <b>un</b> tocco va " +
-    "bene; per navigare un menu a colpi di frecce no, e per quello il " +
-    "telecomando in camera sta a mezzo metro.<br>" +
-    "La croce e il volume pi\u00f9 sotto comandano <b>la TV in " +
-    "salotto</b>, che \u00e8 un altro apparecchio.";
+    "Il <b>telecomando del Fire Stick</b> \u2014 in camera, sul " +
+    "proiettore. Play e pausa, indietro, home, e apri l\u2019app " +
+    "giusta: tutto <b>istantaneo</b>, servito dal Fire Stick stesso.";
   p.appendChild(spiega);
 
-  // Solo i tasti che si premono UNA volta. Le frecce no: non e' una
-  // dimenticanza, e' il motivo per cui la coda di tasti che c'era qui
-  // e' stata tolta (vedi il commento sopra). --tasti resta nello
-  // script, se un giorno la si rivuole.
-  const soli = [
-    ["PLAY", "\u23f8 Play / Pausa"],
-    ["OK", "OK"],
-    ["BACK", "Indietro"],
-    ["HOME", "Home"],
-  ];
-  const pronto = !!(chiavi.fireip && chiavi.scorciatoiaFire);
-  const fila = el("div", "tastiFire");
-  soli.forEach(([k, etichetta]) => {
-    const b = el("button", "chip", etichetta);
-    b.onclick = () => {
-      if (!pronto) return vai("impostazioni");
-      location.href = urlScorciatoia(chiavi.scorciatoiaFire,
-                                     testoTastoFire(k));
-    };
-    fila.appendChild(b);
-  });
-  p.appendChild(fila);
-  if (!pronto)
-    p.appendChild(el("p", "nota",
-      "Da finire di impostare in Opzioni: manca " +
-      (chiavi.fireip ? "il nome della Scorciatoia"
-                     : "l\u2019indirizzo del Fire Stick") + "."));
+  const apri = el("a", "apri fatto");
+  apri.href = url;
+  apri.style.cssText = "display:flex;text-decoration:none";
+  apri.innerHTML = '<span class="logo"></span><span class="etichetta">' +
+    "Apri il telecomando Fire Stick<small>" + esc(url) + "</small></span>";
+  p.appendChild(apri);
+
+  p.appendChild(comeSiFa(
+    "La prima volta va acceso: sul Fire Stick apri l\u2019app " +
+    "<b>Ponte</b> (col telecomando, una volta), e da l\u00ec in poi " +
+    "resta attiva anche dopo un riavvio.<br><br>" +
+    "Le <b>frecce</b> restano al telecomando fisico: navigare dentro le " +
+    "app di streaming e' l\u2019unica cosa che il sistema non lascia " +
+    "fare a nessun software di terzi \u2014 verificato fino in fondo. " +
+    "Tutto il resto, da qui.",
+    "Come si accende, e perch\u00e9 non le frecce"));
 
   dove.appendChild(p);
 }
