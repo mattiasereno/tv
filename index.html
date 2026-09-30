@@ -931,32 +931,48 @@ function indirizzoBuono(ip) {
 // Il SEME resta quello di default dentro lo script: e' quello che
 // decide la chiave, e cambiarlo vorrebbe dire riautorizzare il
 // dispositivo sul popup del Fire TV.
-// Il comando NON nomina piu' --cerca: quello arriva nel testo, con
-// tutto il resto. Cosi' la stessa Scorciatoia serve per cercare un
-// titolo E per mandare una fila di tasti - una Scorciatoia per
-// comando vorrebbe dire due cose da impostare, e due da sbagliare.
-function comandoScorciatoiaFire(coda) {
+// Il comando da incollare NON contiene NIENTE di variabile: ne' il
+// comando (--cerca), ne' l'indirizzo. Tutto arriva nel testo.
+//
+// PERCHE', ed e' costato un pomeriggio: prima l'indirizzo stava qui
+// dentro. Chi ha incollato il comando nella Scorciatoia PRIMA di
+// salvare l'indirizzo si e' ritrovato una Scorciatoia senza --ip=, e
+// lo script diceva «mi serve l'indirizzo del Fire TV» mentre
+// l'indirizzo nell'app c'era. Un comando che dipende da un'altra
+// impostazione va ri-incollato ogni volta che quella cambia, e
+// nessuno si ricorda di farlo.
+// Adesso il comando e' fisso per sempre e l'app e' l'unica fonte
+// dell'indirizzo.
+function comandoScorciatoiaFire() {
   return 'python3 -c "import urllib.request as u;' +
          "exec(u.urlopen('" + POSIZIONE_FIRE + "').read())\"" +
-         (chiavi.fireip ? " --ip=" + chiavi.fireip : "") +
-         ' "' + coda + '"';
+         ' "TITOLO"';
 }
 
 // Il testo da passare alla Scorciatoia del Fire Stick: la fermata e
 // il titolo. La fermata viaggia qui e non nel comando incollato,
 // perche' si cambia dalle Opzioni e il comando lo si incolla una
 // volta sola.
+// Tutto quello che varia viaggia nel testo: l'indirizzo, la fermata,
+// il comando e il suo argomento. In un posto solo, cosi' non si puo'
+// dimenticare l'indirizzo in una strada e non nell'altra.
+function testoFire(coda) {
+  return (chiavi.fireip ? "--ip=" + chiavi.fireip + " " : "") + coda;
+}
+
 function testoPerScorciatoiaFire(titolo, fino) {
   const f = fino || "risultati";
-  return (f === "risultati" ? "" : "--fino=" + f + " ") + "--cerca " + titolo;
+  return testoFire((f === "risultati" ? "" : "--fino=" + f + " ") +
+                   "--cerca " + titolo);
 }
 
 // Una fila di tasti, tutti in un viaggio. E' il punto: un viaggio per
 // tasto vorrebbe dire tre secondi a freccia - la generazione della
 // chiave da sola ne vale uno e mezzo - e nessuno naviga un menu
-// cosi'.
+// cosi'. La schermata non li offre piu' (vedi bloccoFireComandi), ma
+// da riga di comando servono.
 function testoTastiFire(elenco) {
-  return "--tasti " + elenco.join(" ");
+  return testoFire("--tasti " + elenco.join(" "));
 }
 
 const NOMI_PACCHETTO = {
@@ -1038,7 +1054,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20260930102956";
+const VERSIONE = "20260930104230";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -3720,9 +3736,10 @@ async function schermoDettaglio(tipo, id, torna) {
   }
   pad.appendChild(box);
 
-  // Le due strade sono ALTERNATIVE, non sovrapposte: sul Fire Stick
-  // non si apre un'app per volta, si cerca una volta per tutte. Fare
-  // vedere entrambe vorrebbe dire dieci pulsanti sulla stessa pagina.
+  // Le due strade sono ESCLUSIVE, e va bene cosi': sono due stanze, e
+  // il modo scelto dice in quale sei. In modo Fire Stick la TV NON si
+  // lancia - confermato da chi la usa. Il bollino accanto al titolo
+  // dice sempre in quale sei, e un tocco cambia stanza.
   if (chiavi.strada === "fire") {
     pad.appendChild(pulsanteFire(d));
   } else {
@@ -5330,7 +5347,6 @@ function bloccoFire(pad) {
   campo.oninput = () => {
     chiavi.fireip = campo.value;
     diciIp();
-    boxCmdF.textContent = comandoScorciatoiaFire("TITOLO");
   };
   diciIp();
   pad.appendChild(esitoIp);
@@ -5376,11 +5392,12 @@ function bloccoFire(pad) {
     "Nella Scorciatoia serve una sola azione: <b>a-Shell \u203a Esegui " +
     "comando</b>. Incolla qui sotto, poi <b>al posto di <code>TITOLO</code> " +
     "inserisci la variabile «Ingresso comando rapido»</b> lasciando le " +
-    "virgolette.";
+    "virgolette.<br>Questo comando non cambia mai: dentro non c\u2019\u00e8 " +
+    "n\u00e9 l\u2019indirizzo n\u00e9 altro. Lo incolli una volta e basta.";
   pad.appendChild(spiegaCmdF);
 
   boxCmdF.style.cssText = "white-space:pre-wrap;word-break:break-all";
-  boxCmdF.textContent = comandoScorciatoiaFire("TITOLO");
+  boxCmdF.textContent = comandoScorciatoiaFire();
   pad.appendChild(boxCmdF);
 
   const copiaF = el("button", "svuota", "Copia il comando");
