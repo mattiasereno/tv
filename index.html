@@ -1323,7 +1323,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20260930174948";
+const VERSIONE = "20260930180738";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -1719,6 +1719,28 @@ const scartati = {
   togli(tipo, id) {
     this.tutto = this.tutto.filter(
       x => !(x.tipo === tipo && String(x.id) === String(id)));
+  },
+};
+
+// Chi ho gia' PASSATO nella «rassegna notte»: i titoli gia' votati che
+// il mazzo rimette in cima UNA volta, per segnare col 🌙 quelli buoni
+// per dormire. Ci finisce chi decido NON essere da dormire (il 🌙 li
+// toglie da solo, finendo in `dormire`); cosi' non ritornano. Locale,
+// non in famiglia: e' una comodita' mia, non un dato da dividere.
+const rassegnati = {
+  get tutto() {
+    try {
+      const v = JSON.parse(localStorage.getItem("rassegnati") || "[]");
+      return Array.isArray(v) ? v : [];
+    } catch (e) { return []; }
+  },
+  set tutto(a) { localStorage.setItem("rassegnati", JSON.stringify(a.slice(0, 1000))); },
+  ha(tipo, id) {
+    return this.tutto.some(x => x.tipo === tipo && String(x.id) === String(id));
+  },
+  aggiungi(v) {
+    if (this.ha(v.tipo, v.id)) return;
+    this.tutto = [{ tipo: v.tipo, id: v.id }, ...this.tutto];
   },
 };
 
@@ -2790,6 +2812,20 @@ async function cinqueDaDiscover(f, quanti = 5) {
 // scheda - ma non frugo all'infinito: un tetto alle chiamate. Torna
 // coppie { v, d } con la scheda gia' in mano, cosi' il disegno non la
 // richiede una seconda volta. Se torna vuoto, chi chiama ripiega.
+// Cosa NON riproporre nei CONSIGLI (Stasera): quello che hai gia' visto
+// (votato) e quello che hai gia' messo in lista. NON gli scartati:
+// «non l'ho visto» vuol dire che non l'hai visto, ed e' proprio roba
+// buona da consigliare - toglierla sarebbe il contrario di quel che
+// serve. (Nel mazzo «Da votare» invece lo scartato esce: li' voti solo
+// cio' che HAI visto.)
+function esclusiDaiConsigli() {
+  return new Set([
+    ...visti.tutto.map(x => x.tipo + x.id),
+    ...lista.tutto.map(x => x.tipo + x.id),
+    ...pescatiDiRecente,
+  ]);
+}
+
 async function cinqueSimili(tipo, quanti = 5) {
   const semi = visti.tutto
     .filter(v => (v.mio || 0) >= 4 && v.tipo === tipo)
@@ -2802,13 +2838,8 @@ async function cinqueSimili(tipo, quanti = 5) {
       .then(d => (d.results || []).map(r => normalizza(r, tipo)))
       .catch(() => [])));
 
-  const esclusi = new Set([
-    ...visti.tutto.map(x => x.tipo + x.id),
-    ...lista.tutto.map(x => x.tipo + x.id),
-    ...scartati.tutto.map(x => x.tipo + x.id),
-    ...semi.map(x => x.tipo + x.id),
-    ...pescatiDiRecente,
-  ]);
+  const esclusi = esclusiDaiConsigli();
+  semi.forEach(x => esclusi.add(x.tipo + x.id));   // e i semi stessi
   const pool = mescolaAGiro(liste, esclusi);
 
   const durata = (DURATE.movie || []).find(x => x.n === STASERA.durata);
@@ -5034,6 +5065,30 @@ function codaDaVotare() {
     !lista.ha(v.tipo, v.id));
 }
 
+// La RASSEGNA NOTTE: i titoli che hai gia' votato, rimessi UNA volta in
+// cima al mazzo per segnare col 🌙 quelli da dormire. Prima, tolto il
+// mazzo «Da dormire», i titoli votati sparivano e non potevi piu'
+// segnarli. Escono appena li sistemi: 🌙 -> vanno in `dormire`; «non
+// e' da dormire» -> vanno in `rassegnati`. In entrambi i casi non
+// tornano. Piu' recenti prima, come li hai votati.
+function rassegnaNotte() {
+  return visti.tutto
+    .filter(v => (v.mio || 0) >= 1 &&
+                 !dormire.ha(v.tipo, v.id) &&
+                 !rassegnati.ha(v.tipo, v.id))
+    .map(v => ({
+      tipo: v.tipo, id: v.id, titolo: v.titolo, anno: v.anno,
+      voto: v.voto || 0, locandina: v.locandina,
+      generiId: v.generiId, keyword: v.keyword,
+    }));
+}
+
+// Il mazzo intero: prima la rassegna (i votati da rivedere per la
+// notte), poi i titoli nuovi da votare.
+function codaMazzo() {
+  return [...rassegnaNotte(), ...codaDaVotare()];
+}
+
 async function altroDaVotare() {
   paginaVotare += 1;
   // alterno film e serie: chiedendo solo film, le serie non
@@ -5162,7 +5217,9 @@ async function parteVotare() {
 
   const disegna = () => {
     zona.innerHTML = "";
-    const coda = codaDaVotare();
+    // il mazzo intero: prima la rassegna dei votati (per il 🌙), poi i
+    // titoli nuovi da votare
+    const coda = codaMazzo();
     if (!coda.length) {
       if (inArrivo) {
         const a = el("div", "caricamento");
@@ -5170,7 +5227,7 @@ async function parteVotare() {
         zona.appendChild(a);
       } else {
         zona.appendChild(el("p", "altri",
-          "Per ora è tutto. Torna dopo, o cambia mazzo qui sopra."));
+          "Per ora è tutto. Torna più tardi."));
       }
       return;
     }
@@ -5186,11 +5243,17 @@ async function parteVotare() {
 
   try {
     if (!daVotare.length) await altroDaVotare();
-    disegna();
   } catch (e) {
-    zona.innerHTML = "";
-    zona.appendChild(el("p", "nota", esc(e.message)));
+    // La rete puo' cadere, ma la RASSEGNA NOTTE e' locale (i tuoi voti):
+    // deve vedersi lo stesso. Mostro l'errore solo se non c'e' nemmeno
+    // quella, se no ingoio un titolo che potevo dare.
+    if (!rassegnaNotte().length) {
+      zona.innerHTML = "";
+      zona.appendChild(el("p", "nota", esc(e.message)));
+      return;
+    }
   }
+  disegna();
 }
 
 // UNA CARTA, tipo Tinder. Sotto la locandina: le stelle («l'ho
@@ -5205,6 +5268,10 @@ function cardaPerVotare(v, avanza) {
   };
 
   const c = el("div", "cartaV");
+  // Se l'hai GIA' votato, questa e' una carta della «rassegna notte»:
+  // rimessa in cima una volta per segnare il 🌙, non per votarla di
+  // nuovo. Cambia la legenda e le azioni.
+  const giaVotato = visti.voto(v.tipo, v.id) || 0;
 
   const eti = el("div", "etichettaSwipe");
   c.appendChild(eti);
@@ -5223,56 +5290,81 @@ function cardaPerVotare(v, avanza) {
   const stelle = el("div", "stelle");
   for (let n = 1; n <= 5; n++) {
     const b = el("button");
+    if (n <= giaVotato) b.className = "piena";   // mostra il voto che hai gia' dato
     b.setAttribute("aria-label", n + (n === 1 ? " stella" : " stelle"));
     b.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.7 6.2.6-4.7 4.2 1.4 6.1L12 16.9l-5.5 3.2 1.4-6.1L3.2 9.8l6.2-.6z"/></svg>';
     b.onclick = () => {
       visti.segna(dati, n);
       if (lista.ha(v.tipo, v.id)) lista.togli(v.tipo, v.id);
+      if (giaVotato) rassegnati.aggiungi(dati);   // rivisto: non torna in rassegna
       via("su");
     };
     stelle.appendChild(b);
   }
   c.appendChild(stelle);
-  // Legenda fissa: le stelle sono per «l'ho visto». Sempre visibile,
-  // cosi' non si deve indovinare a cosa servono.
-  c.appendChild(el("p", "didascStelle", "L’ho visto — dai un voto"));
+  // Legenda fissa: sempre visibile, cosi' non si deve indovinare. Sui
+  // gia' votati cambia: qui il punto e' il 🌙, non il voto.
+  c.appendChild(el("p", "didascStelle", giaVotato
+    ? "Già visto — segna 🌙 se è da dormire"
+    : "L’ho visto — dai un voto"));
 
-  // le tre azioni grosse: scarta, notte, cuore
+  // Le azioni. Ogni pulsante con l'etichetta sotto: le frecce ← →
+  // dicono che si puo' anche TRASCINARE la carta (swipe), non solo
+  // toccare.
   const azioni = el("div", "azioniCarta");
-
-  const noVisto = el("button", "tondo salta");
-  noVisto.setAttribute("aria-label", "Non l’ho visto");
-  noVisto.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>';
-  noVisto.onclick = () => { scartati.aggiungi(dati); via("sx"); };
-
-  const notte = el("button", "tondo notte");
-  const disNotte = () => notte.setAttribute("aria-pressed",
-    String(dormire.ha(v.tipo, v.id)));
-  notte.setAttribute("aria-label", "Buono per dormire");
-  notte.innerHTML = '<svg viewBox="0 0 24 24"><path d="M20 13a8 8 0 1 1-9-9 6 6 0 0 0 9 9z"/></svg>';
-  notte.onclick = () => {
-    if (dormire.ha(v.tipo, v.id)) dormire.togli(v.tipo, v.id);
-    else dormire.aggiungi(dati);
-    disNotte();
-  };
-  disNotte();
-
-  const cuore = el("button", "tondo voglio");
-  cuore.setAttribute("aria-label", "Lo voglio vedere");
-  cuore.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 20.5s-7.5-4.6-7.5-9.7A4.3 4.3 0 0112 8.4a4.3 4.3 0 017.5 2.4c0 5.1-7.5 9.7-7.5 9.7z"/></svg>';
-  cuore.onclick = () => { lista.aggiungi(dati); via("dx"); };
-
-  // Ogni pulsante con la sua etichetta sotto: le frecce ← → dicono che
-  // si puo' anche TRASCINARE la carta (swipe), oltre a toccare.
   const colonna = (btn, testo) => {
     const col = el("div", "azioneCol");
     col.appendChild(btn);
     col.appendChild(el("span", "didasc", testo));
     return col;
   };
-  azioni.appendChild(colonna(noVisto, "← non visto"));
-  azioni.appendChild(colonna(notte, "per dormire"));
-  azioni.appendChild(colonna(cuore, "lo voglio →"));
+  const luna = '<svg viewBox="0 0 24 24"><path d="M20 13a8 8 0 1 1-9-9 6 6 0 0 0 9 9z"/></svg>';
+
+  if (giaVotato) {
+    // GIA' VOTATO (rassegna notte): «non visto» e «lo voglio» non hanno
+    // senso, l'hai visto e valutato. Restano 🌙 (e' da dormire: segna e
+    // avanti) e «Avanti» (non lo e': salta). Entrambi lo fanno uscire
+    // dalla rassegna, cosi' lo vedi una volta sola.
+    const notte = el("button", "tondo notte");
+    notte.setAttribute("aria-pressed", String(dormire.ha(v.tipo, v.id)));
+    notte.setAttribute("aria-label", "È da dormire");
+    notte.innerHTML = luna;
+    notte.onclick = () => { dormire.aggiungi(dati); via("su"); };
+
+    const avanti = el("button", "tondo");
+    avanti.setAttribute("aria-label", "Avanti");
+    avanti.innerHTML = '<svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>';
+    avanti.onclick = () => { rassegnati.aggiungi(dati); via("su"); };
+
+    azioni.appendChild(colonna(notte, "è da dormire"));
+    azioni.appendChild(colonna(avanti, "avanti →"));
+  } else {
+    const noVisto = el("button", "tondo salta");
+    noVisto.setAttribute("aria-label", "Non l’ho visto");
+    noVisto.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+    noVisto.onclick = () => { scartati.aggiungi(dati); via("sx"); };
+
+    const notte = el("button", "tondo notte");
+    const disNotte = () => notte.setAttribute("aria-pressed",
+      String(dormire.ha(v.tipo, v.id)));
+    notte.setAttribute("aria-label", "Buono per dormire");
+    notte.innerHTML = luna;
+    notte.onclick = () => {
+      if (dormire.ha(v.tipo, v.id)) dormire.togli(v.tipo, v.id);
+      else dormire.aggiungi(dati);
+      disNotte();
+    };
+    disNotte();
+
+    const cuore = el("button", "tondo voglio");
+    cuore.setAttribute("aria-label", "Lo voglio vedere");
+    cuore.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 20.5s-7.5-4.6-7.5-9.7A4.3 4.3 0 0112 8.4a4.3 4.3 0 017.5 2.4c0 5.1-7.5 9.7-7.5 9.7z"/></svg>';
+    cuore.onclick = () => { lista.aggiungi(dati); via("dx"); };
+
+    azioni.appendChild(colonna(noVisto, "← non visto"));
+    azioni.appendChild(colonna(notte, "per dormire"));
+    azioni.appendChild(colonna(cuore, "lo voglio →"));
+  }
   c.appendChild(azioni);
 
   // l'uscita: la carta scivola via nella direzione dell'azione, poi
@@ -5292,6 +5384,7 @@ function cardaPerVotare(v, avanza) {
   // il trascinamento: segue il dito, e oltre soglia commette.
   let x0 = null, dx = 0;
   c.addEventListener("pointerdown", (e) => {
+    if (giaVotato) return;   // sui gia' visti niente swipe: si usa 🌙 / Avanti
     if (e.target.closest && e.target.closest("button")) return;
     x0 = e.clientX; dx = 0;
     c.style.transition = "none";
