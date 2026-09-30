@@ -15,7 +15,15 @@ a-Shell lo puo' fare. La domanda che decide tutto e' un'altra:
 Se SI', questo file diventa il ponte vero e il telecomando si fa.
 Se NO, non c'e' strada e si resta ai quattro tasti da un tocco.
 
-QUESTA E' LA PROVA. Si lancia in a-Shell:
+LA PROVA BUONA E' SENZA BROWSER. Su iOS Safari si rifiuta di aprire
+un http:// semplice (verificato da chi la usa), quindi la pagina qui
+sotto non misura niente. Ma la domanda non riguarda Safari, riguarda
+a-Shell: basta stampare l'ora ogni secondo, andare via, tornare, e
+guardare se ci sono buchi.
+
+    python3 -c "...scarica...".read()) --vivo
+
+QUESTA, con la pagina, e' la versione col browser:
 
     python3 -c "import urllib.request as u;exec(u.urlopen('https://mattiasereno.github.io/tv/ponte.py').read())"
 
@@ -116,8 +124,42 @@ class Server(socketserver.ThreadingMixIn, socketserver.TCPServer):
     allow_reuse_address = True
 
 
+def batte_il_tempo():
+    """La prova SENZA browser, ed e' la prova giusta.
+
+    Su iOS Safari si rifiuta di aprire un http:// semplice, quindi la
+    pagina del ponte non serve a misurare niente. Ma la domanda non
+    riguarda Safari: riguarda a-Shell. Basta stampare l'ora ogni
+    secondo, andare via, tornare, e guardare se ci sono BUCHI.
+
+    Nessuna rete, nessun browser, nessun mixed content: solo
+    l'orologio e il fatto che questo processo stia girando o no."""
+    print("  Stampo l'ora ogni secondo. Adesso:")
+    print("   1. VAI VIA da a-Shell - apri Safari, o la schermata Home")
+    print("   2. resta fuori un minuto buono")
+    print("   3. TORNA qui e guarda le righe")
+    print()
+    print("  Se le ore sono continue, a-Shell ha continuato a girare in")
+    print("  sottofondo, e il telecomando vero si puo' fare.")
+    print("  Se c'e' un BUCO - salta da 10:00:05 a 10:01:05 - iOS lo ha")
+    print("  sospeso, e non c'e' strada.")
+    print()
+    n = 0
+    while True:
+        n += 1
+        print("  %s   riga %d" % (time.strftime("%H:%M:%S"), n), flush=True)
+        time.sleep(1)
+
+
 if __name__ == "__main__" or True:
-    print("  ponte in ascolto su http://127.0.0.1:%d" % PORTA)
-    print("  LASCIA a-Shell APERTO, passa a Safari e apri quell'indirizzo.")
-    print("  Per fermarlo: Ctrl-C, oppure chiudi a-Shell.")
-    Server(("127.0.0.1", PORTA), Mano).serve_forever()
+    import sys
+    if "--vivo" in " ".join(sys.argv):
+        batte_il_tempo()
+    else:
+        print("  ponte in ascolto su http://127.0.0.1:%d" % PORTA)
+        print("  LASCIA a-Shell APERTO, passa a Safari e apri "
+              "quell'indirizzo.")
+        print("  Se Safari rifiuta l'http, usa invece la prova senza")
+        print("  browser:  ...read()) --vivo")
+        print("  Per fermarlo: Ctrl-C, oppure chiudi a-Shell.")
+        Server(("127.0.0.1", PORTA), Mano).serve_forever()
