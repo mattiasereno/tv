@@ -523,6 +523,12 @@ def battito(a, giri=90, attesa=15.0, eco=print):
     Ed e' il PROTOTIPO del ponte: un collegamento aperto a lungo con
     tanti comandi dentro e' esattamente quello che dovrebbe fare."""
     comanda(a, "rm -f " + BATTITO_DOVE, attesa)
+    # Un segno SUBITO, appena il collegamento c'e'. Serve a
+    # distinguere tre casi che da fuori sembrano uguali:
+    #   file assente        -> non si e' mai collegato
+    #   solo PARTITO        -> collegato e poi fermato subito
+    #   PARTITO + righe     -> ha girato, e i buchi dicono quanto
+    comanda(a, "echo PARTITO $(date +%H:%M:%S) > " + BATTITO_DOVE, attesa)
     fatti = 0
     for n in range(1, giri + 1):
         try:

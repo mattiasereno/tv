@@ -1131,7 +1131,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20260930121904";
+const VERSIONE = "20260930123829";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -5788,16 +5788,20 @@ function bloccoFire(pad) {
   // partono, e la sua uscita non si vede.
   unaVoltaSola(pad, "Prova: iOS lascia girare a-Shell?", false, (pad) => {
     pad.appendChild(el("p", "nota",
-      "Decide se il telecomando dall\u2019app si pu\u00f2 fare. Tocca, " +
-      "poi <b>esci dall\u2019app</b> e resta fuori un minuto. Scrive una " +
-      "riga al secondo sul Fire Stick, e quel file si legge dal " +
-      "computer."));
-    const b = el("button", "svuota", "Fai la prova (90 secondi)");
+      "Decide se il telecomando dall\u2019app si pu\u00f2 fare.<br>" +
+      "1. tocca qui sotto<br>" +
+      "2. <b>resta dentro a-Shell e conta fino a dieci</b> \u2014 serve " +
+      "perch\u00e9 il collegamento faccia in tempo a stabilirsi<br>" +
+      "3. poi <b>esci</b> e resta fuori un minuto<br>" +
+      "4. rientra in a-Shell e dimmelo<br>" +
+      "Scrive una riga al secondo sul Fire Stick, e quel file si legge " +
+      "dal computer."));
+    const b = el("button", "svuota", "Fai la prova (2 minuti)");
     b.style.cssText = "width:100%;margin:4px 0 0";
     b.onclick = () => {
       if (!chiavi.fireip || !chiavi.scorciatoiaFire) return vai("impostazioni");
       location.href = urlScorciatoia(chiavi.scorciatoiaFire,
-                                     testoFire("--battito 90"));
+                                     testoFire("--attesa=15 --battito 120"));
     };
     pad.appendChild(b);
   });
