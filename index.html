@@ -1028,18 +1028,41 @@ const SERVIZI_PREDEFINITI = ["8", "119", "337", "1899", "39", "359", "584"];
 // Sottogeneri veri: sono le keyword di TMDB, non i generi. Gli id
 // li ho cercati una volta con /search/keyword e verificati uno per
 // uno incrociati col filtro abbonamenti: nessuno torna vuoto.
+// I sottogeneri sono keyword TMDB. Ognuno porta con se' i generi
+// principali con cui ha senso (`g`): raro un film di fantascienza
+// «storia vera». Gli id sono sia dei FILM sia delle SERIE, che TMDB
+// numera diversi (es. Fantascienza film 878, serie «Sci-Fi & Fantasy»
+// 10765), cosi' la stessa lista vale per tutti e due. Verificati a mano.
 const SOTTOGENERI = [
-  { n: "Supereroi", k: "9715" },        { n: "Storia vera", k: "9672" },
-  { n: "Rapine", k: "10051" },          { n: "Spionaggio", k: "470" },
-  { n: "Serial killer", k: "10714" },   { n: "Distopia", k: "4565" },
-  { n: "Viaggi nel tempo", k: "4379" }, { n: "Post-apocalittico", k: "359337" },
-  { n: "Zombie", k: "12377" },          { n: "Vampiri", k: "3133" },
-  { n: "Alieni", k: "14909" },          { n: "Robot", k: "14544" },
-  { n: "Arti marziali", k: "779" },     { n: "Sopravvivenza", k: "10349" },
-  { n: "Mafia", k: "10391" },           { n: "Cospirazioni", k: "10410" },
-  { n: "Processi", k: "33519" },        { n: "Anime", k: "210024" },
-  { n: "Dinosauri", k: "12616" },       { n: "Natale", k: "207317" },
+  { n: "Supereroi", k: "9715", g: ["28","878","12","14","10759","10765"] },
+  { n: "Storia vera", k: "9672", g: ["18","36","80","10752","10768"] },
+  { n: "Rapine", k: "10051", g: ["80","53","28","10759"] },
+  { n: "Spionaggio", k: "470", g: ["53","28","10752","10759","10768"] },
+  { n: "Serial killer", k: "10714", g: ["53","27","80","9648","18"] },
+  { n: "Distopia", k: "4565", g: ["878","53","18","10765"] },
+  { n: "Viaggi nel tempo", k: "4379", g: ["878","12","10765"] },
+  { n: "Post-apocalittico", k: "359337", g: ["878","27","28","10765","10759"] },
+  { n: "Zombie", k: "12377", g: ["27","878","28","10765","10759"] },
+  { n: "Vampiri", k: "3133", g: ["27","14","10749","10765"] },
+  { n: "Alieni", k: "14909", g: ["878","27","10765"] },
+  { n: "Robot", k: "14544", g: ["878","28","16","10765","10759"] },
+  { n: "Arti marziali", k: "779", g: ["28","10759"] },
+  { n: "Sopravvivenza", k: "10349", g: ["12","53","18","28","10759"] },
+  { n: "Mafia", k: "10391", g: ["80","18","53"] },
+  { n: "Cospirazioni", k: "10410", g: ["53","9648","878","10765","10768"] },
+  { n: "Processi", k: "33519", g: ["18","53","80"] },
+  { n: "Anime", k: "210024", g: ["16"] },
+  { n: "Dinosauri", k: "12616", g: ["12","878","28","10751","10765","10759","10762"] },
+  { n: "Natale", k: "207317", g: ["10751","35","10749","10762"] },
 ];
+
+// I sottogeneri che stanno bene col genere principale scelto. Senza
+// genere (Qualsiasi), tutti. Se la lista torna vuota, chi disegna
+// nasconde del tutto la sezione: meglio niente che un filtro assurdo.
+function sottogeneriPer(genere) {
+  if (!genere) return SOTTOGENERI;
+  return SOTTOGENERI.filter(s => s.g.includes(String(genere)));
+}
 
 // tvChannelName restituisce il NOME PACCHETTO, mentre MAPPA contiene
 // l'id per LANCIARE - che per cinque app e' numerico. Quindi servono
@@ -1274,7 +1297,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20260930172502";
+const VERSIONE = "20260930173111";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -3237,10 +3260,12 @@ function pannelloFiltri() {
   // dei generi, senza etichetta: non si capiva che erano due cose
   // diverse, e costavano 48px prima del contenuto. Sono un filtro,
   // quindi stanno qui.
-  p.appendChild(gruppo("Sottogenere",
-    [{ etichetta: "Tutti", valore: "" },
-     ...SOTTOGENERI.map(k => ({ etichetta: k.n, valore: k.k }))],
-    F.keyword, v => { F.keyword = v; schermoSfoglia(); }));
+  const sott = sottogeneriPer(F.genere);
+  if (sott.length)
+    p.appendChild(gruppo("Sottogenere",
+      [{ etichetta: "Tutti", valore: "" },
+       ...sott.map(k => ({ etichetta: k.n, valore: k.k }))],
+      F.keyword, v => { F.keyword = v; schermoSfoglia(); }));
 
   p.appendChild(gruppo("Ordine",
     ORDINI.map(o => ({ etichetta: o.n, valore: o.v })), F.ordine,
@@ -3496,7 +3521,11 @@ async function schermoSfoglia() {
     [{ id: "", name: "Tutto" }, ...lista].forEach(g => {
       const b = el("button", "chip", esc(g.name));
       b.setAttribute("aria-pressed", String(String(g.id) === F.genere));
-      b.onclick = () => { F.genere = String(g.id); schermoSfoglia(); };
+      b.onclick = () => {
+        F.genere = String(g.id);
+        if (!sottogeneriPer(F.genere).some(k => k.k === F.keyword)) F.keyword = "";
+        schermoSfoglia();
+      };
       fasciaGeneri.appendChild(b);
     });
   } catch (e) {
@@ -3707,17 +3736,27 @@ async function schermoStasera() {
         voci: [{ etichetta: "Qualsiasi", valore: "" },
                ...lista.map(g => ({ etichetta: g.name, valore: String(g.id) }))],
         attuale: STASERA.genere,
-        scegli: v => { STASERA.genere = v; schermoStasera(); },
+        scegli: v => {
+          STASERA.genere = v;
+          // se il sottogenere scelto non sta piu' con questo genere, via
+          if (!sottogeneriPer(v).some(k => k.k === STASERA.keyword)) STASERA.keyword = "";
+          schermoStasera();
+        },
       }));
     }).catch(() => {});
 
-    schermo.appendChild(el("p", "sezione pad", "Sottogenere"));
-    schermo.appendChild(fascia({
-      voci: [{ etichetta: "Qualsiasi", valore: "" },
-             ...SOTTOGENERI.map(k => ({ etichetta: k.n, valore: k.k }))],
-      attuale: STASERA.keyword,
-      scegli: v => { STASERA.keyword = v; schermoStasera(); },
-    }));
+    // I sottogeneri dipendono dal genere: con «Fantascienza» non ha
+    // senso offrire «Storia vera». Se non ne resta nessuno, niente riga.
+    const sott = sottogeneriPer(STASERA.genere);
+    if (sott.length) {
+      schermo.appendChild(el("p", "sezione pad", "Sottogenere"));
+      schermo.appendChild(fascia({
+        voci: [{ etichetta: "Qualsiasi", valore: "" },
+               ...sott.map(k => ({ etichetta: k.n, valore: k.k }))],
+        attuale: STASERA.keyword,
+        scegli: v => { STASERA.keyword = v; schermoStasera(); },
+      }));
+    }
 
     schermo.appendChild(el("p", "sezione pad", "Cosa preferisci"));
     schermo.appendChild(fascia({
