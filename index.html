@@ -734,6 +734,55 @@
   }
   .bivio .via[aria-pressed=true] { border-color: var(--acceso); }
 
+  /* Le istruzioni chiuse. Servono la prima volta; i campi tutte le
+     altre, e in mezzo facevano scorrere per niente. */
+  /* Un sotto-titolo: prima erano tutti «sezione» e non si capiva cosa
+     stesse dentro cosa - «Stato» sembrava una sezione a se'. */
+  .sottosezione {
+    margin: 16px 0 6px; font-size: 12.5px; font-weight: 600;
+    letter-spacing: .3px; color: var(--debole);
+  }
+
+  /* La stanza in cui non sei: chiusa, ma con lo stesso peso visivo di
+     una sezione, cosi' si trova. */
+  .stanzaPiegata { margin: 22px 0 0; }
+  .stanzaPiegata > summary {
+    min-height: 44px; display: flex; align-items: center;
+    list-style: none; cursor: pointer;
+    font-size: 12.5px; font-weight: 600; letter-spacing: .6px;
+    text-transform: uppercase; color: var(--debole);
+  }
+  .stanzaPiegata > summary::-webkit-details-marker { display: none; }
+  .stanzaPiegata > summary::after {
+    content: ""; margin-left: 9px;
+    width: 7px; height: 7px; border-right: 1.6px solid var(--debole);
+    border-bottom: 1.6px solid var(--debole); transform: rotate(45deg);
+    transition: transform .15s;
+  }
+  .stanzaPiegata[open] > summary::after { transform: rotate(-135deg); }
+
+  .comesifa { margin: 2px 0 10px; }
+  .comesifa summary {
+    min-height: 44px; display: flex; align-items: center;
+    color: var(--tenue); font-size: 13.5px; cursor: pointer;
+    list-style: none;
+  }
+  .comesifa summary::-webkit-details-marker { display: none; }
+  .comesifa summary::before {
+    content: "?"; flex: none;
+    width: 20px; height: 20px; margin-right: 9px; border-radius: 50%;
+    border: 1px solid var(--bordo); color: var(--debole);
+    font-size: 12px; font-weight: 600;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .comesifa[open] summary::before { content: "\2212"; }
+  .comesifa > div {
+    padding: 10px 13px; border-radius: 12px;
+    background: var(--fondo-alto); border: 1px solid var(--bordo);
+    color: var(--tenue); font-size: 13.5px; line-height: 1.55;
+  }
+  .comesifa b { color: var(--testo); font-weight: 600; }
+
   .sentinella { height: 1px; }
   .altri { padding: 18px 0 8px; text-align: center; color: var(--debole); font-size: 14px; }
   button.altri {
@@ -1054,7 +1103,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20260930104230";
+const VERSIONE = "20260930105248";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -4950,7 +4999,7 @@ function bloccoAbbonamenti(pad) {
 let esitoCollegamento = null;
 
 function bloccoCollegamento(pad) {
-  pad.appendChild(el("p", "sezione", "TV: collegamento"));
+  pad.appendChild(el("p", "sottosezione", "Collegamento"));
 
   if (esitoCollegamento) {
     const m = {
@@ -5109,50 +5158,121 @@ function bloccoCollegamento(pad) {
   }
 }
 
+/* ------------------------------------------------ OPZIONI
+
+   Ordine per FREQUENZA, non per come e' cresciuto il codice. Era
+   diventato un elenco confuso: il collegamento OAuth - la cosa piu'
+   tecnica, che si tocca una volta nella vita - stava in cima, e la
+   scelta della stanza, che e' un tocco e cambia cosa fa l'app, stava
+   in mezzo fra i campi delle chiavi.
+
+     1. Dove guardi        un tocco, cambia cosa fanno le schede
+     2. Abbonamenti        e' quello che si cambia davvero
+     3. Chiave TMDB        una volta, e senza non c'e' niente
+     4. La stanza scelta   prima quella in cui sei, poi l'altra
+     5. Famiglia           una volta per telefono
+     6. Diagnostica        quando qualcosa non va
+
+   E ogni spiegazione lunga sta dentro un «Come si fa» chiuso: le
+   istruzioni servono la prima volta, i campi tutte le altre.       */
+
 function schermoImpostazioni() {
   schermo.innerHTML = "";
   const pad = el("div", "pad");
   pad.appendChild(el("h1", "titolone", "Opzioni"));
   schermo.appendChild(pad);
-  bloccoCollegamento(pad);
+
+  bloccoStanza(pad);
   bloccoAbbonamenti(pad);
+  bloccoTmdb(pad);
 
-  const chiaviPad = el("div");
-  pad.appendChild(el("p", "sezione", "Chiavi"));
-  pad.appendChild(chiaviPad);
-  chiaviPad.innerHTML =
-    '<div class="campo"><label for="k1">Chiave TMDB</label>' +
-    '<textarea id="k1" rows="2" autocapitalize="off" autocomplete="off" spellcheck="false"></textarea>' +
-    "<p>themoviedb.org → il tuo profilo → Impostazioni → API</p></div>" +
-    '<div class="campo"><label for="k2">Token SmartThings</label>' +
-    '<textarea id="k2" rows="3" autocapitalize="off" autocomplete="off" spellcheck="false"></textarea>' +
-    "<p>account.smartthings.com/tokens, con i permessi sui dispositivi. " +
-    "Resta su questo telefono: non è nel codice dell'app e non passa da nessun server.</p></div>";
+  // Prima la stanza in cui sei, APERTA. L'altra resta sotto ma
+  // CHIUSA: c'e' se la cerchi, e non ti fa scorrere due schermate di
+  // impostazioni di un apparecchio che in questo momento non stai
+  // usando. La pagina era lunga nove schermate.
+  const stanza = (nome, riempi, aperta) => {
+    if (aperta) {
+      pad.appendChild(el("p", "sezione", nome));
+      riempi(pad);
+      return;
+    }
+    const d = el("details", "stanzaPiegata");
+    d.appendChild(el("summary", null, nome));
+    const dentro = el("div");
+    d.appendChild(dentro);
+    // attaccato PRIMA di riempirlo: i blocchi cercano i loro campi
+    // con getElementById, e fuori dal documento non li trovano
+    pad.appendChild(d);
+    riempi(dentro);
+  };
 
+  const stanze = chiavi.strada === "fire"
+    ? [["Il Fire Stick in camera", bloccoFire], ["La TV in salotto", bloccoTv]]
+    : [["La TV in salotto", bloccoTv], ["Il Fire Stick in camera", bloccoFire]];
+  stanze.forEach(([nome, riempi], i) => stanza(nome, riempi, i === 0));
+
+  bloccoFamiglia(pad);
+  bloccoDiagnosi(pad);
+}
+
+// Un pieghevole per le istruzioni. <details> e non un pulsante mio:
+// lo apre e chiude il browser, si ricorda da se' com'era, e funziona
+// anche se il resto del codice si rompe.
+function comeSiFa(testo, titolo) {
+  const d = el("details", "comesifa");
+  d.innerHTML = "<summary>" + esc(titolo || "Come si fa") +
+    "</summary><div>" + testo + "</div>";
+  return d;
+}
+
+// 1. In quale stanza sei. Prima di tutto, perche' decide cosa fanno
+//    le schede ed e' un tocco.
+function bloccoStanza(pad) {
+  pad.appendChild(el("p", "sezione", "Dove guardi"));
+  const sw = el("div", "interruttore");
+  STRADE.forEach(([v, nome]) => {
+    const b = el("button", null, nome);
+    b.setAttribute("aria-pressed", String(chiavi.strada === v));
+    b.onclick = () => { chiavi.strada = v; schermoImpostazioni(); };
+    sw.appendChild(b);
+  });
+  pad.appendChild(sw);
+  const quale = STRADE.find(x => x[0] === chiavi.strada) || STRADE[0];
+  pad.appendChild(el("p", "nota", quale[2]));
+}
+
+// 3. La chiave TMDB, da sola. Prima stava insieme al token
+//    SmartThings sotto «Chiavi», con UN solo «Salva e prova» che
+//    provava due cose diverse: quando una delle due non andava, non
+//    si capiva quale.
+function bloccoTmdb(pad) {
+  pad.appendChild(el("p", "sezione", "Chiave TMDB"));
+  const c = el("div", "campo");
+  c.innerHTML = '<label for="k1">Chiave TMDB</label>' +
+    '<textarea id="k1" rows="2" autocapitalize="off" autocomplete="off" ' +
+    'spellcheck="false"></textarea>';
+  pad.appendChild(c);
   document.getElementById("k1").value = chiavi.tmdb;
-  document.getElementById("k2").value = chiavi.token;
+  pad.appendChild(comeSiFa(
+    "themoviedb.org \u2192 il tuo profilo \u2192 Impostazioni \u2192 API. " +
+    "\u00c8 gratis. Senza questa chiave l\u2019app non sa niente di " +
+    "nessun film.", "Dove si prende"));
 
-  const salva = el("button", "primario", "Salva e prova");
   const esito = el("div", "esito");
+  const salva = el("button", "primario", "Salva e prova");
+  salva.style.cssText = "width:100%;margin:4px 0 0";
   salva.onclick = async () => {
     chiavi.tmdb = document.getElementById("k1").value;
-    chiavi.token = document.getElementById("k2").value;
-    localStorage.removeItem("st_device");     // ricerca la TV da zero
     salva.disabled = true;
-    salva.textContent = "Provo…";
+    salva.textContent = "Provo\u2026";
     esito.innerHTML = "";
     const righe = [];
     try {
       await tmdb("/configuration");
-      righe.push('<div class="ok">TMDB: chiave buona</div>');
+      righe.push('<div class="ok">Chiave buona</div>');
       await caricaProvider(true);
       righe.push('<div class="ok">' + Object.keys(PROVIDER).length +
                  " servizi italiani caricati</div>");
-    } catch (e) { righe.push('<div class="ko">' + esc(e.message) + "</div>"); }
-    try {
-      await trovaTv();
-      const app = await appInPrimoPiano();
-      righe.push('<div class="ok">TV trovata' + (app ? ", in primo piano: " + esc(app) : "") + "</div>");
     } catch (e) { righe.push('<div class="ko">' + esc(e.message) + "</div>"); }
     esito.innerHTML = righe.join("");
     salva.disabled = false;
@@ -5160,40 +5280,69 @@ function schermoImpostazioni() {
   };
   pad.appendChild(salva);
   pad.appendChild(esito);
+}
 
-  // ------------------------------------------------- quale strada
-  // Due strade per la stessa cosa, e sono davvero due: la Samsung
-  // apre l'app e naviga la SUA tastiera (sette tastiere misurate);
-  // il Fire Stick scrive nella ricerca globale in una volta, via
-  // ADB. Non si sommano, si scelgono - e la scheda mostra i pulsanti
-  // di quella scelta.
-  pad.appendChild(el("p", "sezione", "Come cerchi sulla TV"));
-  const swStrada = el("div", "interruttore");
-  [["tv", "TV Samsung"], ["fire", "Fire Stick"]].forEach(([v, etichetta]) => {
-    const b = el("button", null, etichetta);
-    b.setAttribute("aria-pressed", String(chiavi.strada === v));
-    b.onclick = () => { chiavi.strada = v; schermoImpostazioni(); };
-    swStrada.appendChild(b);
-  });
-  pad.appendChild(swStrada);
+// 4a. Tutto quello che riguarda la TV in salotto, in un posto solo: il
+//     collegamento, il token, la Scorciatoia che scrive e il comando
+//     da incollare. Prima erano tre sezioni con altre cose in mezzo.
+function bloccoTv(pad) {
+  pad.appendChild(el("p", "nota",
+    "Apre le app sulla TV, scrive il titolo dentro, e fa i Comandi " +
+    "(volume, accensione)." +
+    (chiavi.strada === "fire"
+      ? " Serve anche in modo Fire Stick: il volume e l\u2019accensione " +
+        "della TV passano da qui."
+      : "")));
+  bloccoCollegamento(pad);
 
-  if (chiavi.strada === "fire") {
-    bloccoFire(pad);
-    bloccoFamiglia(pad);
-    bloccoDiagnosi(pad);
-    return;
-  }
+  const campoTok = el("div", "campo");
+  campoTok.innerHTML = '<label for="k2">Token SmartThings</label>' +
+    '<textarea id="k2" rows="3" autocapitalize="off" autocomplete="off" ' +
+    'spellcheck="false"></textarea>';
+  pad.appendChild(campoTok);
+  document.getElementById("k2").value = chiavi.token;
+  pad.appendChild(comeSiFa(
+    "account.smartthings.com/tokens, con i permessi sui dispositivi. " +
+    "Resta su questo telefono: non \u00e8 nel codice dell\u2019app e non " +
+    "passa da nessun server.<br>Se hai collegato con OAuth qui sopra " +
+    "questo non serve: quel permesso si rinnova da s\u00e9, questo dura " +
+    "24 ore.", "Dove si prende"));
+
+  const esitoTv = el("div", "esito");
+  const salvaTok = el("button", "svuota", "Salva il token e cerca la TV");
+  salvaTok.style.cssText = "width:100%;margin:4px 0 0";
+  salvaTok.onclick = async () => {
+    chiavi.token = document.getElementById("k2").value;
+    localStorage.removeItem("st_device");     // ricerca la TV da zero
+    salvaTok.disabled = true;
+    salvaTok.textContent = "Cerco\u2026";
+    esitoTv.innerHTML = "";
+    try {
+      await trovaTv();
+      const q = await appInPrimoPiano();
+      esitoTv.innerHTML = '<div class="ok">TV trovata' +
+        (q ? ", in primo piano: " + esc(q) : "") + "</div>";
+    } catch (e) {
+      esitoTv.innerHTML = '<div class="ko">' + esc(e.message) + "</div>";
+    }
+    salvaTok.disabled = false;
+    salvaTok.textContent = "Salva il token e cerca la TV";
+  };
+  pad.appendChild(salvaTok);
+  pad.appendChild(esitoTv);
 
   pad.appendChild(el("p", "sezione", "Scrivere sulla TV"));
-  const spiegaSc = el("div", "gusto");
-  spiegaSc.innerHTML =
-    "Una pagina web non può parlare con la TV in rete locale, perché il " +
-    "certificato della TV vale solo per sé stessa. Una <b>Scorciatoia</b> " +
-    "di iOS sì, passando da a-Shell. Con la Scorciatoia impostata, il " +
-    "pulsante sulle schede diventa <b>«Apri l\u2019app e cerca il " +
-    "titolo»</b>: apre l\u2019app sulla TV e scrive il titolo nella sua " +
-    "ricerca.<br>Lascia vuoto se non ce l\u2019hai.";
-  pad.appendChild(spiegaSc);
+  pad.appendChild(el("p", "nota",
+    "Con la Scorciatoia impostata, il pulsante sulle schede diventa " +
+    "«Apri l\u2019app e cerca il titolo». Lascia vuoto se non ce " +
+    "l\u2019hai."));
+  pad.appendChild(comeSiFa(
+    "Una pagina web non pu\u00f2 parlare con la TV in rete locale, " +
+    "perch\u00e9 il certificato della TV vale solo per s\u00e9 stessa. " +
+    "Una <b>Scorciatoia</b> di iOS s\u00ec, passando da a-Shell: \u00e8 " +
+    "lei che apre l\u2019app sulla TV e scrive il titolo nella sua " +
+    "ricerca, lettera per lettera, navigando la tastiera a schermo.",
+    "Perch\u00e9 serve una Scorciatoia"));
 
   const campoSc = el("div", "campo");
   campoSc.innerHTML =
@@ -5222,7 +5371,7 @@ function schermoImpostazioni() {
   // riscontro che il salvataggio ha funzionato.
   const boxCmd = el("div", "diagnosi");
 
-  const spiegaNome = el("div", "gusto");
+  const spiegaNome = el("div", "nota");
   spiegaNome.innerHTML =
     "Questo telefono si presenta alla TV come <b>" + esc(chiavi.tvnome) +
     "</b>. \u00c8 il nome che vedi nell\u2019elenco dispositivi della TV, " +
@@ -5238,7 +5387,7 @@ function schermoImpostazioni() {
     'autocomplete="off" spellcheck="false"></textarea>';
   pad.appendChild(campoTk);
   document.getElementById("tk").value = chiavi.tvtoken;
-  const spiegaTk = el("div", "gusto");
+  const spiegaTk = el("div", "nota");
   spiegaTk.innerHTML =
     "Lascialo vuoto la prima volta: la TV chieder\u00e0 il permesso, tu " +
     "accetti, e lo script ti dir\u00e0 il numero da mettere qui. Da quel " +
@@ -5258,7 +5407,7 @@ function schermoImpostazioni() {
   };
   pad.appendChild(salvaTk);
 
-  pad.appendChild(el("p", "sezione", "Il comando per la Scorciatoia"));
+  pad.appendChild(el("p", "sezione", "Il comando per la Scorciatoia della TV"));
   const spiegaCmd = el("div", "gusto");
   spiegaCmd.innerHTML =
     "Nella Scorciatoia serve una sola azione: <b>a-Shell \u203a Esegui " +
@@ -5286,35 +5435,28 @@ function schermoImpostazioni() {
   };
   pad.appendChild(copia);
 
-  bloccoFamiglia(pad);
-  bloccoDiagnosi(pad);
 }
+
 
 // Le impostazioni del Fire Stick. Tre cose: l'indirizzo, la
 // Scorciatoia e dove fermarsi.
 function bloccoFire(pad) {
-  const spiega = el("div", "gusto");
-  spiega.innerHTML =
-    "Il Fire Stick si comanda per <b>ADB</b>, che \u00e8 un'altra cosa da " +
-    "SmartThings: non serve nessun account, serve che il Fire Stick sia " +
-    "sulla rete di casa e abbia il <b>Debug ADB</b> attivo.<br>" +
-    "La prima volta il Fire TV mostra un popup sullo schermo e tu accetti; " +
-    "dopo non chiede pi\u00f9 niente.<br>" +
-    "Il vantaggio sulla strada Samsung: la ricerca del Fire TV copre " +
-    "<b>tutte le app insieme</b>, e dice da s\u00e9 quali ce l\u2019hanno " +
-    "in abbonamento e quali no. Non c\u2019\u00e8 nessuna tastiera da " +
-    "navigare: il titolo si scrive in una volta.";
-  pad.appendChild(spiega);
-
-  const istruzioni = el("div", "diagnosi");
-  istruzioni.innerHTML =
+  pad.appendChild(el("p", "nota",
+    "Scrive il titolo nella ricerca del Fire TV, che copre tutte le app " +
+    "insieme. Niente tastiera da navigare: il titolo si scrive in una " +
+    "volta."));
+  pad.appendChild(comeSiFa(
+    "Il Fire Stick si comanda per <b>ADB</b>, che \u00e8 un\u2019altra " +
+    "cosa da SmartThings: nessun account, basta che sia sulla rete di " +
+    "casa col <b>Debug ADB</b> attivo. La prima volta mostra un popup " +
+    "sullo schermo e tu accetti; dopo non chiede pi\u00f9 niente.<br><br>" +
     "Sul Fire TV, col telecomando:<br>" +
-    "Impostazioni \u203a Il mio Fire TV \u203a Opzioni per sviluppatori " +
-    "\u203a Debug ADB \u203a Attiva<br>" +
-    "Se non vedi le opzioni per sviluppatori: Informazioni \u203a premi OK " +
-    "sette volte sul nome del dispositivo.<br>" +
-    "L\u2019indirizzo sta in Informazioni \u203a Rete.";
-  pad.appendChild(istruzioni);
+    "<b>Impostazioni \u203a Il mio Fire TV \u203a Opzioni per " +
+    "sviluppatori \u203a Debug ADB \u203a Attiva</b><br>" +
+    "Se non vedi le opzioni per sviluppatori: Informazioni \u203a premi " +
+    "OK sette volte sul nome del dispositivo.<br>" +
+    "L\u2019indirizzo sta in <b>Informazioni \u203a Rete</b>.",
+    "Come si accende il Debug ADB"));
 
   // NIENTE PULSANTE SALVA, e non per gusto: prima c'era, stava sotto
   // due campi, e si perdeva. Peggio, toccando una fermata la
@@ -5371,7 +5513,7 @@ function bloccoFire(pad) {
   diciSc();
   pad.appendChild(esitoSc);
 
-  pad.appendChild(el("p", "sezione", "Dove si ferma"));
+  pad.appendChild(el("p", "sottosezione", "Dove si ferma"));
   const spiegaF = el("div", "gusto");
   spiegaF.innerHTML =
     "La catena \u00e8 fatta di tocchi a coordinate fisse, misurate una " +
@@ -5386,7 +5528,7 @@ function bloccoFire(pad) {
     || FERMATE_FIRE[0];
   pad.appendChild(el("p", "nota", quale[2] + "."));
 
-  pad.appendChild(el("p", "sezione", "Il comando per la Scorciatoia"));
+  pad.appendChild(el("p", "sezione", "Il comando per la Scorciatoia del Fire Stick"));
   const spiegaCmdF = el("div", "gusto");
   spiegaCmdF.innerHTML =
     "Nella Scorciatoia serve una sola azione: <b>a-Shell \u203a Esegui " +
@@ -5479,16 +5621,16 @@ function bloccoFireComandi(dove) {
 function bloccoFamiglia(pad) {
   pad.appendChild(el("p", "sezione", "Famiglia"));
 
-  const spiega = el("div", "gusto");
-  spiega.innerHTML =
-    "Due telefoni, la stessa casa. <b>La lista e le spunte notte " +
-    "diventano di casa</b>; <b>i voti restano di chi li d\u00e0</b> ma si " +
-    "vedono entrambi, cos\u00ec «Stasera» pu\u00f2 pescare quello che " +
-    "piace a tutti e due.<br>" +
-    "Il magazzino \u00e8 una tabella su Supabase: niente di acceso in " +
-    "casa, piano gratuito. Quando i due telefoni non sono d\u2019accordo " +
-    "vince il pi\u00f9 recente, titolo per titolo.";
-  pad.appendChild(spiega);
+  pad.appendChild(el("p", "nota",
+    "Due telefoni, la stessa casa: la lista e le spunte notte diventano " +
+    "di casa, i voti restano di chi li d\u00e0 ma si vedono entrambi."));
+  pad.appendChild(comeSiFa(
+    "Il magazzino \u00e8 una tabella su <b>Supabase</b>: niente di " +
+    "acceso in casa, piano gratuito. Quando i due telefoni non sono " +
+    "d\u2019accordo vince il pi\u00f9 recente, titolo per titolo.<br><br>" +
+    "Cos\u00ec «Stasera \u203a Sul nostro gusto» pu\u00f2 pescare quello " +
+    "che piace a tutti e due invece di una media che non \u00e8 il gusto " +
+    "di nessuno.", "Come funziona"));
 
   const stato = el("div", "diagnosi");
   const esito = el("p", "nota");
@@ -5549,7 +5691,7 @@ function bloccoFamiglia(pad) {
   };
   pad.appendChild(genera);
 
-  pad.appendChild(el("p", "sezione", "Stato"));
+  pad.appendChild(el("p", "sottosezione", "Stato"));
   disegnaStato();
   pad.appendChild(stato);
 
@@ -5589,7 +5731,8 @@ function bloccoFamiglia(pad) {
   pad.appendChild(ora);
   pad.appendChild(esito);
 
-  pad.appendChild(el("p", "sezione", "Da fare una volta sola su Supabase"));
+  pad.appendChild(el("p", "sottosezione",
+    "Da fare una volta sola su Supabase"));
   const passi = el("div", "gusto");
   passi.innerHTML =
     "1. <b>supabase.com</b> \u2192 crea un progetto (piano gratuito).<br>" +
