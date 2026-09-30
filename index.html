@@ -745,6 +745,22 @@
 
   /* La stanza in cui non sei: chiusa, ma con lo stesso peso visivo di
      una sezione, cosi' si trova. */
+  /* Fatto una volta, richiuso. Lo stesso pieghevole delle stanze ma
+     piu' leggero: non e' una sezione, e' un passaggio. */
+  .unavolta { margin: 10px 0 0; }
+  .unavolta > summary {
+    min-height: 44px; display: flex; align-items: center;
+    list-style: none; cursor: pointer;
+    font-size: 14px; color: var(--tenue);
+  }
+  .unavolta > summary::-webkit-details-marker { display: none; }
+  .unavolta > summary::after {
+    content: ""; margin-left: 9px;
+    width: 6px; height: 6px; border-right: 1.5px solid var(--debole);
+    border-bottom: 1.5px solid var(--debole); transform: rotate(45deg);
+  }
+  .unavolta[open] > summary::after { transform: rotate(-135deg); }
+
   .stanzaPiegata { margin: 22px 0 0; }
   .stanzaPiegata > summary {
     min-height: 44px; display: flex; align-items: center;
@@ -1103,7 +1119,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20260930110433";
+const VERSIONE = "20260930112943";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -5379,6 +5395,27 @@ function schermoImpostazioni() {
   bloccoDiagnosi(pad);
 }
 
+// Le cose che si fanno UNA VOLTA: aperte finche' non sono fatte,
+// chiuse quando lo sono. CHIUSE e non nascoste: se una si rompe la
+// si riapre, e si vede il segno di spunta invece di dover ricordare
+// se l'avevi fatta.
+//
+// Meta' di questa schermata era cosi': il comando da incollare nella
+// Scorciatoia, il token della TV, l'SQL di Supabase. Roba di cinque
+// minuti in tutta la vita, che stava aperta per sempre.
+function unaVoltaSola(pad, titolo, fatto, riempi) {
+  const d = el("details", "unavolta");
+  if (!fatto) d.setAttribute("open", "");
+  d.appendChild(el("summary", null,
+    (fatto ? "\u2713 " : "") + titolo));
+  const dentro = el("div");
+  d.appendChild(dentro);
+  // attaccato PRIMA di riempirlo: i blocchi cercano i loro campi con
+  // getElementById, e fuori dal documento non li trovano
+  pad.appendChild(d);
+  riempi(dentro);
+}
+
 // Un pieghevole per le istruzioni. <details> e non un pulsante mio:
 // lo apre e chiude il browser, si ricorda da se' com'era, e funziona
 // anche se il resto del codice si rompe.
@@ -5459,6 +5496,13 @@ function bloccoTv(pad) {
       : "")));
   bloccoCollegamento(pad);
 
+  // Con OAuth collegato il token da 24 ore NON SERVE, e tenerlo in
+  // vista e' la domanda «quale dei due sto usando?» ogni volta.
+  if (oauth.collegato) {
+    pad.appendChild(el("p", "nota",
+      "Il permesso \u00e8 OAuth e si rinnova da s\u00e9: il token da 24 " +
+      "ore non serve."));
+  } else {
   const campoTok = el("div", "campo");
   campoTok.innerHTML = '<label for="k2">Token SmartThings</label>' +
     '<textarea id="k2" rows="3" autocapitalize="off" autocomplete="off" ' +
@@ -5494,6 +5538,7 @@ function bloccoTv(pad) {
   };
   pad.appendChild(salvaTok);
   pad.appendChild(esitoTv);
+  }
 
   pad.appendChild(el("p", "sezione", "Scrivere sulla TV"));
   pad.appendChild(el("p", "nota",
@@ -5535,6 +5580,7 @@ function bloccoTv(pad) {
   // riscontro che il salvataggio ha funzionato.
   const boxCmd = el("div", "diagnosi");
 
+  unaVoltaSola(pad, "Il permesso della TV", !!chiavi.tvtoken, (pad) => {
   const spiegaNome = el("div", "nota");
   spiegaNome.innerHTML =
     "Questo telefono si presenta alla TV come <b>" + esc(chiavi.tvnome) +
@@ -5570,8 +5616,10 @@ function bloccoTv(pad) {
     setTimeout(() => { salvaTk.textContent = "Salva il token"; }, 1600);
   };
   pad.appendChild(salvaTk);
+  });
 
-  pad.appendChild(el("p", "sezione", "Il comando per la Scorciatoia della TV"));
+  unaVoltaSola(pad, "Il comando per la Scorciatoia della TV",
+               !!chiavi.scorciatoia, (pad) => {
   const spiegaCmd = el("div", "gusto");
   spiegaCmd.innerHTML =
     "Nella Scorciatoia serve una sola azione: <b>a-Shell \u203a Esegui " +
@@ -5598,7 +5646,7 @@ function bloccoTv(pad) {
     setTimeout(() => { copia.textContent = "Copia il comando"; }, 2000);
   };
   pad.appendChild(copia);
-
+  });
 }
 
 
@@ -5692,7 +5740,8 @@ function bloccoFire(pad) {
     || FERMATE_FIRE[0];
   pad.appendChild(el("p", "nota", quale[2] + "."));
 
-  pad.appendChild(el("p", "sezione", "Il comando per la Scorciatoia del Fire Stick"));
+  unaVoltaSola(pad, "Il comando per la Scorciatoia del Fire Stick",
+               !!chiavi.scorciatoiaFire, (pad) => {
   const spiegaCmdF = el("div", "gusto");
   spiegaCmdF.innerHTML =
     "Nella Scorciatoia serve una sola azione: <b>a-Shell \u203a Esegui " +
@@ -5718,6 +5767,7 @@ function bloccoFire(pad) {
     setTimeout(() => { copiaF.textContent = "Copia il comando"; }, 2000);
   };
   pad.appendChild(copiaF);
+  });
 
   pad.appendChild(el("p", "nota",
     "Quello che l\u2019app NON pu\u00f2 fare per il Fire Stick: vedere " +
@@ -5918,8 +5968,7 @@ function bloccoFamiglia(pad) {
     "Quel link contiene le chiavi: passalo di mano (AirDrop), non in una " +
     "chat di gruppo."));
 
-  pad.appendChild(el("p", "sottosezione",
-    "Da fare una volta sola su Supabase"));
+  unaVoltaSola(pad, "Da fare su Supabase", nuvola.pronta, (pad) => {
   const passi = el("div", "gusto");
   passi.innerHTML =
     "1. <b>supabase.com</b> \u2192 crea un progetto (piano gratuito).<br>" +
@@ -5946,6 +5995,7 @@ function bloccoFamiglia(pad) {
     setTimeout(() => { copiaSql.textContent = "Copia l\u2019SQL"; }, 2000);
   };
   pad.appendChild(copiaSql);
+  });
 }
 
 // Cosa sa l'app di se stessa. Serve quando si rompe sul telefono di
