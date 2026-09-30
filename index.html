@@ -530,6 +530,10 @@
   .mazzoCarte { position: relative; padding: 4px 16px 0; }
   .contaVotare { color: var(--tenue); font-size: 13.5px; text-align: center; }
   .contaVotare b { color: var(--testo); font-weight: 640; }
+  .spiegaMazzo { margin: 2px 16px 8px; color: var(--tenue); font-size: 13px;
+    line-height: 1.5; text-align: center; }
+  .spiegaMazzo b { color: var(--testo); }
+  .spiegaMod { margin: 8px 16px 0; color: var(--tenue); font-size: 13.5px; line-height: 1.5; }
   .cartaV {
     position: relative; z-index: 2;
     background: var(--piano); border: 1px solid var(--bordo);
@@ -665,6 +669,49 @@
   .nuova button {
     padding: 9px 14px; border-radius: 10px; font-size: 14px; font-weight: 660;
     background: var(--acceso-testo); color: var(--acceso); min-height: 40px;
+  }
+
+  /* ------------------------------------------------- il tour della prima volta */
+  .veloTour {
+    position: fixed; inset: 0; z-index: 60;
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+    background: rgba(4,8,11,.86);
+    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    animation: velaEntra .18s ease-out;
+  }
+  @keyframes velaEntra { from { opacity: 0; } to { opacity: 1; } }
+  .tour {
+    width: 100%; max-width: 330px;
+    background: var(--fondo-alto); border: 1px solid var(--bordo);
+    border-radius: 22px; box-shadow: var(--ombra);
+    padding: 30px 24px 22px; text-align: center;
+  }
+  .tourIcona {
+    font-size: 46px; line-height: 1; margin: 2px 0 16px;
+  }
+  .tour h3 { font-size: 21px; font-weight: 680; margin: 0 0 10px; }
+  .tour p {
+    color: var(--tenue); font-size: 15px; line-height: 1.55; margin: 0;
+    min-height: 70px;
+  }
+  .tour p b { color: var(--testo); font-weight: 600; }
+  .tourPunti { display: flex; gap: 7px; justify-content: center; margin: 20px 0 22px; }
+  .tourPunti i {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--bordo); transition: background .2s, transform .2s;
+  }
+  .tourPunti i.on { background: var(--acceso); transform: scale(1.15); }
+  .tourAvanti {
+    width: 100%; padding: 14px; border-radius: 13px;
+    background: var(--acceso); color: var(--acceso-testo);
+    font-size: 16px; font-weight: 680; min-height: 50px;
+  }
+  .tourAvanti:active { transform: scale(.98); }
+  .tourSalta {
+    display: inline-flex; align-items: center; min-height: 40px;
+    margin-top: 6px; padding: 4px 12px;
+    color: var(--debole); font-size: 13.5px;
   }
 
   /* ------------------------------------------------------ in arrivo */
@@ -928,7 +975,7 @@
   </button>
   <button data-scheda="telecomando" aria-selected="false">
     <svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="3"/><circle cx="12" cy="8" r="1.6"/><path d="M10 13h4M10 16.5h4"/></svg>
-    Comandi
+    Telecomando
   </button>
   <button data-scheda="impostazioni" aria-selected="false">
     <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-2.9 1.2V21a2 2 0 11-4 0v-.1A1.7 1.7 0 007 19.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1A1.7 1.7 0 003 13.6H3a2 2 0 110-4h.1A1.7 1.7 0 004.7 7l-.1-.1a2 2 0 112.8-2.8l.1.1A1.7 1.7 0 0010.4 3h.2a2 2 0 114 0v.1a1.7 1.7 0 002.9 1.2l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 001.2 2.9H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>
@@ -1214,7 +1261,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20260930162607";
+const VERSIONE = "20260930164630";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -1363,6 +1410,12 @@ const chiavi = {
   // due cose vanno distinte: senza, all'avvio non si saprebbe se
   // chiedere o no, e chiedere ogni volta sarebbe insopportabile.
   get stradaScelta() { return localStorage.getItem("strada_scelta") === "1"; },
+  // Il tour della prima volta: mostrato una volta sola, poi mai piu'.
+  get tourVisto() { return localStorage.getItem("tour_visto") === "1"; },
+  set tourVisto(v) {
+    if (v) localStorage.setItem("tour_visto", "1");
+    else localStorage.removeItem("tour_visto");
+  },
 };
 
 // I provider italiani: nome e logo per ogni id. Vengono da TMDB una
@@ -3133,6 +3186,73 @@ function schermoBivio(torna) {
   schermo.appendChild(p);
 }
 
+// Il tour della prima volta: tre fumetti che dicono, in ordine, le tre
+// cose che l'app fa - cerchi, vedi se lo paghi, apri sulla TV. Mostrato
+// una volta sola (chiavi.tourVisto), e si chiude con un tocco: chi non
+// lo vuole tocca «Salta» o il fondo e non lo rivede mai piu'. Pensato
+// per chi apre l'app senza averla costruita.
+function mostraTour() {
+  if (chiavi.tourVisto) return;               // due volte no
+  if (document.querySelector(".veloTour")) return;  // gia' aperto
+
+  const schede = [
+    { icona: "\uD83D\uDD0D", titolo: "Cerca un titolo",
+      testo: "Scrivi un film o una serie in <b>Cerca</b>: ti dico subito " +
+             "se \u00e8 compreso in uno dei tuoi abbonamenti." },
+    { icona: "\u2705", titolo: "Vedi se lo paghi gi\u00e0",
+      testo: "<b>«Ce l'hai gi\u00e0»</b> vuol dire che \u00e8 incluso, senza " +
+             "pagare altro. Altrimenti ti dico dove trovarlo." },
+    { icona: "\uD83D\uDCFA", titolo: "Aprilo sulla TV",
+      testo: "Un tocco apre l'app giusta <b>sulla TV o sul Fire Stick</b> e " +
+             "cerca il titolo. Niente pi\u00f9 telecomando per scrivere." },
+  ];
+
+  let passo = 0;
+  const velo = el("div", "veloTour");
+  const carta = el("div", "tour");
+  const icona = el("div", "tourIcona");
+  const titolo = el("h3");
+  const testo = el("p");
+  const punti = el("div", "tourPunti");
+  const pallini = schede.map(() => { const i = el("i"); punti.appendChild(i); return i; });
+  const avanti = el("button", "tourAvanti");
+  const salta = el("div", "tourSalta", "Salta");
+
+  const chiudi = () => {
+    chiavi.tourVisto = true;
+    velo.remove();
+  };
+  const disegna = () => {
+    const s = schede[passo];
+    icona.textContent = s.icona;
+    titolo.textContent = s.titolo;
+    testo.innerHTML = s.testo;
+    pallini.forEach((i, k) => i.classList.toggle("on", k === passo));
+    const ultima = passo === schede.length - 1;
+    avanti.textContent = ultima ? "Iniziamo" : "Avanti";
+    salta.style.visibility = ultima ? "hidden" : "visible";
+  };
+  const avanza = () => {
+    if (passo < schede.length - 1) { passo++; disegna(); }
+    else chiudi();
+  };
+
+  avanti.onclick = avanza;
+  salta.onclick = chiudi;
+  // Un tocco sul fondo (fuori dalla carta) chiude: «si salta con un tocco».
+  velo.addEventListener("click", e => { if (e.target === velo) chiudi(); });
+
+  carta.appendChild(icona);
+  carta.appendChild(titolo);
+  carta.appendChild(testo);
+  carta.appendChild(punti);
+  carta.appendChild(avanti);
+  carta.appendChild(salta);
+  velo.appendChild(carta);
+  document.body.appendChild(velo);
+  disegna();
+}
+
 // Il bollino accanto al titolo: dice in che modo sei, e con un tocco
 // si cambia.
 function bolloStrada() {
@@ -3391,6 +3511,17 @@ async function schermoStasera() {
     attuale: STASERA.modalita,
     scegli: v => { STASERA.modalita = v; schermoStasera(); },
   }));
+
+  // Una riga che dice cosa fa la modalità scelta: per chi apre la
+  // prima volta, «Scopri / Sul mio gusto / Da rivedere» non si
+  // spiegano da soli. Le modalità che hanno già una loro spiegazione
+  // sotto (gusto, casa, rivedere, dormire) non la ripetono qui.
+  const spiegaModalita = {
+    scopri: "Un titolo a caso dai tuoi abbonamenti, coi filtri che scegli " +
+      "qui sotto.",
+  }[STASERA.modalita];
+  if (spiegaModalita)
+    schermo.appendChild(el("p", "spiegaMod", spiegaModalita));
 
   // Ogni modalita' ha bisogno di controlli diversi: mostrarli tutti
   // sempre renderebbe la schermata un pannello di comandi.
@@ -4073,7 +4204,7 @@ async function schermoDettaglio(tipo, id, torna) {
         '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>' +
         '</span><span class="etichetta">Cerca «' +
         esc(d.titolo) + '» sulla TV<small>Apre la ricerca della TV e scrive il ' +
-        "titolo. Poi scegli il risultato con la croce in Comandi.</small></span>";
+        "titolo. Poi scegli il risultato con la croce nel Telecomando.</small></span>";
       sb.onclick = () => scriviConScorciatoia(d.titolo);
       pad.appendChild(sb);
     }
@@ -4770,6 +4901,19 @@ async function parteVotare() {
   });
   schermo.appendChild(chips);
 
+  // Una riga che dice a COSA serve, per chi non ha progettato l'app:
+  // votare non e' fine a se', riempie le due modalita' di Stasera.
+  const perche = el("p", "spiegaMazzo");
+  const scriviPerche = () => {
+    perche.innerHTML = mazzoVotare === "calmi"
+      ? "Titoli <b>calmi</b>, buoni per addormentarsi. Spunta 🌙 su " +
+        "quelli giusti: «Stasera › Per dormire» pesca da lì."
+      : "I titoli che hai più probabilità di <b>aver visto</b>. " +
+        "Votandoli, «Stasera › Sul mio gusto» impara cosa ti piace.";
+  };
+  scriviPerche();
+  schermo.appendChild(perche);
+
   // Un link, discreto, agli scartati: «non per sempre» vuol dire che
   // si devono poter ripescare.
   const zonaScartati = el("div");
@@ -5084,7 +5228,7 @@ async function schermoAltroTelefono(dati) {
   pad.appendChild(comeSiFa(
     "Questo telefono pu\u00f2 fare tutto: dire cosa paghi gi\u00e0, " +
     "cercare, la lista, i voti, «Stasera», e <b>aprire le app sulla " +
-    "TV</b> col telecomando in Comandi \u2014 quello passa dal cloud e " +
+    "TV</b> dal <b>Telecomando</b> \u2014 quello passa dal cloud e " +
     "non serve installare niente.<br><br>" +
     "L\u2019unica cosa che NON fa \u00e8 <b>scrivere il titolo dentro " +
     "l\u2019app della TV</b>: per quella serve a-Shell e una Scorciatoia, " +
@@ -5160,7 +5304,7 @@ async function schermoPrendi(quale, voci) {
 function schermoTelecomando() {
   schermo.innerHTML = "";
   const pad = el("div", "pad");
-  pad.appendChild(el("h1", "titolone", "Comandi"));
+  pad.appendChild(el("h1", "titolone", "Telecomando"));
   schermo.appendChild(pad);
 
   const barra = el("div", "stato");
@@ -6634,6 +6778,12 @@ window.addEventListener("hashchange", () => {
   // niente vorrebbe dire una domanda prima del necessario.
   else if (deveChiedereStrada()) schermoBivio();
   else vai(chiavi.tmdb ? "sfoglia" : "impostazioni");
+  // Il tour, una volta sola: solo a chi e' gia' dentro (c'e' la
+  // chiave, la strada e' scelta) e non l'ha ancora visto, e non se e'
+  // arrivato da un link. Chi ha appena configurato non lo vuole in
+  // faccia prima ancora di scegliere la strada.
+  if (chiavi.tmdb && chiavi.stradaScelta && !chiavi.tourVisto && !arrivo)
+    setTimeout(mostraTour, 300);
   // permesso fresco per quando servira', senza far aspettare nessuno
   if (oauth.collegato) rinnovaSeServe().catch(() => {});
 
