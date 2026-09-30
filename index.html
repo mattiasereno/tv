@@ -699,6 +699,37 @@
     color: var(--tenue); font-size: 13.5px; line-height: 1.55;
   }
 
+  /* Il distintivo della strada, accanto al titolo: serve che si veda
+     SEMPRE in che modo sei, altrimenti ci si confonde su quale
+     pulsante compare sulle schede. */
+  .strada {
+    display: inline-flex; align-items: center; gap: 6px;
+    min-height: 44px; padding: 0 12px; margin: 0 0 0 10px;
+    border-radius: 999px; border: 1px solid var(--bordo);
+    background: var(--piano); color: var(--tenue);
+    font-size: 13px; font-weight: 560; white-space: nowrap;
+  }
+  .strada b { color: var(--testo); font-weight: 600; }
+
+  /* La scelta all'avvio: due riquadri grandi, uno per strada. */
+  .bivio { padding: 8vh 16px 0; }
+  .bivio h1 { margin: 0 0 6px; font-size: 27px; letter-spacing: -.5px; }
+  .bivio > p {
+    margin: 0 0 22px; color: var(--tenue); font-size: 15px; line-height: 1.55;
+  }
+  .bivio .via {
+    display: block; width: 100%; margin: 0 0 12px; padding: 18px;
+    text-align: left; border-radius: 16px;
+    background: var(--piano); border: 1px solid var(--bordo);
+    color: var(--testo);
+  }
+  .bivio .via strong { display: block; font-size: 17.5px; font-weight: 620; }
+  .bivio .via span {
+    display: block; margin: 5px 0 0; color: var(--tenue);
+    font-size: 13.5px; line-height: 1.5; font-weight: 400;
+  }
+  .bivio .via[aria-pressed=true] { border-color: var(--acceso); }
+
   .sentinella { height: 1px; }
   .altri { padding: 18px 0 8px; text-align: center; color: var(--debole); font-size: 14px; }
   button.altri {
@@ -877,6 +908,15 @@ function comandoScorciatoia(titolo) {
          ' --apri "' + titolo + '"';
 }
 
+// Un indirizzo di rete ha una forma. Dirlo subito vale piu' che
+// scoprirlo quando lo script non trova niente: «non arrivo a
+// 1921680121» non fa capire che il difetto e' nel numero.
+function indirizzoBuono(ip) {
+  const pezzi = String(ip).split(".");
+  return pezzi.length === 4 && pezzi.every(
+    p => /^[0-9]{1,3}$/.test(p) && Number(p) <= 255);
+}
+
 // Il comando per la Scorciatoia del Fire Stick. Stessa forma di
 // quello Samsung - niente percorsi, lo script si scarica al volo -
 // ma altro script e altre opzioni.
@@ -982,7 +1022,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20260929193658";
+const VERSIONE = "20260930091536";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -1053,10 +1093,25 @@ const chiavi = {
   // sua, perche' il comando da eseguire e' un altro script.
   get scorciatoiaFire() { return localStorage.getItem("sc_fire") || ""; },
   set scorciatoiaFire(v) { localStorage.setItem("sc_fire", (v || "").trim()); },
-  // solo cifre e punti: qualunque altra cosa si incolli viene pulita
   get fireip() { return localStorage.getItem("fire_ip") || ""; },
   set fireip(v) {
-    localStorage.setItem("fire_ip", String(v).replace(/[^0-9.]/g, ""));
+    // IL TASTIERINO NUMERICO ITALIANO DA' LA VIRGOLA, NON IL PUNTO.
+    // Chi scrive l'indirizzo sul telefono ottiene «192,168,0,121», e
+    // la prima versione buttava le virgole: diventava «1921680121», e
+    // dall'esterno sembrava che non salvasse. Virgole e spazi valgono
+    // punti, e i punti doppi si stringono.
+    const grezzo = String(v).trim().replace(/[,\s]+/g, ".");
+    // Se dentro c'e' un indirizzo intero, si prende QUELLO e si
+    // lascia fuori il resto: incollando «http://192.168.0.121:5555/»
+    // la pulizia a carattere dava «192.168.0.1215555», che e' proprio
+    // il guasto silenzioso che si vuole evitare.
+    const dentro = grezzo.match(/[0-9]{1,3}(?:\.[0-9]{1,3}){3}/);
+    localStorage.setItem("fire_ip", dentro ? dentro[0] : grezzo
+      // altrimenti si tiene quello che si sta scrivendo: senza
+      // questo, un indirizzo a meta' non si potrebbe nemmeno digitare
+      .replace(/[^0-9.]/g, "")
+      .replace(/\.{2,}/g, ".")
+      .replace(/^\.+/g, ""));
   },
   // Dove si ferma la catena sul Fire TV. Il default sono i RISULTATI,
   // di proposito: aprire il primo risultato alla cieca e' la cosa che
@@ -1065,7 +1120,14 @@ const chiavi = {
   set firefino(v) { localStorage.setItem("fire_fino", v); },
   // Quale delle due strade usa l'app: "tv" (Samsung) o "fire".
   get strada() { return localStorage.getItem("strada") || "tv"; },
-  set strada(v) { localStorage.setItem("strada", v === "fire" ? "fire" : "tv"); },
+  set strada(v) {
+    localStorage.setItem("strada", v === "fire" ? "fire" : "tv");
+    localStorage.setItem("strada_scelta", "1");
+  },
+  // Se la strada e' stata SCELTA o e' solo il valore di partenza. Le
+  // due cose vanno distinte: senza, all'avvio non si saprebbe se
+  // chiedere o no, e chiedere ogni volta sarebbe insopportabile.
+  get stradaScelta() { return localStorage.getItem("strada_scelta") === "1"; },
 };
 
 // I provider italiani: nome e logo per ogni id. Vengono da TMDB una
@@ -2199,6 +2261,73 @@ function pannelloFiltri() {
   return p;
 }
 
+// Le due strade, con le parole che contano per chi deve scegliere.
+// Non e' una preferenza estetica: cambia quali pulsanti compaiono
+// sulle schede, e quindi cosa succede quando le premi.
+const STRADE = [
+  ["tv", "TV Samsung", "Apro l\u2019app giusta sulla TV e le scrivo il " +
+   "titolo dentro, lettera per lettera. Un pulsante per ogni app che ce " +
+   "l\u2019ha."],
+  ["fire", "Fire Stick", "Cerco il titolo nella ricerca del Fire TV, che " +
+   "copre tutte le app insieme e dice da s\u00e9 quali ce l\u2019hanno. Un " +
+   "pulsante solo."],
+];
+
+// Si chiede UNA volta, e non a chi non ha ancora la chiave TMDB: a
+// quello serve prima configurare, e una domanda in piu' prima del
+// necessario e' una domanda di troppo.
+function deveChiedereStrada() {
+  return !!chiavi.tmdb && !chiavi.stradaScelta;
+}
+
+function nomeStrada(v) {
+  const s = STRADE.find(x => x[0] === (v || chiavi.strada));
+  return (s || STRADE[0])[1];
+}
+
+// Il bivio. Si vede una volta, al primo avvio, e poi solo se lo
+// chiedi dal distintivo accanto al titolo: chiederlo ogni volta
+// sarebbe insopportabile, non chiederlo mai vuol dire non sapere in
+// che modo sei.
+function schermoBivio(torna) {
+  schermo.innerHTML = "";
+  const p = el("div", "bivio");
+  p.appendChild(el("h1", null, "Dove guardi?"));
+  p.appendChild(el("p", null,
+    "Lo puoi cambiare quando vuoi, dal bollino accanto al titolo."));
+
+  STRADE.forEach(([v, nome, spiega]) => {
+    const b = el("button", "via");
+    b.setAttribute("aria-pressed", String(chiavi.strada === v));
+    b.innerHTML = "<strong>" + esc(nome) +
+      (chiavi.strada === v && chiavi.stradaScelta ? " \u00b7 in uso" : "") +
+      "</strong><span>" + esc(spiega) + "</span>";
+    b.onclick = () => {
+      chiavi.strada = v;
+      if (torna) torna(); else vai("sfoglia");
+    };
+    p.appendChild(b);
+  });
+
+  if (chiavi.stradaScelta) {
+    const indietro = el("button", "altri", "Lascia com\u2019\u00e8");
+    indietro.onclick = () => { if (torna) torna(); else vai("sfoglia"); };
+    p.appendChild(indietro);
+  }
+  schermo.appendChild(p);
+}
+
+// Il bollino accanto al titolo: dice in che modo sei, e con un tocco
+// si cambia.
+function bolloStrada() {
+  const b = el("button", "strada");
+  b.innerHTML = "<b>" + esc(nomeStrada()) + "</b>";
+  b.setAttribute("aria-label",
+    "Stai usando " + nomeStrada() + ". Toccalo per cambiare.");
+  b.onclick = () => schermoBivio(() => vai(scheda_attiva));
+  return b;
+}
+
 async function schermoSfoglia() {
   if (!chiavi.tmdb) return vai("impostazioni");
   const mia = ++generazione;
@@ -2228,7 +2357,11 @@ async function schermoSfoglia() {
   // ------------------------------------------------------------- capo
   const testa = el("div", "pad");
   const capo = el("div", "capo");
-  capo.appendChild(el("h1", "titolone", "TV"));
+  const titolo = el("div");
+  titolo.style.cssText = "display:flex;align-items:center;flex-wrap:wrap";
+  titolo.appendChild(el("h1", "titolone", "TV"));
+  titolo.appendChild(bolloStrada());
+  capo.appendChild(titolo);
   const azioni = el("div", "azioni");
 
   const stasera = el("button", "stasera");
@@ -4610,14 +4743,41 @@ function bloccoFire(pad) {
     "L\u2019indirizzo sta in Informazioni \u203a Rete.";
   pad.appendChild(istruzioni);
 
+  // NIENTE PULSANTE SALVA, e non per gusto: prima c'era, stava sotto
+  // due campi, e si perdeva. Peggio, toccando una fermata la
+  // schermata si rifaceva e buttava via quello che avevi scritto e
+  // non salvato. Adesso si salva mentre scrivi, e sotto si legge
+  // cos'e' salvato.
+  const boxCmdF = el("div", "diagnosi");
+  const esitoIp = el("p", "nota");
+
   const campoIp = el("div", "campo");
   campoIp.innerHTML =
     '<label for="fip">Indirizzo del Fire Stick</label>' +
-    '<textarea id="fip" rows="1" inputmode="decimal" autocapitalize="off" ' +
-    'autocomplete="off" spellcheck="false" placeholder="192.168.0.118">' +
+    '<textarea id="fip" rows="1" autocapitalize="off" ' +
+    'autocomplete="off" spellcheck="false" placeholder="192.168.0.121">' +
     "</textarea>";
   pad.appendChild(campoIp);
-  document.getElementById("fip").value = chiavi.fireip;
+  const campo = document.getElementById("fip");
+  campo.value = chiavi.fireip;
+
+  const diciIp = () => {
+    const ip = chiavi.fireip;
+    esitoIp.innerHTML = !ip
+      ? "Nessun indirizzo salvato."
+      : indirizzoBuono(ip)
+        ? "\u2713 salvato: <b>" + esc(ip) + "</b>"
+        : "Salvato <b>" + esc(ip) + "</b>, ma non sembra un indirizzo: " +
+          "ne servono quattro numeri separati da punti. Se il tastierino " +
+          "ti d\u00e0 la virgola va bene, la conto come un punto.";
+  };
+  campo.oninput = () => {
+    chiavi.fireip = campo.value;
+    diciIp();
+    boxCmdF.textContent = comandoScorciatoiaFire("TITOLO");
+  };
+  diciIp();
+  pad.appendChild(esitoIp);
 
   const campoScF = el("div", "campo");
   campoScF.innerHTML =
@@ -4625,24 +4785,19 @@ function bloccoFire(pad) {
     '<textarea id="fsc" rows="1" autocapitalize="off" autocomplete="off" ' +
     'spellcheck="false" placeholder="Fire"></textarea>';
   pad.appendChild(campoScF);
-  document.getElementById("fsc").value = chiavi.scorciatoiaFire;
-  pad.appendChild(el("p", "nota",
-    "Un\u2019altra Scorciatoia, non la stessa della TV Samsung: il " +
-    "comando da eseguire \u00e8 un altro."));
-
-  const boxCmdF = el("div", "diagnosi");
-
-  const salva = el("button", "svuota", "Salva");
-  salva.style.cssText = "width:100%;margin:4px 0 0";
-  salva.onclick = () => {
-    chiavi.fireip = document.getElementById("fip").value;
-    chiavi.scorciatoiaFire = document.getElementById("fsc").value;
-    document.getElementById("fip").value = chiavi.fireip;
-    boxCmdF.textContent = comandoScorciatoiaFire("TITOLO");
-    salva.textContent = "Salvato";
-    setTimeout(() => { salva.textContent = "Salva"; }, 1600);
+  const campoSc = document.getElementById("fsc");
+  campoSc.value = chiavi.scorciatoiaFire;
+  const esitoSc = el("p", "nota");
+  const diciSc = () => {
+    esitoSc.innerHTML = chiavi.scorciatoiaFire
+      ? "\u2713 salvata: <b>" + esc(chiavi.scorciatoiaFire) + "</b>"
+      : "Nessuna Scorciatoia salvata. \u00c8 un\u2019altra Scorciatoia, " +
+        "non quella della TV Samsung: il comando da eseguire \u00e8 un " +
+        "altro.";
   };
-  pad.appendChild(salva);
+  campoSc.oninput = () => { chiavi.scorciatoiaFire = campoSc.value; diciSc(); };
+  diciSc();
+  pad.appendChild(esitoSc);
 
   pad.appendChild(el("p", "sezione", "Dove si ferma"));
   const spiegaF = el("div", "gusto");
@@ -4837,6 +4992,10 @@ window.addEventListener("hashchange", () => {
   }
   const arrivo = leggiIndirizzo();
   if (arrivo) apriIndirizzo(arrivo);
+  // Il bivio prima di tutto, ma solo se non e' mai stato scelto e
+  // c'e' gia' la chiave: chiederlo a chi non ha ancora configurato
+  // niente vorrebbe dire una domanda prima del necessario.
+  else if (deveChiedereStrada()) schermoBivio();
   else vai(chiavi.tmdb ? "sfoglia" : "impostazioni");
   // permesso fresco per quando servira', senza far aspettare nessuno
   if (oauth.collegato) rinnovaSeServe().catch(() => {});
