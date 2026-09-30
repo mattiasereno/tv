@@ -703,6 +703,14 @@
     color: var(--tenue); font-size: 13.5px; line-height: 1.55;
   }
 
+  /* I tasti da accodare: tutti in vista, a capo quando servono. Una
+     fascia che scorre di lato e' fatta per scegliere UNA cosa fra
+     molte, non per una tastiera in cui devi trovare il tasto. */
+  .tastiFire {
+    display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 4px;
+  }
+  .tastiFire .chip { min-width: 52px; justify-content: center; }
+
   /* Il distintivo della strada, accanto al titolo: serve che si veda
      SEMPRE in che modo sei, altrimenti ci si confonde su quale
      pulsante compare sulle schede. */
@@ -931,11 +939,15 @@ function indirizzoBuono(ip) {
 // Il SEME resta quello di default dentro lo script: e' quello che
 // decide la chiave, e cambiarlo vorrebbe dire riautorizzare il
 // dispositivo sul popup del Fire TV.
-function comandoScorciatoiaFire(titolo) {
+// Il comando NON nomina piu' --cerca: quello arriva nel testo, con
+// tutto il resto. Cosi' la stessa Scorciatoia serve per cercare un
+// titolo E per mandare una fila di tasti - una Scorciatoia per
+// comando vorrebbe dire due cose da impostare, e due da sbagliare.
+function comandoScorciatoiaFire(coda) {
   return 'python3 -c "import urllib.request as u;' +
          "exec(u.urlopen('" + POSIZIONE_FIRE + "').read())\"" +
          (chiavi.fireip ? " --ip=" + chiavi.fireip : "") +
-         ' --cerca "' + titolo + '"';
+         ' "' + coda + '"';
 }
 
 // Il testo da passare alla Scorciatoia del Fire Stick: la fermata e
@@ -944,7 +956,15 @@ function comandoScorciatoiaFire(titolo) {
 // volta sola.
 function testoPerScorciatoiaFire(titolo, fino) {
   const f = fino || "risultati";
-  return (f === "risultati" ? "" : "--fino=" + f + " ") + titolo;
+  return (f === "risultati" ? "" : "--fino=" + f + " ") + "--cerca " + titolo;
+}
+
+// Una fila di tasti, tutti in un viaggio. E' il punto: un viaggio per
+// tasto vorrebbe dire tre secondi a freccia - la generazione della
+// chiave da sola ne vale uno e mezzo - e nessuno naviga un menu
+// cosi'.
+function testoTastiFire(elenco) {
+  return "--tasti " + elenco.join(" ");
 }
 
 const NOMI_PACCHETTO = {
@@ -1026,7 +1046,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20260930093609";
+const VERSIONE = "20260930095419";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -1120,6 +1140,13 @@ const chiavi = {
   // Dove si ferma la catena sul Fire TV. Il default sono i RISULTATI,
   // di proposito: aprire il primo risultato alla cieca e' la cosa che
   // chi usa la TV ha detto di non volere.
+  // Su quale ingresso della TV e' attaccato il Fire Stick. Serve per
+  // le frecce: la TV le passa via HDMI-CEC al dispositivo
+  // dell'ingresso ATTIVO, quindi se la TV guarda altrove le frecce
+  // vanno altrove. L'id lo prendo dalla lista della TV, non lo
+  // indovino.
+  get fireIngresso() { return localStorage.getItem("fire_ingresso") || ""; },
+  set fireIngresso(v) { localStorage.setItem("fire_ingresso", String(v)); },
   get firefino() { return localStorage.getItem("fire_fino") || "risultati"; },
   set firefino(v) { localStorage.setItem("fire_fino", v); },
   // ------------------------------------------------------- la famiglia
@@ -4441,7 +4468,7 @@ async function schermoPrendi(quale, voci) {
 function schermoTelecomando() {
   schermo.innerHTML = "";
   const pad = el("div", "pad");
-  pad.appendChild(el("h1", "titolone", "Telecomando"));
+  pad.appendChild(el("h1", "titolone", "Comandi"));
   schermo.appendChild(pad);
 
   const barra = el("div", "stato");
@@ -4450,6 +4477,14 @@ function schermoTelecomando() {
 
   const corpoTel = el("div", "telecomando");
   schermo.appendChild(corpoTel);
+
+  // In modo Fire Stick la croce qui sotto NON cambia: cambia dove
+  // arrivano i tasti. La TV passa le frecce all'ingresso HDMI attivo
+  // (Anynet+ / CEC), quindi se guarda il Fire Stick le frecce
+  // comandano il Fire Stick - dal cloud, subito, senza uscire
+  // dall'app. E' la ragione per cui questa schermata ha senso anche
+  // per il Fire Stick.
+  if (chiavi.strada === "fire") bloccoFireComandi(corpoTel);
 
   let avviso_attivo = null;
   function lamenta(testo) {
@@ -4736,6 +4771,29 @@ function schermoTelecomando() {
           sc.appendChild(b);
         });
         zonaIngressi.appendChild(sc);
+
+        // Quale ingresso e' il Fire Stick lo sa solo chi ha infilato
+        // il cavo. Lo chiedo qui, dove la lista della TV e' sotto gli
+        // occhi, invece di indovinare «HDMI 2».
+        if (chiavi.strada === "fire") {
+          const q = el("button", "svuota",
+            chiavi.fireIngresso
+              ? "Il Fire Stick \u00e8 su " + chiavi.fireIngresso +
+                " \u00b7 cambia"
+              : "\u00c8 qui il Fire Stick");
+          q.style.cssText = "width:100%;margin:8px 0 0";
+          q.onclick = () => {
+            chiavi.fireIngresso =
+              chiavi.fireIngresso === st.ingresso ? "" : st.ingresso;
+            schermoTelecomando();
+          };
+          zonaIngressi.appendChild(q);
+          zonaIngressi.appendChild(el("p", "nota",
+            "Segna l\u2019ingresso ATTIVO adesso" +
+            (st.ingresso ? " (" + esc(st.ingresso) + ")" : "") +
+            ": serve perch\u00e9 la TV passa le frecce solo al " +
+            "dispositivo dell\u2019ingresso attivo."));
+        }
       }
     } catch (e) {
       barra.querySelector(".pallina").className = "pallina morta";
@@ -5298,6 +5356,112 @@ function bloccoFire(pad) {
     "e torna nera \u2014 provato. Quindi qui non c\u2019\u00e8 nessuna " +
     "conferma automatica: il comando parte, e il riscontro sei tu che " +
     "guardi la TV."));
+}
+
+// I tasti che il CEC non passa, e che quindi vanno per ADB. Il
+// viaggio costa, per questo si accodano e si mandano insieme.
+const TASTI_FIRE = [
+  ["HOME", "Home"], ["BACK", "Indietro"], ["MENU", "Menu"],
+  ["UP", "\u2191"], ["DOWN", "\u2193"], ["LEFT", "\u2190"],
+  ["RIGHT", "\u2192"], ["OK", "OK"],
+  ["PLAY", "Play/Pausa"], ["INDRE", "\u00ab"], ["AVANTI", "\u00bb"],
+  ["DORMI", "Spegni"], ["SVEGLIA", "Accendi"],
+];
+
+let codaFire = [];
+
+// La testa della schermata Comandi quando sei in modo Fire Stick.
+// Due cose: portare la TV sull'ingresso giusto (senza quello le
+// frecce vanno altrove), e una coda di tasti per quando il CEC non
+// basta.
+function bloccoFireComandi(dove) {
+  const p = el("div", "pad");
+  p.style.cssText = "padding-top:0";
+
+  const spiega = el("div", "gusto");
+  spiega.innerHTML =
+    "Sei in modo <b>Fire Stick</b>. La croce e i tasti qui sotto vanno " +
+    "alla TV, e la TV li <b>passa al Fire Stick</b> via HDMI (Anynet+/CEC) " +
+    "quando \u00e8 sul suo ingresso: dal cloud, subito, senza uscire " +
+    "dall\u2019app.<br>" +
+    "<b>Da verificare sulla tua TV</b>: porta la TV sull\u2019ingresso del " +
+    "Fire Stick, premi \u2193 e guarda se si muove. Se non si muove, " +
+    "Anynet+ \u00e8 spento nelle impostazioni della TV \u2014 o quella " +
+    "strada non c\u2019\u00e8, e restano i tasti in coda qui sotto.";
+  p.appendChild(spiega);
+
+  if (chiavi.fireIngresso) {
+    const vai2 = el("button", "primario",
+      "Porta la TV su " + esc(chiavi.fireIngresso));
+    vai2.style.cssText = "width:100%;margin:0 0 10px";
+    vai2.onclick = async () => {
+      vai2.disabled = true;
+      try {
+        await comando("samsungvd.mediaInputSource", "setInputSource",
+                      [chiavi.fireIngresso]);
+        vai2.textContent = "Fatto \u00b7 ora le frecce vanno al Fire Stick";
+      } catch (e) { vai2.textContent = e.message; }
+      setTimeout(() => {
+        vai2.disabled = false;
+        vai2.textContent = "Porta la TV su " + esc(chiavi.fireIngresso);
+      }, 2600);
+    };
+    p.appendChild(vai2);
+  } else {
+    p.appendChild(el("p", "nota",
+      "Dimmi su quale ingresso sta il Fire Stick e ti metto un pulsante " +
+      "per portarci la TV: tocca l\u2019ingresso giusto qui sotto e poi " +
+      "«\u00c8 qui il Fire Stick»."));
+  }
+
+  // ---- la coda, per i tasti che il CEC non passa
+  p.appendChild(el("p", "sezione", "Tasti direttamente al Fire Stick"));
+  p.appendChild(el("p", "nota",
+    "Questi non passano dalla TV: vanno per ADB, quindi ogni invio esce " +
+    "dall\u2019app per un paio di secondi. Per questo si <b>accodano</b> e " +
+    "partono tutti insieme."));
+
+  const fila = el("div", "tastiFire");
+  const vistaCoda = el("p", "nota");
+  const disegnaCoda = () => {
+    vistaCoda.innerHTML = codaFire.length
+      ? "In coda: <b>" + codaFire.map(k =>
+          esc((TASTI_FIRE.find(t => t[0] === k) || [k, k])[1])).join(" ") +
+        "</b>"
+      : "Niente in coda.";
+  };
+  TASTI_FIRE.forEach(([k, etichetta]) => {
+    const b = el("button", "chip", etichetta);
+    b.setAttribute("aria-label", "Accoda " + etichetta);
+    b.onclick = () => {
+      if (codaFire.length >= 20) return;   // una coda infinita non serve
+      codaFire.push(k);
+      disegnaCoda();
+    };
+    fila.appendChild(b);
+  });
+  p.appendChild(fila);
+  disegnaCoda();
+  p.appendChild(vistaCoda);
+
+  const manda = el("button", "primario", "Manda la coda");
+  manda.style.cssText = "width:100%;margin:8px 0 0";
+  manda.onclick = () => {
+    if (!codaFire.length) return;
+    if (!chiavi.scorciatoiaFire || !chiavi.fireip) return vai("impostazioni");
+    const testo = testoTastiFire(codaFire);
+    codaFire = [];
+    disegnaCoda();
+    location.href = urlScorciatoia(chiavi.scorciatoiaFire, testo);
+  };
+  p.appendChild(manda);
+
+  const svuota = el("button", "altri", "Svuota la coda");
+  svuota.style.cssText = "width:100%;margin:6px 0 0";
+  svuota.onclick = () => { codaFire = []; disegnaCoda(); };
+  p.appendChild(svuota);
+
+  dove.appendChild(p);
 }
 
 // Opzioni → Famiglia. Quattro cose da incollare una volta per

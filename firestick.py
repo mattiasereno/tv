@@ -397,6 +397,54 @@ def cerca(a, titolo, fino="risultati", passo=1.2, attesa=15.0, eco=print):
     return testo
 
 
+# --- i tasti ----------------------------------------------------------
+
+# I nomi corti che usa l'app, e il keyevent vero. I nomi corti
+# servono perche' viaggiano in un argomento unico attraverso la
+# Scorciatoia, e "KEYCODE_DPAD_DOWN" ripetuto dieci volte e' una riga
+# lunghissima per niente.
+TASTI = {
+    "UP": "KEYCODE_DPAD_UP",
+    "DOWN": "KEYCODE_DPAD_DOWN",
+    "LEFT": "KEYCODE_DPAD_LEFT",
+    "RIGHT": "KEYCODE_DPAD_RIGHT",
+    "OK": "KEYCODE_DPAD_CENTER",
+    "BACK": "KEYCODE_BACK",
+    "HOME": "KEYCODE_HOME",
+    "MENU": "KEYCODE_MENU",
+    "PLAY": "KEYCODE_MEDIA_PLAY_PAUSE",
+    "INDRE": "KEYCODE_MEDIA_REWIND",
+    "AVANTI": "KEYCODE_MEDIA_FAST_FORWARD",
+    "STOP": "KEYCODE_MEDIA_STOP",
+    "DORMI": "KEYCODE_SLEEP",
+    "SVEGLIA": "KEYCODE_WAKEUP",
+}
+
+
+def tasti(a, elenco, passo=0.35, attesa=15.0, eco=print):
+    """Manda una fila di tasti in UN SOLO collegamento.
+
+    E' il punto: aprire un collegamento per ogni tasto vuol dire tre
+    secondi per freccia - la generazione della chiave da sola ne vale
+    uno e mezzo - e una croce direzionale cosi' non si puo' usare. Qui
+    si paga una volta e si mandano tutti."""
+    fuori = []
+    for nome in elenco:
+        corto = str(nome).strip().upper()
+        if not corto:
+            continue
+        if corto not in TASTI:
+            raise ValueError("non conosco il tasto «" + corto + "»: "
+                             + " ".join(sorted(TASTI)))
+        eco("  " + corto)
+        comanda(a, "input keyevent " + TASTI[corto], attesa)
+        fuori.append(corto)
+        time.sleep(passo)
+    if not fuori:
+        raise ValueError("nessun tasto da mandare")
+    return fuori
+
+
 # --- da riga di comando ------------------------------------------------
 
 def opzioni(argv):
@@ -421,6 +469,19 @@ def opzioni(argv):
     return valori, resto, ignote
 
 
+def separa(resto):
+    """Il comando e il suo argomento, da qualunque forma arrivino.
+
+    La Scorciatoia iOS passa tutto in UN argomento unico, quindi
+    ["--cerca the bear"] e ["--cerca", "the bear"] devono valere la
+    stessa cosa. Prendendo resto[0] il primo caso dava un comando che
+    si chiamava "--cerca the bear"."""
+    parole = " ".join(resto).split()
+    if not parole:
+        return "", ""
+    return parole[0], " ".join(parole[1:])
+
+
 AIUTO = """  FIRE TV STICK, dal telefono e senza dipendenze
 
     python3 firestick.py --ip=192.168.0.118 --prova
@@ -428,7 +489,8 @@ AIUTO = """  FIRE TV STICK, dal telefono e senza dipendenze
     python3 firestick.py --ip=192.168.0.118 --cerca "the bear"
     python3 firestick.py --ip=192.168.0.118 --fino=titolo --cerca "the bear"
     python3 firestick.py --ip=192.168.0.118 --scrivi "the bear"
-    python3 firestick.py --ip=192.168.0.118 --tasto KEYCODE_DPAD_DOWN
+    python3 firestick.py --ip=192.168.0.118 --tasto DOWN
+    python3 firestick.py --ip=192.168.0.118 --tasti "DOWN DOWN RIGHT OK"
     python3 firestick.py --ip=192.168.0.118 --schermata foto.png
     python3 firestick.py --ip=192.168.0.118 --shell "dumpsys power | head"
 
@@ -443,6 +505,12 @@ AIUTO = """  FIRE TV STICK, dal telefono e senza dipendenze
   ("Guarda ora con X") e quali no ("Disponibile con X" e il prezzo).
   Si ferma sui RISULTATI e scegli tu. Con --fino=titolo apre il primo
   risultato e ti fa vedere la pagina; con --fino=servizio parte.
+
+  --tasti manda una fila di tasti in UN SOLO collegamento, e questo e'
+  il punto: un collegamento per tasto vuol dire tre secondi per
+  freccia. I nomi corti sono:
+    UP DOWN LEFT RIGHT OK BACK HOME MENU
+    PLAY INDRE AVANTI STOP DORMI SVEGLIA
 
   Il SEME (--seme=) decide la chiave: lo stesso seme da' sempre la
   stessa chiave, quindi il Fire TV ti riconosce senza che nulla venga
@@ -476,8 +544,7 @@ def main():
     passo = float(valori.get("passo", 1.2))
     nome = valori.get("nome", "tvproject@telefono").encode()
 
-    comando = resto[0]
-    argomento = " ".join(resto[1:])
+    comando, argomento = separa(resto)
 
     try:
         print(f"  mi collego a {ip}:{porta}, chiave dal seme «{seme}»")
@@ -506,8 +573,16 @@ def main():
             print("  Mandato. Guarda lo schermo: se il campo era a fuoco,")
             print("  il testo c'e' tutto in una volta.")
         elif comando == "--tasto":
-            comanda(a, "input keyevent " + argomento, attesa)
-            print(f"  mandato {argomento}")
+            # il nome corto se lo conosco, altrimenti alla lettera:
+            # cosi' resta possibile provare un keyevent qualsiasi
+            secco = argomento.strip().upper()
+            vero = TASTI.get(secco, argomento)
+            comanda(a, "input keyevent " + vero, attesa)
+            print(f"  mandato {vero}")
+        elif comando == "--tasti":
+            fatti = tasti(a, argomento.replace(",", " ").split(),
+                          passo=min(passo, 0.5), attesa=attesa)
+            print(f"  mandati {len(fatti)} tasti in un solo collegamento")
         elif comando == "--schermata":
             dove = argomento or "schermata.png"
             byte = comanda_grezza(a, "screencap -p", attesa)
