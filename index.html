@@ -1046,7 +1046,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20260930095419";
+const VERSIONE = "20260930101401";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -1055,6 +1055,18 @@ const PAESE = "IT", LINGUA = "it-IT";
 
 
 /* -------------------------------------------------- segreti sul telefono */
+
+// La pagina delle API di Supabase mostra piu' indirizzi, e uno
+// incollato con la coda «/rest/v1» diventa «.../rest/v1/rest/v1/voci»:
+// la tabella non si trova, e il messaggio dice «non trovo la tabella»
+// mentre la tabella c'e'. E' successo davvero.
+function pulisciUrlSupa(v) {
+  return String(v || "")
+    .trim().replace(/\s+/g, "")
+    .replace(/\/+$/, "")
+    .replace(/\/rest(\/v1)?$/i, "")
+    .replace(/\/+$/, "");
+}
 
 const chiavi = {
   get tmdb()   { return localStorage.getItem("tmdb_key") || ""; },
@@ -1140,13 +1152,6 @@ const chiavi = {
   // Dove si ferma la catena sul Fire TV. Il default sono i RISULTATI,
   // di proposito: aprire il primo risultato alla cieca e' la cosa che
   // chi usa la TV ha detto di non volere.
-  // Su quale ingresso della TV e' attaccato il Fire Stick. Serve per
-  // le frecce: la TV le passa via HDMI-CEC al dispositivo
-  // dell'ingresso ATTIVO, quindi se la TV guarda altrove le frecce
-  // vanno altrove. L'id lo prendo dalla lista della TV, non lo
-  // indovino.
-  get fireIngresso() { return localStorage.getItem("fire_ingresso") || ""; },
-  set fireIngresso(v) { localStorage.setItem("fire_ingresso", String(v)); },
   get firefino() { return localStorage.getItem("fire_fino") || "risultati"; },
   set firefino(v) { localStorage.setItem("fire_fino", v); },
   // ------------------------------------------------------- la famiglia
@@ -1154,12 +1159,11 @@ const chiavi = {
   // pubblicato: li incolli su ogni telefono. La pagina e' pubblica su
   // GitHub Pages, e una chiave dentro la pagina sarebbe una chiave in
   // mano a chiunque. Cosi' ce l'hanno solo i telefoni di casa.
-  get supaUrl() {
-    return (localStorage.getItem("supa_url") || "").replace(/\/+$/, "");
-  },
-  set supaUrl(v) {
-    localStorage.setItem("supa_url", String(v).trim().replace(/\/+$/, ""));
-  },
+  // Ripulito sia SCRIVENDO sia LEGGENDO. Solo scrivendo non basta: un
+  // indirizzo salvato storto da una versione precedente resterebbe
+  // storto per sempre, e chi lo usa non ha modo di sapere perche'.
+  get supaUrl() { return pulisciUrlSupa(localStorage.getItem("supa_url")); },
+  set supaUrl(v) { localStorage.setItem("supa_url", pulisciUrlSupa(v)); },
   get supaChiave() { return localStorage.getItem("supa_chiave") || ""; },
   set supaChiave(v) {
     localStorage.setItem("supa_chiave", String(v).trim());
@@ -1436,7 +1440,9 @@ const SQL_FAMIGLIA = `create table if not exists voci (
 alter table voci enable row level security;
 create policy "legge" on voci for select using (true);
 create policy "scrive" on voci for insert with check (true);
-create policy "aggiorna" on voci for update using (true);`;
+create policy "aggiorna" on voci for update using (true);
+grant select, insert, update on voci to anon, authenticated;
+notify pgrst, 'reload schema';`;
 
 // I voti DEGLI ALTRI. Stanno in un magazzino a parte di proposito:
 // mescolati ai tuoi, «Sul mio gusto» diventerebbe il gusto medio di
@@ -1622,7 +1628,7 @@ async function unGiroDiScambio() {
     apikey: chiavi.supaChiave,
     Authorization: "Bearer " + chiavi.supaChiave,
   };
-  const base = chiavi.supaUrl + "/rest/v1/voci";
+  const base = indirizzoVoci();
 
   const preso = await fetch(base + "?famiglia=eq." +
     encodeURIComponent(chiavi.famiglia) + "&quando=gt." + chiavi.ultimoScambio,
@@ -1654,6 +1660,78 @@ async function unGiroDiScambio() {
   }
   return { presi: righe.length, applicati: esito.cambiato,
            mandati: daMandareOra.length };
+}
+
+// Prova il collegamento e DICE cosa non va. Serve perche' i modi di
+// sbagliare sono quattro e danno tutti «non funziona»: l'indirizzo,
+// la chiave, la tabella che non c'e', e la tabella che c'e' ma non e'
+// ancora stata esposta.
+async function provaFamiglia() {
+  const dove = indirizzoVoci() + "?limit=1";
+  if (!chiavi.supaUrl)
+    return { ok: false, verdetto: "Manca l\u2019indirizzo del progetto.",
+             dove };
+  if (!chiavi.supaChiave)
+    return { ok: false, verdetto: "Manca la chiave anon.", dove };
+  if (!chiavi.famiglia)
+    return { ok: false, verdetto: "Manca il codice famiglia.", dove };
+  if (!chiavi.io)
+    return { ok: false, verdetto: "Manca il tuo nome: i voti restano di " +
+             "chi li d\u00e0, e senza nome non si sa di chi sono.", dove };
+
+  let r;
+  try {
+    r = await fetch(dove, {
+      headers: {
+        apikey: chiavi.supaChiave,
+        Authorization: "Bearer " + chiavi.supaChiave,
+      },
+    });
+  } catch (e) {
+    return { ok: false, dove, verdetto:
+      "Non arrivo a quell\u2019indirizzo. \u00c8 scritto giusto, e sei " +
+      "in rete? (" + (e.message || "rete") + ")" };
+  }
+
+  let corpo = "";
+  try { corpo = (await r.text()).slice(0, 300); } catch (e) { /* pazienza */ }
+
+  if (r.status === 404)
+    return { ok: false, dove, verdetto:
+      "Arrivo al progetto, ma la tabella <b>voci</b> non c\u2019\u00e8. " +
+      "Due cause, in ordine di frequenza:<br>" +
+      "1. l\u2019SQL non \u00e8 stato eseguito, o \u00e8 andato in " +
+      "errore a met\u00e0 (guarda il riquadro rosso nell\u2019SQL " +
+      "Editor);<br>" +
+      "2. la tabella c\u2019\u00e8 ma l\u2019API non la vede ancora: " +
+      "su Supabase vai in <b>Settings \u203a API</b> e premi " +
+      "<b>Reload schema</b>, oppure riesegui l\u2019ultima riga " +
+      "dell\u2019SQL.", corpo };
+  if (r.status === 401 || r.status === 403)
+    return { ok: false, dove, verdetto:
+      "Arrivo al progetto, ma la chiave non va (" + r.status + "). " +
+      "Deve essere la chiave <b>anon public</b>, non la service_role e " +
+      "non la password del database.", corpo };
+  if (!r.ok)
+    return { ok: false, dove, verdetto: "Supabase ha risposto " + r.status +
+             ".", corpo };
+
+  let righe = null;
+  try { righe = JSON.parse(corpo); } catch (e) { /* pazienza */ }
+  if (!Array.isArray(righe))
+    return { ok: false, dove, verdetto:
+      "Risponde, ma non con una lista di righe: forse " +
+      "l\u2019indirizzo punta a qualcos\u2019altro.", corpo };
+
+  return { ok: true, dove, verdetto:
+    "\u2713 Tutto collegato. La tabella c\u2019\u00e8 e la chiave va." };
+}
+
+// L'indirizzo della tabella, in un posto solo: lo usano lo scambio e
+// la prova, e se divergessero la prova direbbe che va tutto bene su
+// un indirizzo che lo scambio non usa.
+function indirizzoVoci() {
+  return chiavi.supaUrl + "/rest/v1/voci";
 }
 
 async function spiegaSupabase(r) {
@@ -4478,12 +4556,10 @@ function schermoTelecomando() {
   const corpoTel = el("div", "telecomando");
   schermo.appendChild(corpoTel);
 
-  // In modo Fire Stick la croce qui sotto NON cambia: cambia dove
-  // arrivano i tasti. La TV passa le frecce all'ingresso HDMI attivo
-  // (Anynet+ / CEC), quindi se guarda il Fire Stick le frecce
-  // comandano il Fire Stick - dal cloud, subito, senza uscire
-  // dall'app. E' la ragione per cui questa schermata ha senso anche
-  // per il Fire Stick.
+  // In modo Fire Stick la croce qui sotto comanda LA TV, non il Fire
+  // Stick: sono due apparecchi diversi, e qui non sono nemmeno nella
+  // stessa stanza (il Fire Stick sta su un proiettore in camera).
+  // Quindi i tasti per il Fire Stick sono altri, e si accodano.
   if (chiavi.strada === "fire") bloccoFireComandi(corpoTel);
 
   let avviso_attivo = null;
@@ -4772,28 +4848,6 @@ function schermoTelecomando() {
         });
         zonaIngressi.appendChild(sc);
 
-        // Quale ingresso e' il Fire Stick lo sa solo chi ha infilato
-        // il cavo. Lo chiedo qui, dove la lista della TV e' sotto gli
-        // occhi, invece di indovinare «HDMI 2».
-        if (chiavi.strada === "fire") {
-          const q = el("button", "svuota",
-            chiavi.fireIngresso
-              ? "Il Fire Stick \u00e8 su " + chiavi.fireIngresso +
-                " \u00b7 cambia"
-              : "\u00c8 qui il Fire Stick");
-          q.style.cssText = "width:100%;margin:8px 0 0";
-          q.onclick = () => {
-            chiavi.fireIngresso =
-              chiavi.fireIngresso === st.ingresso ? "" : st.ingresso;
-            schermoTelecomando();
-          };
-          zonaIngressi.appendChild(q);
-          zonaIngressi.appendChild(el("p", "nota",
-            "Segna l\u2019ingresso ATTIVO adesso" +
-            (st.ingresso ? " (" + esc(st.ingresso) + ")" : "") +
-            ": serve perch\u00e9 la TV passa le frecce solo al " +
-            "dispositivo dell\u2019ingresso attivo."));
-        }
       }
     } catch (e) {
       barra.querySelector(".pallina").className = "pallina morta";
@@ -5378,48 +5432,28 @@ function bloccoFireComandi(dove) {
   const p = el("div", "pad");
   p.style.cssText = "padding-top:0";
 
+  // PROVATO E SCARTATO, 30/09/2026: qui c'era la strada HDMI-CEC -
+  // mandare le frecce alla TV e lasciare che la TV le passasse al
+  // Fire Stick sull'ingresso attivo. Sarebbe stata istantanea e dal
+  // cloud. NON SERVE A QUESTA CASA: il Fire Stick non e' attaccato
+  // alla TV, e' attaccato a un proiettore in camera da letto, e la
+  // TV non puo' passare niente a un apparecchio che non ha infilato
+  // dentro. Resta scritto perche' se un giorno il Fire Stick finisce
+  // sulla TV, quella strada torna buona in dieci minuti.
   const spiega = el("div", "gusto");
   spiega.innerHTML =
-    "Sei in modo <b>Fire Stick</b>. La croce e i tasti qui sotto vanno " +
-    "alla TV, e la TV li <b>passa al Fire Stick</b> via HDMI (Anynet+/CEC) " +
-    "quando \u00e8 sul suo ingresso: dal cloud, subito, senza uscire " +
-    "dall\u2019app.<br>" +
-    "<b>Da verificare sulla tua TV</b>: porta la TV sull\u2019ingresso del " +
-    "Fire Stick, premi \u2193 e guarda se si muove. Se non si muove, " +
-    "Anynet+ \u00e8 spento nelle impostazioni della TV \u2014 o quella " +
-    "strada non c\u2019\u00e8, e restano i tasti in coda qui sotto.";
+    "Sei in modo <b>Fire Stick</b>, che in questa casa vuol dire " +
+    "<b>la camera da letto</b>: il Fire Stick sta sul proiettore, non " +
+    "sulla TV.<br>" +
+    "Quindi i tasti qui sotto non passano dalla TV \u2014 non " +
+    "potrebbero \u2014 ma vanno <b>direttamente al Fire Stick</b>, per " +
+    "ADB. Ogni invio esce dall\u2019app per un paio di secondi: per " +
+    "questo i tasti si <b>accodano</b> e partono tutti insieme.<br>" +
+    "La croce e il volume pi\u00f9 sotto comandano <b>la TV in salotto</b>, " +
+    "che \u00e8 un altro apparecchio.";
   p.appendChild(spiega);
 
-  if (chiavi.fireIngresso) {
-    const vai2 = el("button", "primario",
-      "Porta la TV su " + esc(chiavi.fireIngresso));
-    vai2.style.cssText = "width:100%;margin:0 0 10px";
-    vai2.onclick = async () => {
-      vai2.disabled = true;
-      try {
-        await comando("samsungvd.mediaInputSource", "setInputSource",
-                      [chiavi.fireIngresso]);
-        vai2.textContent = "Fatto \u00b7 ora le frecce vanno al Fire Stick";
-      } catch (e) { vai2.textContent = e.message; }
-      setTimeout(() => {
-        vai2.disabled = false;
-        vai2.textContent = "Porta la TV su " + esc(chiavi.fireIngresso);
-      }, 2600);
-    };
-    p.appendChild(vai2);
-  } else {
-    p.appendChild(el("p", "nota",
-      "Dimmi su quale ingresso sta il Fire Stick e ti metto un pulsante " +
-      "per portarci la TV: tocca l\u2019ingresso giusto qui sotto e poi " +
-      "«\u00c8 qui il Fire Stick»."));
-  }
-
-  // ---- la coda, per i tasti che il CEC non passa
-  p.appendChild(el("p", "sezione", "Tasti direttamente al Fire Stick"));
-  p.appendChild(el("p", "nota",
-    "Questi non passano dalla TV: vanno per ADB, quindi ogni invio esce " +
-    "dall\u2019app per un paio di secondi. Per questo si <b>accodano</b> e " +
-    "partono tutti insieme."));
+  p.appendChild(el("p", "sezione", "Tasti per il Fire Stick"));
 
   const fila = el("div", "tastiFire");
   const vistaCoda = el("p", "nota");
@@ -5543,6 +5577,21 @@ function bloccoFamiglia(pad) {
   disegnaStato();
   pad.appendChild(stato);
 
+  const prova = el("button", "svuota", "Prova il collegamento");
+  prova.style.cssText = "width:100%;margin:8px 0 0";
+  prova.onclick = async () => {
+    prova.disabled = true;
+    prova.textContent = "Provo\u2026";
+    const r = await provaFamiglia();
+    esito.innerHTML = r.verdetto +
+      '<br><small style="opacity:.7;word-break:break-all">chiamo ' +
+      esc(r.dove) + (r.corpo ? " \u2192 " + esc(r.corpo) : "") + "</small>";
+    if (!r.ok) registro.aggiungi("famiglia", r.verdetto.replace(/<[^>]*>/g, ""));
+    prova.disabled = false;
+    prova.textContent = "Prova il collegamento";
+  };
+  pad.appendChild(prova);
+
   const ora = el("button", "primario", "Scambia adesso");
   ora.style.cssText = "width:100%;margin:8px 0 0";
   ora.onclick = async () => {
@@ -5569,8 +5618,9 @@ function bloccoFamiglia(pad) {
   passi.innerHTML =
     "1. <b>supabase.com</b> \u2192 crea un progetto (piano gratuito).<br>" +
     "2. <b>SQL Editor</b> \u2192 incolla il pezzo qui sotto \u2192 Run.<br>" +
-    "3. <b>Settings \u203a API</b> \u2192 copia Project URL e chiave anon " +
-    "qui sopra.<br>" +
+    "3. <b>Settings \u203a API</b> \u2192 copia <b>Project URL</b> e la " +
+    "chiave <b>anon public</b> qui sopra. Se l\u2019indirizzo lo incolli " +
+    "con la coda <code>/rest/v1</code> non importa: la taglio io.<br>" +
     "4. Sul telefono di tua moglie: stesso indirizzo, stessa chiave, " +
     "<b>stesso codice famiglia</b>, nome diverso.";
   pad.appendChild(passi);
