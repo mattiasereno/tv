@@ -1103,7 +1103,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20260930105248";
+const VERSIONE = "20260930110433";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -1343,6 +1343,12 @@ function leggiIndirizzo() {
   // liste condivise: #/lista/m27205,t1396  e  #/visti/m155:5,t1396:4
   const l = (location.hash || "").match(/^#\/(lista|visti)\/([mt0-9,:]+)$/);
   if (l) return { cosa: l[1], voci: decodificaVoci(l[2]) };
+  // un telefono nuovo da preparare: #/telefono/<dati>
+  const t = (location.hash || "").match(/^#\/telefono\/([A-Za-z0-9_-]+)$/);
+  if (t) {
+    const dati = leggiAltroTelefono(t[1]);
+    if (dati) return { cosa: "telefono", dati };
+  }
   return null;
 }
 
@@ -1812,6 +1818,73 @@ function daMandare() {
     attesaMandare = null;
     scambia().catch(e => registro.aggiungi("famiglia", e.message));
   }, 1500);
+}
+
+/* ------------------------- PREPARARE UN ALTRO TELEFONO
+
+   «Quando faccio il set up per mia moglie voglio mettere meno cose
+   possibili.» Giusto: su un secondo telefono servono cinque cose
+   incollate a mano, e quattro di quelle sono chiavi lunghe.
+
+   Quindi un link che le porta tutte. Si apre sull'altro telefono, si
+   scrive solo il nome, e basta.
+
+   COSA CI METTO: la chiave TMDB, gli abbonamenti, e i tre pezzi
+   della famiglia (indirizzo, chiave anon, codice).
+   COSA NON CI METTO, e non per dimenticanza:
+     - il token SmartThings e il token della TV: sono LEGATI AL
+       DISPOSITIVO. Il token della TV e' legato al nome con cui il
+       telefono si presenta, e due telefoni con lo stesso nome se lo
+       invalidano a vicenda. Copiarlo farebbe danno.
+     - il nome: deve essere DIVERSO, altrimenti i voti si
+       sovrascrivono a vicenda. Lo chiede l'altro telefono.
+     - la Scorciatoia e a-Shell: NON SERVONO. Su quel telefono
+       funziona tutto tranne scrivere il titolo dentro l'app della
+       TV; aprire un'app sulla TV invece si' - quello passa dal
+       cloud.
+
+   IL LINK CONTIENE DELLE CHIAVI. Va passato di mano (AirDrop), non
+   messo in una chat di gruppo. Scritto anche nella schermata.      */
+
+function datiPerAltroTelefono() {
+  return {
+    tmdb: chiavi.tmdb,
+    servizi: chiavi.servizi,
+    supaUrl: chiavi.supaUrl,
+    supaChiave: chiavi.supaChiave,
+    famiglia: chiavi.famiglia,
+  };
+}
+
+// base64 con l'alfabeto da indirizzo: il base64 normale usa + e /,
+// che in un frammento di URL vengono reinterpretati.
+function inBase64Url(testo) {
+  return btoa(unescape(encodeURIComponent(testo)))
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function daBase64Url(testo) {
+  const t = String(testo).replace(/-/g, "+").replace(/_/g, "/");
+  return decodeURIComponent(escape(atob(t)));
+}
+
+function linkAltroTelefono() {
+  return location.origin + location.pathname +
+    "#/telefono/" + inBase64Url(JSON.stringify(datiPerAltroTelefono()));
+}
+
+function leggiAltroTelefono(pezzo) {
+  try {
+    const d = JSON.parse(daBase64Url(pezzo));
+    if (!d || typeof d !== "object") return null;
+    return {
+      tmdb: String(d.tmdb || ""),
+      servizi: Array.isArray(d.servizi) ? d.servizi.map(String) : [],
+      supaUrl: String(d.supaUrl || ""),
+      supaChiave: String(d.supaChiave || ""),
+      famiglia: String(d.famiglia || ""),
+    };
+  } catch (e) { return null; }
 }
 
 // Il gusto: conto generi e keyword dei titoli che hai votato bene,
@@ -4541,6 +4614,97 @@ function filaPerVotare(v, cambiato) {
   return f;
 }
 
+// La schermata che accoglie un telefono nuovo. NON scrive niente da
+// sola: fa vedere cosa metterebbe e aspetta un tocco. Aprire un link
+// e trovarsi le impostazioni cambiate sarebbe una sorpresa, e su un
+// telefono che era gia' configurato sarebbe un danno.
+async function schermoAltroTelefono(dati) {
+  window.scrollTo(0, 0);
+  schermo.innerHTML = "";
+  const pad = el("div", "pad");
+  pad.appendChild(el("h1", "titolone", "Preparo questo telefono"));
+  schermo.appendChild(pad);
+
+  const cosaFa = [
+    ["Chiave TMDB", dati.tmdb ? "s\u00ec" : "manca"],
+    ["Abbonamenti", dati.servizi.length
+      ? dati.servizi.map(nomeProvider).join(", ") : "nessuno"],
+    ["Famiglia", dati.famiglia || "nessuna"],
+  ];
+  const d = el("div", "diagnosi");
+  d.innerHTML = cosaFa.map(([k, v2]) =>
+    "<div><span>" + esc(k) + "</span><span>" + esc(v2) + "</span></div>")
+    .join("");
+  pad.appendChild(d);
+
+  const gia = chiavi.tmdb || chiavi.famiglia;
+  pad.appendChild(el("p", "nota", gia
+    ? "Attenzione: su questo telefono c\u2019\u00e8 gi\u00e0 una " +
+      "configurazione, e queste impostazioni la sostituiscono. I titoli " +
+      "e i voti non si toccano."
+    : "Manca solo il tuo nome: serve perch\u00e9 i voti restano di chi li " +
+      "d\u00e0, e due telefoni con lo stesso nome se li sovrascrivono."));
+
+  const campo = el("div", "campo");
+  campo.innerHTML = '<label for="mionome">Come ti chiami</label>' +
+    '<textarea id="mionome" rows="1" autocapitalize="words" ' +
+    'autocomplete="off" spellcheck="false"></textarea>';
+  pad.appendChild(campo);
+  document.getElementById("mionome").value = chiavi.io;
+
+  const esito = el("p", "nota");
+  const via = el("button", "primario", "Metti queste impostazioni");
+  via.style.cssText = "width:100%;margin:8px 0 0";
+  via.onclick = async () => {
+    const nome = document.getElementById("mionome").value.trim();
+    if (!nome) {
+      esito.textContent = "Scrivi il tuo nome, poi riprova.";
+      return;
+    }
+    via.disabled = true;
+    via.textContent = "Metto\u2026";
+    if (dati.tmdb) chiavi.tmdb = dati.tmdb;
+    if (dati.servizi.length) chiavi.servizi = dati.servizi;
+    if (dati.supaUrl) chiavi.supaUrl = dati.supaUrl;
+    if (dati.supaChiave) chiavi.supaChiave = dati.supaChiave;
+    if (dati.famiglia) chiavi.famiglia = dati.famiglia;
+    chiavi.io = nome;
+    // la strada: su un telefono nuovo si parte dalla TV, che e' quella
+    // che funziona senza installare niente
+    chiavi.strada = "tv";
+    pulisciIndirizzo();
+    try {
+      if (nuvola.pronta) {
+        esito.textContent = "Prendo liste e voti di casa\u2026";
+        const r = await scambia();
+        esito.textContent = "Presi " + r.presi + " pezzi di casa.";
+      }
+    } catch (e) {
+      esito.textContent = "Impostazioni messe, ma la famiglia non risponde: " +
+        e.message;
+      registro.aggiungi("famiglia", e.message);
+    }
+    setTimeout(() => vai(chiavi.tmdb ? "sfoglia" : "impostazioni"), 900);
+  };
+  pad.appendChild(via);
+  pad.appendChild(esito);
+
+  pad.appendChild(comeSiFa(
+    "Questo telefono pu\u00f2 fare tutto: dire cosa paghi gi\u00e0, " +
+    "cercare, la lista, i voti, «Stasera», e <b>aprire le app sulla " +
+    "TV</b> col telecomando in Comandi \u2014 quello passa dal cloud e " +
+    "non serve installare niente.<br><br>" +
+    "L\u2019unica cosa che NON fa \u00e8 <b>scrivere il titolo dentro " +
+    "l\u2019app della TV</b>: per quella serve a-Shell e una Scorciatoia, " +
+    "e sono cose da mettere solo sul telefono che le usa.",
+    "Cosa fa e cosa non fa questo telefono"));
+
+  const no = el("button", "altri", "No, lascia com\u2019\u00e8");
+  no.style.cssText = "width:100%;margin:6px 0 0";
+  no.onclick = () => { pulisciIndirizzo(); vai(chiavi.tmdb ? "sfoglia" : "impostazioni"); };
+  pad.appendChild(no);
+}
+
 async function schermoPrendi(quale, voci) {
   window.scrollTo(0, 0);
   if (!voci.length) return vuoto("Questo indirizzo non contiene nessun titolo.");
@@ -5731,6 +5895,29 @@ function bloccoFamiglia(pad) {
   pad.appendChild(ora);
   pad.appendChild(esito);
 
+  pad.appendChild(el("p", "sottosezione", "Un altro telefono"));
+  pad.appendChild(el("p", "nota",
+    "Un link che porta chiave TMDB, abbonamenti e famiglia. " +
+    "Sull\u2019altro telefono si apre, si scrive il nome, e basta: " +
+    "niente a-Shell, niente Scorciatoia, niente token."));
+  const prep = el("button", "svuota", "Prepara un altro telefono");
+  prep.style.cssText = "width:100%;margin:4px 0 0";
+  const dovePrep = el("div");
+  prep.onclick = async () => {
+    const esitoP = await condividi("Prepara il telefono", linkAltroTelefono(),
+                                   dovePrep);
+    prep.textContent = esitoP === "copiato" ? "Link copiato"
+      : esitoP === "condiviso" ? "Mandato"
+      : esitoP === "annullato" ? "Prepara un altro telefono"
+      : "Il link \u00e8 qui sotto";
+    setTimeout(() => { prep.textContent = "Prepara un altro telefono"; }, 2600);
+  };
+  pad.appendChild(prep);
+  pad.appendChild(dovePrep);
+  pad.appendChild(el("p", "nota",
+    "Quel link contiene le chiavi: passalo di mano (AirDrop), non in una " +
+    "chat di gruppo."));
+
   pad.appendChild(el("p", "sottosezione",
     "Da fare una volta sola su Supabase"));
   const passi = el("div", "gusto");
@@ -5886,6 +6073,9 @@ async function controllaVersione() {
 
 // Un indirizzo condiviso apre direttamente quella scheda.
 function apriIndirizzo(dove) {
+  // Questo viene PRIMA del controllo sulla chiave: e' proprio il link
+  // che serve a chi non ha ancora niente.
+  if (dove.cosa === "telefono") return schermoAltroTelefono(dove.dati);
   if (!chiavi.tmdb) return vai("impostazioni");
   if (dove.cosa === "lista" || dove.cosa === "visti")
     return schermoPrendi(dove.cosa, dove.voci);
