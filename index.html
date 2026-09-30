@@ -218,6 +218,10 @@
   }
   .apri:active { background: var(--piano-alto); }
   .apri .logo { width: 34px; height: 34px; border-radius: 8px; flex: 0 0 34px; background: var(--piano-alto); }
+  /* Il Fire Stick cerca fra TUTTE le app, quindi non ha un logo suo:
+     una lente invece del quadratino vuoto. */
+  .apri .logo.cerca { display: flex; align-items: center; justify-content: center; }
+  .apri .logo.cerca svg { width: 19px; height: 19px; stroke: var(--tenue); stroke-width: 2; fill: none; }
   .apri .etichetta { flex: 1; text-align: left; }
   .apri small { display: block; font-size: 12.5px; font-weight: 400; color: var(--debole); margin-top: 1px; }
   .apri.fatto { background: var(--acceso); color: var(--acceso-testo); border-color: var(--acceso); }
@@ -1131,7 +1135,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20260930152029";
+const VERSIONE = "20260930153101";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -3716,7 +3720,9 @@ function pulsanteFire(d) {
   const pronto = !!(chiavi.scorciatoiaFire && chiavi.fireip);
   const fermata = FERMATE_FIRE.find(f => f[0] === chiavi.firefino)
     || FERMATE_FIRE[0];
-  b.innerHTML = '<span class="logo"></span><span class="etichetta">' +
+  b.innerHTML = '<span class="logo cerca"><svg viewBox="0 0 24 24">' +
+    '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>' +
+    '</span><span class="etichetta">' +
     (pronto
       ? "Cerca «" + esc(d.titolo) + "» sul Fire Stick<small>" +
         esc(fermata[2]) + "</small>"
@@ -3900,7 +3906,9 @@ async function schermoDettaglio(tipo, id, torna) {
     // apre Scorciatoie per dire "non trovata" non aiuta nessuno.
     if (chiavi.scorciatoia) {
       const sb = el("button", "apri");
-      sb.innerHTML = '<span class="logo"></span><span class="etichetta">Cerca «' +
+      sb.innerHTML = '<span class="logo cerca"><svg viewBox="0 0 24 24">' +
+        '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>' +
+        '</span><span class="etichetta">Cerca «' +
         esc(d.titolo) + '» sulla TV<small>Apre la ricerca della TV e scrive il ' +
         "titolo. Poi scegli il risultato con la croce in Comandi.</small></span>";
       sb.onclick = () => scriviConScorciatoia(d.titolo);
@@ -4801,16 +4809,30 @@ function schermoTelecomando() {
 
   const barra = el("div", "stato");
   barra.innerHTML = '<span class="pallina"></span><span class="quale">Leggo lo stato…</span>';
-  pad.appendChild(barra);
+
+  // In modo Fire Stick il Fire Stick viene PRIMA - e' il motivo per
+  // cui sei in questo modo - e la TV Samsung sta sotto, con un titolo
+  // suo. Prima l'allarme SmartThings galleggiava in cima e sembrava
+  // che tutto fosse rotto, mentre il telecomando del Fire Stick non
+  // ha bisogno di SmartThings: sono due apparecchi, in due stanze.
+  if (chiavi.strada === "fire") {
+    const corpoFire = el("div", "telecomando");
+    schermo.appendChild(corpoFire);
+    bloccoFireComandi(corpoFire);
+    const t = el("div", "pad");
+    t.style.cssText = "padding-top:0";
+    t.appendChild(el("p", "sezione", "La TV in salotto"));
+    t.appendChild(el("p", "nota",
+      "Volume, accensione e ingressi della TV Samsung — un altro " +
+      "apparecchio, un’altra stanza."));
+    t.appendChild(barra);              // lo stato appartiene a questa sezione
+    schermo.appendChild(t);
+  } else {
+    pad.appendChild(barra);            // in modo TV lo stato sta in cima
+  }
 
   const corpoTel = el("div", "telecomando");
   schermo.appendChild(corpoTel);
-
-  // In modo Fire Stick la croce qui sotto comanda LA TV, non il Fire
-  // Stick: sono due apparecchi diversi, e qui non sono nemmeno nella
-  // stessa stanza (il Fire Stick sta su un proiettore in camera).
-  // Quindi i tasti per il Fire Stick sono altri, e si accodano.
-  if (chiavi.strada === "fire") bloccoFireComandi(corpoTel);
 
   let avviso_attivo = null;
   function lamenta(testo) {
