@@ -745,6 +745,14 @@
 
   /* La stanza in cui non sei: chiusa, ma con lo stesso peso visivo di
      una sezione, cosi' si trova. */
+  /* I tasti a colpo singolo: tutti in vista, a capo quando servono.
+     Una fascia che scorre di lato e' fatta per scegliere UNA cosa fra
+     molte, non per dei tasti. */
+  .tastiFire {
+    display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 0;
+  }
+  .tastiFire .chip { justify-content: center; }
+
   /* Fatto una volta, richiuso. Lo stesso pieghevole delle stanze ma
      piu' leggero: non e' una sezione, e' un passaggio. */
   .unavolta { margin: 10px 0 0; }
@@ -1040,6 +1048,10 @@ function testoTastiFire(elenco) {
   return testoFire("--tasti " + elenco.join(" "));
 }
 
+function testoTastoFire(tasto) {
+  return testoFire("--tasto " + tasto);
+}
+
 const NOMI_PACCHETTO = {
   "org.tizen.netflix-app": "Netflix",
   "org.tizen.primevideo": "Prime Video",
@@ -1119,7 +1131,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20260930112943";
+const VERSIONE = "20260930114348";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -5815,17 +5827,41 @@ function bloccoFireComandi(dove) {
   spiega.innerHTML =
     "Sei in modo <b>Fire Stick</b>, che in questa casa vuol dire " +
     "<b>la camera da letto</b>: il Fire Stick sta sul proiettore.<br>" +
-    "Per il Fire Stick l\u2019app fa <b>una cosa sola</b>, e la fa " +
-    "meglio del telecomando: dalla scheda di un titolo, " +
-    "<b>scrivergli il titolo nella ricerca</b>. Un titolo intero in un " +
-    "colpo, invece di beccare le lettere una a una.<br>" +
-    "<b>I tasti no.</b> Ogni comando dovrebbe uscire dall\u2019app per " +
-    "un paio di secondi, e un telecomando cos\u00ec non si usa \u2014 " +
-    "provato e tolto. Per quelli c\u2019\u00e8 il telecomando vero, che " +
-    "in camera sta a mezzo metro.<br>" +
-    "La croce e il volume qui sotto comandano <b>la TV in salotto</b>, " +
-    "che \u00e8 un altro apparecchio.";
+    "Questi tasti vanno al Fire Stick, uno per volta, e ognuno esce " +
+    "dall\u2019app per <b>circa due secondi</b>. Per <b>un</b> tocco va " +
+    "bene; per navigare un menu a colpi di frecce no, e per quello il " +
+    "telecomando in camera sta a mezzo metro.<br>" +
+    "La croce e il volume pi\u00f9 sotto comandano <b>la TV in " +
+    "salotto</b>, che \u00e8 un altro apparecchio.";
   p.appendChild(spiega);
+
+  // Solo i tasti che si premono UNA volta. Le frecce no: non e' una
+  // dimenticanza, e' il motivo per cui la coda di tasti che c'era qui
+  // e' stata tolta (vedi il commento sopra). --tasti resta nello
+  // script, se un giorno la si rivuole.
+  const soli = [
+    ["PLAY", "\u23f8 Play / Pausa"],
+    ["OK", "OK"],
+    ["BACK", "Indietro"],
+    ["HOME", "Home"],
+  ];
+  const pronto = !!(chiavi.fireip && chiavi.scorciatoiaFire);
+  const fila = el("div", "tastiFire");
+  soli.forEach(([k, etichetta]) => {
+    const b = el("button", "chip", etichetta);
+    b.onclick = () => {
+      if (!pronto) return vai("impostazioni");
+      location.href = urlScorciatoia(chiavi.scorciatoiaFire,
+                                     testoTastoFire(k));
+    };
+    fila.appendChild(b);
+  });
+  p.appendChild(fila);
+  if (!pronto)
+    p.appendChild(el("p", "nota",
+      "Da finire di impostare in Opzioni: manca " +
+      (chiavi.fireip ? "il nome della Scorciatoia"
+                     : "l\u2019indirizzo del Fire Stick") + "."));
 
   dove.appendChild(p);
 }

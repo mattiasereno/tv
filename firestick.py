@@ -28,6 +28,7 @@ con RSA, e senza librerie va fatta a mano:
 
 import base64
 import hashlib
+import json
 import os
 import random
 import socket
@@ -218,8 +219,65 @@ def chiave_per_android(n, nome=b"tvproject@telefono"):
 # Quindi il secondo token non e' un errore: e' il modo che ha di dire
 # "non ti conosco, presentati".
 
-def collega(ip, seme, porta=5555, nome=b"tvproject@telefono", timeout=10):
+# La chiave tenuta da parte. Derivarla costa 1.56 s MISURATI, che
+# sono meta' del tempo di ogni comando: su un tasto «pausa» si sente
+# tutto, e su una fila di tasti si paga una volta sola ma si paga.
+#
+# Non e' un segreto nuovo in un posto nuovo: dal seme la chiave si
+# rifa' IDENTICA, quindi questo file e' la copia di una cosa che
+# chiunque abbia il telefono puo' rigenerare in un secondo e mezzo.
+# Il seme sta nel comando, non qui.
+CACHE_VERSIONE = 1
+
+
+def dove_tenere_la_chiave(seme):
+    """Il file della cache, nella prima cartella scrivibile che trovo.
+
+    Su a-Shell e' ~/Documents; sul Mac pure. Se non se ne trova
+    nessuna si torna a derivare ogni volta: lento, non rotto."""
+    marchio = hashlib.sha256(("firechiave:" + seme).encode()).hexdigest()[:12]
+    for d in (os.path.expanduser("~/Documents"), os.path.expanduser("~"),
+              "/tmp"):
+        try:
+            if os.path.isdir(d) and os.access(d, os.W_OK):
+                return os.path.join(d, ".firechiave-" + marchio + ".json")
+        except OSError:
+            continue
+    return None
+
+
+def chiave_tenuta(seme, usa_cache=True):
+    if not usa_cache:
+        return chiave(seme)
+    f = dove_tenere_la_chiave(seme)
+    if f and os.path.exists(f):
+        try:
+            with open(f) as h:
+                dati = json.load(h)
+            if int(dati.get("versione", 0)) == CACHE_VERSIONE:
+                n, d = int(dati["n"]), int(dati["d"])
+                # UNA verifica, perche' una cache corrotta che passa per
+                # buona darebbe un errore di autorizzazione
+                # incomprensibile: 2 elevato a e*d dev'essere 2.
+                if pow(pow(2, 65537, n), d, n) == 2:
+                    return n, d
+        except Exception:
+            pass          # cache illeggibile o sbagliata: si rifa'
     n, d = chiave(seme)
+    if f:
+        try:
+            with open(f, "w") as h:
+                json.dump({"versione": CACHE_VERSIONE,
+                           "n": str(n), "d": str(d)}, h)
+            os.chmod(f, 0o600)
+        except OSError:
+            pass          # non si puo' scrivere: pazienza, si rideriva
+    return n, d
+
+
+def collega(ip, seme, porta=5555, nome=b"tvproject@telefono", timeout=10,
+            usa_cache=True):
+    n, d = chiave_tenuta(seme, usa_cache)
     a = Adb(ip, porta, timeout)
     a.manda(CNXN, VERSIONE, MAX_DATI, b"host::\x00")
     token_visti = 0
@@ -451,7 +509,8 @@ def opzioni(argv):
     """Le opzioni come --chiave=valore, anche dentro un argomento
     unico: la Scorciatoia iOS passa tutto in un pezzo solo, come per
     scrivi_telefono.py."""
-    noti = {"ip", "porta", "seme", "nome", "attesa", "fino", "passo"}
+    noti = {"ip", "porta", "seme", "nome", "attesa", "fino", "passo",
+            "cache"}
     valori, resto, ignote = {}, [], []
     for pezzo in argv:
         tenute = []
@@ -512,6 +571,10 @@ AIUTO = """  FIRE TV STICK, dal telefono e senza dipendenze
     UP DOWN LEFT RIGHT OK BACK HOME MENU
     PLAY INDRE AVANTI STOP DORMI SVEGLIA
 
+  La chiave derivata viene TENUTA DA PARTE in un file nascosto: farla
+  costa un secondo e mezzo, ed e' meta' del tempo di ogni comando.
+  Con --cache=0 la si rifa' ogni volta.
+
   Il SEME (--seme=) decide la chiave: lo stesso seme da' sempre la
   stessa chiave, quindi il Fire TV ti riconosce senza che nulla venga
   salvato su disco. Cambiarlo vuol dire riautorizzare."""
@@ -552,7 +615,8 @@ def main():
         # la prima volta il Fire TV mostra un popup e sta fermo finche'
         # qualcuno non lo accetta. Con dieci secondi fissi scadeva
         # prima che si facesse in tempo a prendere il telecomando.
-        a, chi = collega(ip, seme, porta, nome, timeout=attesa)
+        a, chi = collega(ip, seme, porta, nome, timeout=attesa,
+                         usa_cache=valori.get("cache") != "0")
         print(f"  collegato: {chi}")
 
         if comando == "--prova":
