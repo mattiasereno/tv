@@ -703,14 +703,6 @@
     color: var(--tenue); font-size: 13.5px; line-height: 1.55;
   }
 
-  /* I tasti da accodare: tutti in vista, a capo quando servono. Una
-     fascia che scorre di lato e' fatta per scegliere UNA cosa fra
-     molte, non per una tastiera in cui devi trovare il tasto. */
-  .tastiFire {
-    display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 4px;
-  }
-  .tastiFire .chip { min-width: 52px; justify-content: center; }
-
   /* Il distintivo della strada, accanto al titolo: serve che si veda
      SEMPRE in che modo sei, altrimenti ci si confonde su quale
      pulsante compare sulle schede. */
@@ -1046,7 +1038,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20260930101401";
+const VERSIONE = "20260930102956";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -5412,88 +5404,55 @@ function bloccoFire(pad) {
     "guardi la TV."));
 }
 
-// I tasti che il CEC non passa, e che quindi vanno per ADB. Il
-// viaggio costa, per questo si accodano e si mandano insieme.
-const TASTI_FIRE = [
-  ["HOME", "Home"], ["BACK", "Indietro"], ["MENU", "Menu"],
-  ["UP", "\u2191"], ["DOWN", "\u2193"], ["LEFT", "\u2190"],
-  ["RIGHT", "\u2192"], ["OK", "OK"],
-  ["PLAY", "Play/Pausa"], ["INDRE", "\u00ab"], ["AVANTI", "\u00bb"],
-  ["DORMI", "Spegni"], ["SVEGLIA", "Accendi"],
-];
+/* TOLTO, 30/09/2026 - e vale la pena sapere perche'.
 
-let codaFire = [];
+   Qui c'era un telecomando per il Fire Stick: i tasti si accodavano e
+   partivano insieme con --tasti, per non pagare un viaggio per
+   freccia. Chi la usa ha guardato ed e' stato netto: «i tasti aprono
+   la scorciatoia per forza? e' inutilizzabile cosi'». Ha ragione, e
+   la conclusione giusta e' togliere, non difendere.
+
+   Le vie d'uscita, cercate prima di arrendersi:
+     - una pagina web non puo' aprire una socket TCP. Muro, non
+       difficolta'.
+     - a-Shell potrebbe tenere aperto il collegamento ADB e prendere
+       comandi da un server locale... ma iOS lo SOSPENDE appena passi
+       a Safari. Il server muore. Muro.
+     - il Fire TV ha DIAL in HTTP, ma una pagina https non puo'
+       chiamare http://192.168.x.x. Stesso muro del ponte Samsung.
+     - HDMI-CEC dalla TV: non serve, il Fire Stick sta su un
+       proiettore in camera.
+     - Amazon non ha nessuna API cloud per il telecomando.
+
+   Quindi: per il Fire Stick l'app fa UNA cosa, e la fa meglio del
+   telecomando: scrivere il titolo. Un viaggio per un titolo intero
+   invece di beccare venti lettere su una tastiera a schermo e' un
+   affare. Un viaggio per una freccia non lo e'.
+   I tasti li fa il telecomando, che in camera sta a mezzo metro.
+
+   --tasti resta dentro firestick.py: da riga di comando serve, e per
+   capire cosa e' rotto quando si rompe serve ancora di piu'.        */
 
 // La testa della schermata Comandi quando sei in modo Fire Stick.
-// Due cose: portare la TV sull'ingresso giusto (senza quello le
-// frecce vanno altrove), e una coda di tasti per quando il CEC non
-// basta.
 function bloccoFireComandi(dove) {
   const p = el("div", "pad");
   p.style.cssText = "padding-top:0";
 
-  // PROVATO E SCARTATO, 30/09/2026: qui c'era la strada HDMI-CEC -
-  // mandare le frecce alla TV e lasciare che la TV le passasse al
-  // Fire Stick sull'ingresso attivo. Sarebbe stata istantanea e dal
-  // cloud. NON SERVE A QUESTA CASA: il Fire Stick non e' attaccato
-  // alla TV, e' attaccato a un proiettore in camera da letto, e la
-  // TV non puo' passare niente a un apparecchio che non ha infilato
-  // dentro. Resta scritto perche' se un giorno il Fire Stick finisce
-  // sulla TV, quella strada torna buona in dieci minuti.
   const spiega = el("div", "gusto");
   spiega.innerHTML =
     "Sei in modo <b>Fire Stick</b>, che in questa casa vuol dire " +
-    "<b>la camera da letto</b>: il Fire Stick sta sul proiettore, non " +
-    "sulla TV.<br>" +
-    "Quindi i tasti qui sotto non passano dalla TV \u2014 non " +
-    "potrebbero \u2014 ma vanno <b>direttamente al Fire Stick</b>, per " +
-    "ADB. Ogni invio esce dall\u2019app per un paio di secondi: per " +
-    "questo i tasti si <b>accodano</b> e partono tutti insieme.<br>" +
-    "La croce e il volume pi\u00f9 sotto comandano <b>la TV in salotto</b>, " +
+    "<b>la camera da letto</b>: il Fire Stick sta sul proiettore.<br>" +
+    "Per il Fire Stick l\u2019app fa <b>una cosa sola</b>, e la fa " +
+    "meglio del telecomando: dalla scheda di un titolo, " +
+    "<b>scrivergli il titolo nella ricerca</b>. Un titolo intero in un " +
+    "colpo, invece di beccare le lettere una a una.<br>" +
+    "<b>I tasti no.</b> Ogni comando dovrebbe uscire dall\u2019app per " +
+    "un paio di secondi, e un telecomando cos\u00ec non si usa \u2014 " +
+    "provato e tolto. Per quelli c\u2019\u00e8 il telecomando vero, che " +
+    "in camera sta a mezzo metro.<br>" +
+    "La croce e il volume qui sotto comandano <b>la TV in salotto</b>, " +
     "che \u00e8 un altro apparecchio.";
   p.appendChild(spiega);
-
-  p.appendChild(el("p", "sezione", "Tasti per il Fire Stick"));
-
-  const fila = el("div", "tastiFire");
-  const vistaCoda = el("p", "nota");
-  const disegnaCoda = () => {
-    vistaCoda.innerHTML = codaFire.length
-      ? "In coda: <b>" + codaFire.map(k =>
-          esc((TASTI_FIRE.find(t => t[0] === k) || [k, k])[1])).join(" ") +
-        "</b>"
-      : "Niente in coda.";
-  };
-  TASTI_FIRE.forEach(([k, etichetta]) => {
-    const b = el("button", "chip", etichetta);
-    b.setAttribute("aria-label", "Accoda " + etichetta);
-    b.onclick = () => {
-      if (codaFire.length >= 20) return;   // una coda infinita non serve
-      codaFire.push(k);
-      disegnaCoda();
-    };
-    fila.appendChild(b);
-  });
-  p.appendChild(fila);
-  disegnaCoda();
-  p.appendChild(vistaCoda);
-
-  const manda = el("button", "primario", "Manda la coda");
-  manda.style.cssText = "width:100%;margin:8px 0 0";
-  manda.onclick = () => {
-    if (!codaFire.length) return;
-    if (!chiavi.scorciatoiaFire || !chiavi.fireip) return vai("impostazioni");
-    const testo = testoTastiFire(codaFire);
-    codaFire = [];
-    disegnaCoda();
-    location.href = urlScorciatoia(chiavi.scorciatoiaFire, testo);
-  };
-  p.appendChild(manda);
-
-  const svuota = el("button", "altri", "Svuota la coda");
-  svuota.style.cssText = "width:100%;margin:6px 0 0";
-  svuota.onclick = () => { codaFire = []; disegnaCoda(); };
-  p.appendChild(svuota);
 
   dove.appendChild(p);
 }
