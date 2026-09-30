@@ -1131,7 +1131,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20260930151034";
+const VERSIONE = "20260930152029";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -5875,18 +5875,38 @@ function bloccoFireComandi(dove) {
   apri.href = url;
   apri.style.cssText = "display:flex;text-decoration:none";
   apri.innerHTML = '<span class="logo"></span><span class="etichetta">' +
-    "Apri il telecomando Fire Stick<small>" + esc(url) + "</small></span>";
+    "Apri il telecomando Fire Stick<small>Frecce, OK, play, home, apri " +
+    "l\u2019app \u2014 " + esc(url) + "</small></span>";
   p.appendChild(apri);
+
+  // Riaccendere l'aiutante delle frecce dopo un riavvio del Fire
+  // Stick, DAL TELEFONO: passa dalla Scorciatoia (--helper), come la
+  // ricerca. Compare solo se la Scorciatoia c'e', perche' senza non
+  // puo' funzionare. Il resto del telecomando non ne ha bisogno.
+  if (chiavi.scorciatoiaFire) {
+    const rf = el("button", "svuota", "Riaccendi le frecce");
+    rf.style.cssText = "width:100%;margin:8px 0 0";
+    rf.onclick = () => {
+      rf.textContent = "Riaccendo\u2026";
+      location.href = urlScorciatoia(chiavi.scorciatoiaFire,
+                                     testoFire("--helper"));
+      setTimeout(() => { rf.textContent = "Riaccendi le frecce"; }, 2500);
+    };
+    p.appendChild(rf);
+    p.appendChild(el("p", "nota",
+      "Se le frecce dicono \u00abnon accese\u00bb \u2014 succede dopo un riavvio " +
+      "del Fire Stick \u2014 tocca qui. Play, home e apri-app funzionano " +
+      "sempre, non dipendono da questo."));
+  }
 
   p.appendChild(comeSiFa(
     "La prima volta va acceso: sul Fire Stick apri l\u2019app " +
-    "<b>Ponte</b> (col telecomando, una volta), e da l\u00ec in poi " +
-    "resta attiva anche dopo un riavvio.<br><br>" +
-    "Le <b>frecce</b> restano al telecomando fisico: navigare dentro le " +
-    "app di streaming e' l\u2019unica cosa che il sistema non lascia " +
-    "fare a nessun software di terzi \u2014 verificato fino in fondo. " +
-    "Tutto il resto, da qui.",
-    "Come si accende, e perch\u00e9 non le frecce"));
+    "<b>Ponte</b> (col telecomando, una volta). Da l\u00ec in poi il " +
+    "telecomando \u2014 frecce comprese \u2014 resta attivo.<br><br>" +
+    "Le <b>frecce</b> passano da un aiutante che, dopo un riavvio del " +
+    "Fire Stick, va riacceso: il tasto qui sopra lo fa dal telefono. " +
+    "Play, home e apri-app invece ripartono da soli.",
+    "Come funziona"));
 
   dove.appendChild(p);
 }
