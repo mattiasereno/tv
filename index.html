@@ -689,15 +689,20 @@
   }
   .gusto b { color: var(--testo); font-weight: 600; }
 
-  /* L'errore di un tasto del telecomando: in basso, dove hai appena
-     premuto, e non in cima dove non stai guardando. */
+  /* L'errore di un tasto: ATTACCATO al tasto che ha fallito, non in
+     cima dove non stai guardando e non fissato in basso, dove copriva
+     per meta' i tasti che capitavano a quella altezza (misurato: tre
+     scorciatoie, 46px su 76). Nel flusso sposta, non nasconde. */
   .lamento {
-    position: fixed; left: 12px; right: 12px;
-    bottom: calc(74px + env(safe-area-inset-bottom)); z-index: 50;
-    padding: 12px 15px; border-radius: 14px;
+    margin: 10px 0 2px; padding: 12px 15px; border-radius: 14px;
     background: var(--piano-alto); border: 1px solid var(--rosso);
     color: var(--testo); font-size: 13.5px; line-height: 1.45;
-    box-shadow: var(--ombra);
+  }
+  /* la rete: un errore che non viene da un tasto preciso */
+  .lamento.fisso {
+    position: fixed; left: 12px; right: 12px;
+    bottom: calc(74px + env(safe-area-inset-bottom)); z-index: 50;
+    margin: 0; box-shadow: var(--ombra);
   }
 
   /* L'ANNULLA del mazzo. In BASSO non si puo': fissata sopra la barra
@@ -1373,7 +1378,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261001112409";
+const VERSIONE = "20261001112829";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -5984,7 +5989,7 @@ function schermoTelecomando() {
   // non si legge «fallito». Quindi l'errore compare anche in BASSO,
   // sopra la barra di navigazione, dove il pollice ha appena premuto;
   // la riga in cima resta per lo stato tranquillo.
-  function lamenta(testo) {
+  function lamenta(testo, vicinoA) {
     if (avviso_attivo) clearTimeout(avviso_attivo);
     const q = barra.querySelector(".quale");
     q.textContent = testo;
@@ -5992,13 +5997,21 @@ function schermoTelecomando() {
     avviso_attivo = setTimeout(aggiorna, 2600);
 
     if (lamentoTimer) clearTimeout(lamentoTimer);
-    if (!lamento) {
-      lamento = el("div", "lamento");
-      // cosi' VoiceOver lo annuncia: il tasto da solo non dice niente
-      lamento.setAttribute("role", "status");
+    if (lamento) lamento.remove();
+    lamento = el("div", "lamento");
+    // cosi' VoiceOver lo annuncia: il tasto da solo non dice niente
+    lamento.setAttribute("role", "status");
+    lamento.textContent = testo;
+    // Attaccato alla fila del tasto che ha fallito: e' dove hai appena
+    // guardato, e spostando il contenuto non ne nasconde nessuno.
+    const ancora = vicinoA &&
+      (vicinoA.closest(".fila, .croce, .scorciatoie, .scelte, .cifre") || vicinoA);
+    if (ancora && ancora.parentNode)
+      ancora.insertAdjacentElement("afterend", lamento);
+    else {
+      lamento.classList.add("fisso");
       schermo.appendChild(lamento);
     }
-    lamento.textContent = testo;
     lamentoTimer = setTimeout(() => {
       if (lamento) { lamento.remove(); lamento = null; }
     }, 4000);
@@ -6014,7 +6027,7 @@ function schermoTelecomando() {
     b.onclick = async () => {
       b.classList.add("acceso");
       setTimeout(() => b.classList.remove("acceso"), 170);
-      try { await azione(); } catch (e) { lamenta(e.message); }
+      try { await azione(); } catch (e) { lamenta(e.message, b); }
     };
     return b;
   }
@@ -6031,7 +6044,7 @@ function schermoTelecomando() {
     const manda = () => comando("samsungvd.remoteControl", "send",
                                 [valore, "PRESS_AND_RELEASED"]).catch(e => {
       ferma();
-      lamenta(e.message);
+      lamenta(e.message, b);
     });
     const ferma = () => {
       clearTimeout(ritardo); clearInterval(battito);
@@ -6125,9 +6138,9 @@ function schermoTelecomando() {
           aggiorna();
         } else {
           etichetta.textContent = prima;
-          lamenta("Comando partito, ma la TV non ha confermato. Guarda lo schermo.");
+          lamenta("Comando partito, ma la TV non ha confermato. Guarda lo schermo.", b);
         }
-      } catch (e) { etichetta.textContent = prima; lamenta(e.message); }
+      } catch (e) { etichetta.textContent = prima; lamenta(e.message, b); }
       b.disabled = false;
     };
     zonaScorciatoie.appendChild(b);
@@ -6142,7 +6155,7 @@ function schermoTelecomando() {
     const b = el("button", "tasto");
     b.innerHTML = icona + "<span>" + etichetta + "</span>";
     let ritardo = null, battito = null;
-    const manda = () => comando("audioVolume", cmd).catch(e => { ferma(); lamenta(e.message); });
+    const manda = () => comando("audioVolume", cmd).catch(e => { ferma(); lamenta(e.message, b); });
     const ferma = () => { clearTimeout(ritardo); clearInterval(battito); b.classList.remove("acceso"); };
     b.addEventListener("pointerdown", e => {
       if (e.button) return;
@@ -6276,8 +6289,8 @@ function schermoTelecomando() {
               const esito = await impostaModo(capacita,
                 m => comando(capacita, cmd, [m]), quale, v);
               if (esito !== v.name && esito !== v.id)
-                lamenta("La TV non ha cambiato " + titolo.toLowerCase() + ".");
-            } catch (e) { lamenta(e.message); }
+                lamenta("La TV non ha cambiato " + titolo.toLowerCase() + ".", b);
+            } catch (e) { lamenta(e.message, b); }
             aggiorna();
           };
           sc.appendChild(b);
@@ -6300,7 +6313,7 @@ function schermoTelecomando() {
             try {
               await comando("samsungvd.mediaInputSource", "setInputSource", [i.id]);
               setTimeout(aggiorna, 2500);
-            } catch (e) { lamenta(e.message); }
+            } catch (e) { lamenta(e.message, b); }
           };
           sc.appendChild(b);
         });
