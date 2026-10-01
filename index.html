@@ -1323,7 +1323,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20260930180738";
+const VERSIONE = "20261001092058";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -5089,6 +5089,19 @@ function codaMazzo() {
   return [...rassegnaNotte(), ...codaDaVotare()];
 }
 
+// Votare un titolo DAL MAZZO (carta normale o della rassegna). Oltre a
+// segnarlo visto, lo metto fra i `rassegnati`: se no, appena votato
+// rientrerebbe nella rassegna notte (e' votato, non ancora 🌙) e,
+// stando la rassegna in cima, ti RIMBALZEREBBE davanti invece di
+// passare al titolo nuovo - «non mi fa vedere piu' altri titoli». Il 🌙
+// ce l'avevi gia' sulla carta mentre votavi, quindi non serve
+// rivederlo. La rassegna resta per i voti VECCHI, una volta.
+function votaDalMazzo(dati, n) {
+  visti.segna(dati, n);
+  if (lista.ha(dati.tipo, dati.id)) lista.togli(dati.tipo, dati.id);
+  rassegnati.aggiungi(dati);
+}
+
 async function altroDaVotare() {
   paginaVotare += 1;
   // alterno film e serie: chiedendo solo film, le serie non
@@ -5293,12 +5306,7 @@ function cardaPerVotare(v, avanza) {
     if (n <= giaVotato) b.className = "piena";   // mostra il voto che hai gia' dato
     b.setAttribute("aria-label", n + (n === 1 ? " stella" : " stelle"));
     b.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.7 6.2.6-4.7 4.2 1.4 6.1L12 16.9l-5.5 3.2 1.4-6.1L3.2 9.8l6.2-.6z"/></svg>';
-    b.onclick = () => {
-      visti.segna(dati, n);
-      if (lista.ha(v.tipo, v.id)) lista.togli(v.tipo, v.id);
-      if (giaVotato) rassegnati.aggiungi(dati);   // rivisto: non torna in rassegna
-      via("su");
-    };
+    b.onclick = () => { votaDalMazzo(dati, n); via("su"); };
     stelle.appendChild(b);
   }
   c.appendChild(stelle);
