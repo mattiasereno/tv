@@ -1323,7 +1323,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261001093630";
+const VERSIONE = "20261001100858";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -1515,6 +1515,17 @@ const lista = {
     this.tutto = this.tutto.filter(x => !(x.tipo === tipo && String(x.id) === String(id)));
     tombe.metti("lista", tipo, id);
     daMandare();
+  },
+  // Riempie dei campi su un titolo GIA' in lista senza spostarlo ne'
+  // cambiarne l'ordine: serve a rimpolpare i generi dei titoli vecchi
+  // (aggiunti prima che li salvassi) cosi' il filtro per genere li
+  // conosce. Non e' un'aggiunta, non tocca tombe ne' sincronizzazione.
+  aggiornaMeta(tipo, id, campi) {
+    const a = this.tutto;
+    const i = a.findIndex(x => x.tipo === tipo && String(x.id) === String(id));
+    if (i < 0) return;
+    a[i] = Object.assign({}, a[i], campi);
+    this.tutto = a;
   },
 };
 
@@ -4385,7 +4396,10 @@ async function schermoDettaglio(tipo, id, torna) {
   cuore.onclick = () => {
     if (lista.ha(d.tipo, d.id)) lista.togli(d.tipo, d.id);
     else lista.aggiungi({ tipo: d.tipo, id: d.id, titolo: d.titolo, anno: d.anno,
-                          voto: d.voto, locandina: d.locandina });
+                          voto: d.voto, locandina: d.locandina,
+                          // i generi (e le keyword) servono al filtro per
+                          // genere nella lista: ce li ho qui, non buttarli
+                          generiId: d.generiId, keyword: d.keyword });
     disegnaCuore();
   };
   disegnaCuore();
@@ -4825,6 +4839,32 @@ function generiDiLista(voci) {
     .map(nome => ({ nome, quanti: conta[nome] }));
 }
 
+// Rimpolpa i GENERI dei titoli in lista che non li hanno: aggiunti
+// prima che li salvassi (o dalla ricerca, che non porta i generi), e
+// senza il filtro per genere li ignorerebbe. Prende la scheda (in
+// cache) di ciascuno, UNA volta, e scrive i generiId. A piccoli
+// gruppi e con un tetto, per non martellare TMDB. Muta anche gli
+// oggetti `voci` in memoria, cosi' il filtro li vede subito. Torna
+// true se ha cambiato qualcosa (le chip vanno ridisegnate).
+async function backfillGeneriLista(voci) {
+  const mancanti = voci.filter(v => !(v.generiId && v.generiId.length)).slice(0, 40);
+  let cambiato = false;
+  for (let i = 0; i < mancanti.length; i += 5) {
+    await Promise.all(mancanti.slice(i, i + 5).map(async v => {
+      try {
+        const d = await scheda(v.tipo, v.id);
+        if (d.generiId && d.generiId.length) {
+          v.generiId = d.generiId;   // l'oggetto in memoria, per il filtro
+          v.keyword = d.keyword;
+          lista.aggiornaMeta(v.tipo, v.id, { generiId: d.generiId, keyword: d.keyword });
+          cambiato = true;
+        }
+      } catch (e) { /* un titolo senza scheda non ferma gli altri */ }
+    }));
+  }
+  return cambiato;
+}
+
 let vistaLista = "da guardare";
 
 // Le viste della Lista, dichiarate una volta sola: l'interruttore e
@@ -4939,7 +4979,8 @@ function schermoLista() {
     const zonaGen = el("div", "generi");
     zonaGen.style.cssText = "padding:2px 16px 2px";
     schermo.insertBefore(zonaGen, intestazione);
-    Promise.all([generi("movie"), generi("tv")]).catch(() => {}).then(() => {
+    const costruisciGeneri = () => {
+      zonaGen.innerHTML = "";
       const presenti = generiDiLista(voci);
       if (presenti.length < 2) return;   // un genere solo: niente da filtrare
       const voci2 = [{ nome: "Tutti i generi", valore: "" },
@@ -4955,6 +4996,15 @@ function schermoLista() {
         };
         zonaGen.appendChild(c);
       });
+    };
+    Promise.all([generi("movie"), generi("tv")]).catch(() => {}).then(async () => {
+      costruisciGeneri();                         // coi generi gia' salvati
+      // i titoli vecchi (o da ricerca) non hanno i generi: li rimpolpo,
+      // poi ridisegno le chip - cosi' i generi compaiono anche per loro
+      if (await backfillGeneriLista(voci)) {
+        costruisciGeneri();
+        if (genereLista) disegnaGriglia();
+      }
     });
   }
 
@@ -5258,14 +5308,25 @@ async function parteVotare() {
   let inArrivo = false;
   const dopoUnAzione = () => { aggiorna(); disegnaScartati(); prossima(); };
 
+  // Pesca altri titoli da votare finche' non ce ne sono abbastanza di
+  // NUOVI (non ancora votati). Una pagina sola puo' essere tutta roba
+  // gia' votata se hai votato molto: allora si va avanti, con un tetto.
+  const riempi = async () => {
+    let giri = 0;
+    while (codaDaVotare().length < 4 && giri < 8) {
+      const prima = daVotare.length;
+      await altroDaVotare();
+      giri++;
+      if (daVotare.length === prima) break;   // TMDB non da' piu' nuovi
+    }
+  };
+
   const prossima = () => {
-    const coda = codaDaVotare();
-    if (coda.length < 4 && !inArrivo) {
+    if (codaDaVotare().length < 4 && !inArrivo) {
       inArrivo = true;
-      altroDaVotare().catch(() => {}).then(() => {
+      riempi().catch(() => {}).then(() => {
         inArrivo = false;
-        if (codaDaVotare().length && !zona.querySelector(".cartaV"))
-          disegna();
+        if (!zona.querySelector(".cartaV")) disegna();
       });
     }
     disegna();
@@ -5298,7 +5359,7 @@ async function parteVotare() {
   };
 
   try {
-    if (!daVotare.length) await altroDaVotare();
+    await riempi();
   } catch (e) {
     // La rete puo' cadere, ma la RASSEGNA NOTTE e' locale (i tuoi voti):
     // deve vedersi lo stesso. Mostro l'errore solo se non c'e' nemmeno
