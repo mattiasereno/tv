@@ -1323,7 +1323,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261001100858";
+const VERSIONE = "20261001101816";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -5129,7 +5129,12 @@ function pulsanteManda(voci, sonoVisti) {
 // pagina intera di Marvel, e da spuntare «notte» non c'e' niente. Il
 // secondo pesca nello STESSO bacino di «Per dormire», cosi' le spunte
 // che metti li' finiscono dritte nella modalita' che le usa.
-let paginaVotare = 0;
+// A che punto del catalogo sei arrivato a votare. PERSISTE: il mazzo
+// pesca dai piu' visti (vote_count.desc) e tu voti dall'alto in basso,
+// quindi se ogni volta ripartisse da pagina 1 ti riproporrebbe i
+// titoli che hai appena votato - e a furia di votarne finiva per non
+// mostrarti piu' niente. Ricordando dove sei, riparti dai successivi.
+let paginaVotare = Number(localStorage.getItem("pagina_votare")) || 0;
 let daVotare = [];
 
 // I titoli da votare: i piu' visti (vote_count alto), quelli che hai
@@ -5197,6 +5202,7 @@ function votaDalMazzo(dati, n) {
 
 async function altroDaVotare() {
   paginaVotare += 1;
+  localStorage.setItem("pagina_votare", String(paginaVotare));   // non ripartire dall'alto
   // alterno film e serie: chiedendo solo film, le serie non
   // arriverebbero mai
   const tipo = paginaVotare % 2 ? "movie" : "tv";
