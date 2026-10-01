@@ -1323,7 +1323,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261001092058";
+const VERSIONE = "20261001093630";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -4809,6 +4809,22 @@ function nomeKeyword(k) {
   return v ? v.n : null;
 }
 
+// I generi DAVVERO presenti in una lista di titoli, dal piu' frequente
+// al meno. I nomi vengono dalla cache di sessione (generi_movie/tv):
+// se non c'e' ancora, chi disegna la riempie prima con generi(). Cosi'
+// i filtri della lista mostrano solo generi che hai per davvero, non
+// una tendina di tutto.
+function generiDiLista(voci) {
+  const conta = {};
+  voci.forEach(v => (v.generiId || []).forEach(id => {
+    const nome = nomeGenere(id);
+    if (nome) conta[nome] = (conta[nome] || 0) + 1;
+  }));
+  return Object.keys(conta)
+    .sort((a, b) => conta[b] - conta[a] || a.localeCompare(b))
+    .map(nome => ({ nome, quanti: conta[nome] }));
+}
+
 let vistaLista = "da guardare";
 
 // Le viste della Lista, dichiarate una volta sola: l'interruttore e
@@ -4867,17 +4883,19 @@ function schermoLista() {
   const grigliaZona = el("div");
   schermo.appendChild(grigliaZona);
 
-  let cerca = "", tipoLista = "tutti";
+  let cerca = "", tipoLista = "tutti", genereLista = "";
   const senzaAccenti = (t) => (t || "").toLowerCase()
     .normalize("NFD").replace(/[̀-ͯ]/g, "");
   const disegnaGriglia = () => {
     const q = senzaAccenti(cerca.trim());
     const filtrati = voci.filter(v =>
       (tipoLista === "tutti" || v.tipo === tipoLista) &&
-      (!q || senzaAccenti(v.titolo).includes(q)));
+      (!q || senzaAccenti(v.titolo).includes(q)) &&
+      (!genereLista || (v.generiId || []).some(id => nomeGenere(id) === genereLista)));
+    const filtrato = cerca || tipoLista !== "tutti" || genereLista;
     intestazione.innerHTML = filtrati.length +
       (filtrati.length === 1 ? " titolo" : " titoli") +
-      (cerca || tipoLista !== "tutti"
+      (filtrato
         ? ' <span class="conteggio">· di ' + voci.length + "</span>"
         : ' <span class="conteggio">· i più recenti in cima</span>');
     grigliaZona.innerHTML = "";
@@ -4913,6 +4931,31 @@ function schermoLista() {
         chips.appendChild(c);
       });
     schermo.insertBefore(chips, intestazione);
+
+    // Filtro per GENERE: solo i generi che hai davvero in lista. I nomi
+    // stanno nella cache di sessione; se non c'e' la riempio prima
+    // (una chiamata piccola, i ~20 generi, poi e' in cache). Le chip
+    // arrivano dopo, senza bloccare la griglia.
+    const zonaGen = el("div", "generi");
+    zonaGen.style.cssText = "padding:2px 16px 2px";
+    schermo.insertBefore(zonaGen, intestazione);
+    Promise.all([generi("movie"), generi("tv")]).catch(() => {}).then(() => {
+      const presenti = generiDiLista(voci);
+      if (presenti.length < 2) return;   // un genere solo: niente da filtrare
+      const voci2 = [{ nome: "Tutti i generi", valore: "" },
+                     ...presenti.map(g => ({ nome: g.nome, valore: g.nome }))];
+      voci2.forEach(({ nome, valore }) => {
+        const c = el("button", "chip", esc(nome));
+        c.setAttribute("aria-pressed", String(genereLista === valore));
+        c.onclick = () => {
+          genereLista = valore;
+          zonaGen.querySelectorAll(".chip").forEach(x =>
+            x.setAttribute("aria-pressed", String(x.textContent === nome)));
+          disegnaGriglia();
+        };
+        zonaGen.appendChild(c);
+      });
+    });
   }
 
   disegnaGriglia();
