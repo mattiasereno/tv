@@ -1323,7 +1323,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261001101816";
+const VERSIONE = "20261001102309";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -5318,11 +5318,26 @@ async function parteVotare() {
   // NUOVI (non ancora votati). Una pagina sola puo' essere tutta roba
   // gia' votata se hai votato molto: allora si va avanti, con un tetto.
   const riempi = async () => {
+    // Pesca finche' non ci sono almeno 4 titoli NUOVI. Puo' dover
+    // scavare parecchio: alla PRIMA apertura dopo aver votato molto,
+    // `paginaVotare` riparte da 0 e le prime pagine (i piu' votati)
+    // sono tutte roba gia' votata - va saltata. Fino a 40 pagine, ma a
+    // LOTTI in parallelo cosi' lo scavo e' questione di secondi, non di
+    // minuti. Poi `paginaVotare` persiste e le volte dopo basta una.
     let giri = 0;
-    while (codaDaVotare().length < 4 && giri < 8) {
+    while (codaDaVotare().length < 4 && giri < 40) {
       const prima = daVotare.length;
-      await altroDaVotare();
-      giri++;
+      const lotto = [];
+      for (let k = 0; k < 5 && giri < 40; k++, giri++) lotto.push(altroDaVotare());
+      await Promise.all(lotto);
+      // le pagine in parallelo possono sovrapporsi: via i doppioni
+      const visto = new Set();
+      daVotare = daVotare.filter(x => {
+        const key = x.tipo + x.id;
+        if (visto.has(key)) return false;
+        visto.add(key);
+        return true;
+      });
       if (daVotare.length === prima) break;   // TMDB non da' piu' nuovi
     }
   };
