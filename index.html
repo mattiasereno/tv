@@ -1323,7 +1323,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261001104724";
+const VERSIONE = "20261001105228";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -5311,6 +5311,27 @@ async function parteVotare() {
   };
   disegnaScartati();
 
+  // «Salta i già visti»: appare solo quando c'e' un ARRETRATO di titoli
+  // votati da rivedere per il 🌙 (es. dopo la migrazione che li fa
+  // ricomparire). Nel voto normale ne rimbalza uno per volta: li', con
+  // un titolo solo, il tasto resta nascosto e non da' fastidio.
+  const zonaRassegna = el("div");
+  zonaRassegna.style.cssText = "padding:0 16px";
+  schermo.appendChild(zonaRassegna);
+  const disegnaRassegna = () => {
+    zonaRassegna.innerHTML = "";
+    const n = rassegnaNotte().length;
+    if (n < 2) return;
+    const b = el("button", "altri", "Già visti da rivedere: " + n + " · salta tutti");
+    b.style.cssText = "width:100%;margin:0 0 4px;padding:10px";
+    b.onclick = () => {
+      rassegnaNotte().forEach(v => rassegnati.aggiungi(v));
+      disegnaRassegna();
+      prossima();
+    };
+    zonaRassegna.appendChild(b);
+  };
+
   const zona = el("div", "mazzoCarte");
   schermo.appendChild(zona);
 
@@ -5322,7 +5343,7 @@ async function parteVotare() {
   // titolo dopo, e quando ne restano pochi ne carico altri in
   // sottofondo, cosi' non ci si ferma mai.
   let inArrivo = false;
-  const dopoUnAzione = () => { aggiorna(); disegnaScartati(); prossima(); };
+  const dopoUnAzione = () => { aggiorna(); disegnaScartati(); disegnaRassegna(); prossima(); };
 
   // Pesca altri titoli da votare finche' non ce ne sono abbastanza di
   // NUOVI (non ancora votati). Una pagina sola puo' essere tutta roba
@@ -5401,6 +5422,7 @@ async function parteVotare() {
       return;
     }
   }
+  disegnaRassegna();
   disegna();
 }
 
@@ -7212,6 +7234,17 @@ window.addEventListener("hashchange", () => {
 });
 
 // Al primo avvio non c'e' niente da mostrare: si comincia dalle chiavi.
+// Migrazione una-tantum: un fix precedente, sbagliato, aveva archiviato
+// (rassegnati) TUTTI i titoli votati, togliendoli dalla «rassegna
+// notte» - cosi' non si potevano piu' segnare 🌙 i vecchi. Li faccio
+// ricomparire UNA volta svuotando rassegnati; da li' in poi, man mano
+// che li sistemi (🌙 o avanti), escono. Il flag fa succedere tutto una
+// volta sola per dispositivo.
+if (!localStorage.getItem("migr_rassegna_1")) {
+  localStorage.removeItem("rassegnati");
+  localStorage.setItem("migr_rassegna_1", "1");
+}
+
 (async () => {
   // Se torniamo dall autorizzazione Samsung c'e' ?code= nella query,
   // e va consumato PRIMA di qualunque instradamento.
