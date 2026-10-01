@@ -700,17 +700,19 @@
     box-shadow: var(--ombra);
   }
 
-  /* L'ANNULLA del mazzo. Sta in BASSO, dove il pollice ha appena
-     premuto: un messaggio in cima alla pagina, su una carta alta mezzo
-     schermo, non lo vedresti. Stessa forma della barra «nuova
-     versione», che e' la cosa che qui significa gia' «un'azione, ora». */
+  /* L'ANNULLA del mazzo. In BASSO non si puo': fissata sopra la barra
+     copriva per meta' i tre tondi della carta DOPO - «non visto», «per
+     dormire», «lo voglio» - e le loro etichette per intero, e su iPhone
+     la safe-area la alzava ancora. Un annulla che nasconde i comandi
+     del titolo seguente e' peggio del male che cura.
+     Quindi sta nel flusso, in cima, accanto al contatore dei voti: e'
+     li' che l'occhio va a vedere il numero salire dopo un voto, ed e'
+     la stessa informazione («hai votato») detta per esteso. */
   .disfare {
-    position: fixed; left: 12px; right: 12px;
-    bottom: calc(74px + env(safe-area-inset-bottom)); z-index: 50;
     display: flex; align-items: center; gap: 12px;
-    padding: 12px 15px; border-radius: 14px;
+    margin: 0 0 8px; padding: 10px 14px; border-radius: 13px;
     background: var(--acceso); color: var(--acceso-testo);
-    box-shadow: var(--ombra); font-size: 14px; font-weight: 560;
+    font-size: 14px; font-weight: 560;
   }
   /* il titolo puo' essere lunghissimo: una riga, e taglia */
   .disfare span {
@@ -1371,7 +1373,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261001111418";
+const VERSIONE = "20261001112409";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -5361,6 +5363,12 @@ async function parteVotare() {
   // la cosa che fa votare il prossimo
   const aggiorna = scriviConta;
 
+  // Qui dentro compare l'annulla, subito sotto il contatore: nel flusso
+  // e non sovrapposto, cosi' non copre i comandi della carta dopo.
+  const zonaDisfa = el("div");
+  zonaDisfa.style.cssText = "padding:0 16px";
+  schermo.appendChild(zonaDisfa);
+
   // Una riga che dice a COSA serve, per chi non ha progettato l'app:
   // votare non e' fine a se', riempie «Stasera». Un mazzo solo, una
   // spiegazione sola.
@@ -5432,10 +5440,16 @@ async function parteVotare() {
     timerDisfa = null;
     if (barraDisfa) barraDisfa.remove();
     barraDisfa = null;
+    perche.style.display = "";          // torna la spiegazione
   };
   const offriDisfa = (testo, disfare) => {
     scordaDisfa();
     if (!disfare) return;
+    // Prende il POSTO della spiegazione, non si aggiunge: in piu' la
+    // barra spingeva i tre tondi della carta dopo sotto la barra di
+    // navigazione. La spiegazione insegna a usare il mazzo, e nei
+    // cinque secondi dopo un voto non e' quello che ti serve leggere.
+    perche.style.display = "none";
     barraDisfa = el("div", "disfare");
     barraDisfa.appendChild(el("span", null, testo));
     const b = el("button", null, "Annulla");
@@ -5446,7 +5460,7 @@ async function parteVotare() {
       disegna();            // la carta disfatta torna davanti
     };
     barraDisfa.appendChild(b);
-    schermo.appendChild(barraDisfa);
+    zonaDisfa.appendChild(barraDisfa);
     timerDisfa = setTimeout(scordaDisfa, 5000);
   };
 
