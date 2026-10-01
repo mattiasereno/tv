@@ -1323,7 +1323,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261001102309";
+const VERSIONE = "20261001104724";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -5194,10 +5194,20 @@ function codaMazzo() {
 // passare al titolo nuovo - «non mi fa vedere piu' altri titoli». Il 🌙
 // ce l'avevi gia' sulla carta mentre votavi, quindi non serve
 // rivederlo. La rassegna resta per i voti VECCHI, una volta.
-function votaDalMazzo(dati, n) {
+// Votare un titolo DAL MAZZO. `risolvi` dice se toglierlo dalla rassegna
+// notte:
+//   - da una carta NUOVA (risolvi=false): NON lo tolgo, cosi' subito
+//     dopo torna come carta «già visto» per la decisione «è da
+//     dormire?» - e' il «metti poi se è da dormire» che serve.
+//   - da una carta «già visto» (risolvi=true): l'hai appena deciso, lo
+//     tolgo, se no ti si ripresenterebbe all'infinito.
+// (Il loop vero di prima era «Da votare» vuota, non questo: li' il
+// mazzo non aveva titoli nuovi e restavi sul rimbalzo. Ora che ci sono,
+// il rimbalzo e' UNA carta, la decisione del sonno, non un vicolo.)
+function votaDalMazzo(dati, n, risolvi) {
   visti.segna(dati, n);
   if (lista.ha(dati.tipo, dati.id)) lista.togli(dati.tipo, dati.id);
-  rassegnati.aggiungi(dati);
+  if (risolvi) rassegnati.aggiungi(dati);
 }
 
 async function altroDaVotare() {
@@ -5431,7 +5441,7 @@ function cardaPerVotare(v, avanza) {
     if (n <= giaVotato) b.className = "piena";   // mostra il voto che hai gia' dato
     b.setAttribute("aria-label", n + (n === 1 ? " stella" : " stelle"));
     b.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.7 6.2.6-4.7 4.2 1.4 6.1L12 16.9l-5.5 3.2 1.4-6.1L3.2 9.8l6.2-.6z"/></svg>';
-    b.onclick = () => { votaDalMazzo(dati, n); via("su"); };
+    b.onclick = () => { votaDalMazzo(dati, n, !!giaVotato); via("su"); };
     stelle.appendChild(b);
   }
   c.appendChild(stelle);
