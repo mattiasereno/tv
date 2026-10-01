@@ -673,9 +673,28 @@
 
   /* 32px misurati: sotto i 44 il dito sbaglia, e qui ci sono due
      comandi vicini («Non l'ho visto» e «Buono per dormire»). */
+  /* display:block perche' «Non l'ho visto» e «Buono per dormire» erano
+     due button inline-block consecutivi: appendChild non lascia spazi,
+     quindi finivano sulla stessa riga a 0px di distanza, stesso colore
+     e stessa sottolineatura. Si leggeva «Non l'ho vistoBuono per
+     dormire», e il dito non sapeva quale stava premendo. */
   .visto .togli {
+    display: block;
     margin: 4px 0 0; padding: 6px 0; color: var(--tenue);
     font-size: 13.5px; text-decoration: underline; min-height: 44px;
+  }
+  /* E non sono la stessa cosa: uno annulla il voto, l'altro e' un
+     interruttore che resta. Quindi non si somigliano piu' - pillola
+     contro link - come gia' fai nella fila per votare in fretta. */
+  .visto .pillola {
+    display: inline-flex; align-items: center;
+    margin: 10px 0 0; padding: 9px 15px; min-height: 44px;
+    border-radius: 999px; border: 1px solid var(--bordo);
+    background: none; color: var(--tenue); font-size: 13.5px;
+  }
+  .visto .pillola[aria-pressed=true] {
+    border-color: var(--acceso); color: var(--acceso);
+    background: rgba(242, 233, 216, .08);
   }
   .visto .altroVoto {
     margin: 8px 0 0; font-size: 13.5px; color: var(--tenue);
@@ -1378,7 +1397,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261001112829";
+const VERSIONE = "20261001115316";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -2195,13 +2214,29 @@ function daMandare() {
    messo in una chat di gruppo. Scritto anche nella schermata.      */
 
 function datiPerAltroTelefono() {
-  return {
+  const d = {
     tmdb: chiavi.tmdb,
     servizi: chiavi.servizi,
     supaUrl: chiavi.supaUrl,
     supaChiave: chiavi.supaChiave,
     famiglia: chiavi.famiglia,
   };
+  // Il comando della TV viaggia INSIEME al resto. Senza, il telefono
+  // preparato trovava il Telecomando con tutti i tasti spenti, mentre
+  // la schermata gli prometteva di poter aprire le app sulla TV:
+  // provato, 22 comandi spenti su 22.
+  // Riuso il pacchetto sigillato, cosi' la logica di lettura resta una
+  // sola (scartaCollegamento) e non ce ne sono due da tenere d'accordo.
+  //
+  // ATTENZIONE, e' il motivo per cui questo link va passato con
+  // AirDrop e non in chat: dentro c'e' un permesso su TUTTI i
+  // dispositivi SmartThings di casa (lo scope e' x:devices:*), e con
+  // id e segreto si rinnova da se'. In una chat resterebbe nella
+  // cronologia e sui server di chi la gestisce; con AirDrop passa da
+  // telefono a telefono e non tocca nessun server.
+  if (oauth.collegato) d.tv = impacchettaCollegamento();
+  else if (chiavi.token) d.pat = chiavi.token;
+  return d;
 }
 
 // base64 con l'alfabeto da indirizzo: il base64 normale usa + e /,
@@ -2231,6 +2266,8 @@ function leggiAltroTelefono(pezzo) {
       supaUrl: String(d.supaUrl || ""),
       supaChiave: String(d.supaChiave || ""),
       famiglia: String(d.famiglia || ""),
+      tv: String(d.tv || ""),      // il pacchetto sigillato del comando TV
+      pat: String(d.pat || ""),    // oppure il token a mano, se usi quello
     };
   } catch (e) { return null; }
 }
@@ -4637,10 +4674,9 @@ async function schermoDettaglio(tipo, id, torna) {
     // La spunta «da dormire». Sta qui e non fra le azioni in alto
     // perche' e' un giudizio sul titolo, come il voto - e si mette
     // nello stesso momento.
-    const notte = el("button", "togli");
+    const notte = el("button", "pillola");
     const disegnaNotte = () => {
       const dentro = dormire.ha(d.tipo, d.id);
-      notte.className = "togli" + (dentro ? " acceso" : "");
       notte.setAttribute("aria-pressed", String(dentro));
       notte.textContent = dentro
         ? "\u2713 Buono per dormire"
@@ -5811,12 +5847,15 @@ async function schermoAltroTelefono(dati) {
     ["Chiave TMDB", dati.tmdb ? "s\u00ec" : "manca"],
     ["Abbonamenti", dati.servizi.length
       ? dati.servizi.map(nomeProvider).join(", ") : "nessuno"],
+    ["Comando della TV", dati.tv || dati.pat ? "s\u00ec" : "no"],
     ["Famiglia", dati.famiglia || "nessuna"],
   ];
   const d = el("div", "diagnosi");
+  // riga2 e' la classe che il CSS aspetta: senza, i due span restavano
+  // inline attaccati e si leggeva \u00abChiave TMDBsi'\u00bb, \u00abAbbonamentiNetflix\u00bb
   d.innerHTML = cosaFa.map(([k, v2]) =>
-    "<div><span>" + esc(k) + "</span><span>" + esc(v2) + "</span></div>")
-    .join("");
+    '<div class="riga2"><span>' + esc(k) + "</span><span>" + esc(v2) +
+    "</span></div>").join("");
   pad.appendChild(d);
 
   const gia = chiavi.tmdb || chiavi.famiglia;
@@ -5850,6 +5889,11 @@ async function schermoAltroTelefono(dati) {
     if (dati.supaUrl) chiavi.supaUrl = dati.supaUrl;
     if (dati.supaChiave) chiavi.supaChiave = dati.supaChiave;
     if (dati.famiglia) chiavi.famiglia = dati.famiglia;
+    // Il comando della TV: scartaCollegamento e' la stessa funzione che
+    // legge il pacchetto incollato a mano, e forza un rinnovo subito
+    // perche' la scadenza di chi l'ha mandato qui non vale.
+    if (dati.tv) scartaCollegamento(dati.tv);
+    else if (dati.pat) chiavi.token = dati.pat;
     chiavi.io = nome;
     // la strada: su un telefono nuovo si parte dalla TV, che e' quella
     // che funziona senza installare niente
@@ -5871,11 +5915,19 @@ async function schermoAltroTelefono(dati) {
   pad.appendChild(via);
   pad.appendChild(esito);
 
+  // Il testo dipende da cosa c'e' DAVVERO nel pacchetto: prometteva il
+  // Telecomando anche quando il comando della TV non viaggiava, e chi
+  // riceveva lo trovava con tutti i tasti spenti.
   pad.appendChild(comeSiFa(
-    "Questo telefono pu\u00f2 fare tutto: dire cosa paghi gi\u00e0, " +
-    "cercare, la lista, i voti, «Stasera», e <b>aprire le app sulla " +
-    "TV</b> dal <b>Telecomando</b> \u2014 quello passa dal cloud e " +
-    "non serve installare niente.<br><br>" +
+    "Questo telefono pu\u00f2 dire cosa paghi gi\u00e0, " +
+    "cercare, la lista, i voti, «Stasera»" +
+    (dati.tv || dati.pat
+      ? ", e <b>aprire le app sulla TV</b> dal <b>Telecomando</b> " +
+        "\u2014 quello passa dal cloud e non serve installare niente."
+      : ". Il <b>Telecomando</b> invece no: il comando della TV non " +
+        "\u00e8 in questo link, e resta spento finch\u00e9 non lo " +
+        "colleghi da Opzioni.") +
+    "<br><br>" +
     "L\u2019unica cosa che NON fa \u00e8 <b>scrivere il titolo dentro " +
     "l\u2019app della TV</b>: per quella serve a-Shell e una Scorciatoia, " +
     "e sono cose da mettere solo sul telefono che le usa.",
@@ -7278,9 +7330,10 @@ function bloccoFamiglia(pad) {
 
   pad.appendChild(el("p", "sottosezione", "Un altro telefono"));
   pad.appendChild(el("p", "nota",
-    "Un link che porta chiave TMDB, abbonamenti e famiglia. " +
-    "Sull\u2019altro telefono si apre, si scrive il nome, e basta: " +
-    "niente a-Shell, niente Scorciatoia, niente token."));
+    "Un link che porta chiave TMDB, abbonamenti, famiglia e anche il " +
+    "<b>comando della TV</b>. Sull\u2019altro telefono si apre, si scrive " +
+    "il nome, e basta: niente a-Shell, niente Scorciatoia, niente token " +
+    "da copiare."));
   const prep = el("button", "svuota", "Prepara un altro telefono");
   prep.style.cssText = "width:100%;margin:4px 0 0";
   const dovePrep = el("div");
@@ -7296,8 +7349,10 @@ function bloccoFamiglia(pad) {
   pad.appendChild(prep);
   pad.appendChild(dovePrep);
   pad.appendChild(el("p", "nota",
-    "Quel link contiene le chiavi: passalo di mano (AirDrop), non in una " +
-    "chat di gruppo."));
+    "Quel link contiene le chiavi e il permesso sui dispositivi " +
+    "SmartThings di casa, e si rinnova da sé: <b>passalo con AirDrop</b>, " +
+    "non in una chat. In chat resta nella cronologia e sui server di chi " +
+    "la gestisce."));
 
   unaVoltaSola(pad, "Da fare su Supabase", nuvola.pronta, (pad) => {
   const passi = el("div", "gusto");
