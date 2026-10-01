@@ -35,7 +35,14 @@
     --fondo-alto: #101922;
     --piano:      #16222D;
     --piano-alto: #1E2D3A;
-    --bordo:      #24353F;
+    /* #24353F dava 1.51:1 sul fondo e 1.27:1 sul piano: un pulsante si
+       riconosceva solo dalla scritta, e il minimo per un elemento di
+       interfaccia e' 3:1 (WCAG 1.4.11). Non e' pedanteria: al sole, sul
+       divano, i tasti del Telecomando diventavano parole appoggiate sul
+       nero, e li' la forma del tasto E' l'interfaccia, perche' stai
+       guardando la TV e non il telefono.
+       #55707F: 3.65:1 sul fondo, 3.08:1 sul piano. */
+    --bordo:      #55707F;
     --testo:      #EDF2F5;
     --tenue:      #8CA2B2;
     /* #5D7382 dava 3.86:1 sul fondo, sotto il minimo AA di 4.5.
@@ -191,6 +198,13 @@
     background: rgba(8,12,15,.82); backdrop-filter: blur(6px);
     color: var(--testo); font-size: 11px; font-weight: 640;
     padding: 3px 6px; border-radius: 7px;
+  }
+  /* Il tuo voto: altro angolo, altro colore, tre caratteri. */
+  .carta .mioVoto {
+    position: absolute; bottom: 6px; left: 6px;
+    background: var(--acceso); color: var(--acceso-testo);
+    font-size: 11px; font-weight: 700;
+    padding: 3px 7px; border-radius: 7px;
   }
   .carta h3 {
     margin: 7px 1px 0; font-size: 13px; font-weight: 520; line-height: 1.3;
@@ -674,6 +688,40 @@
     color: var(--tenue); font-size: 13.5px; line-height: 1.55;
   }
   .gusto b { color: var(--testo); font-weight: 600; }
+
+  /* L'errore di un tasto del telecomando: in basso, dove hai appena
+     premuto, e non in cima dove non stai guardando. */
+  .lamento {
+    position: fixed; left: 12px; right: 12px;
+    bottom: calc(74px + env(safe-area-inset-bottom)); z-index: 50;
+    padding: 12px 15px; border-radius: 14px;
+    background: var(--piano-alto); border: 1px solid var(--rosso);
+    color: var(--testo); font-size: 13.5px; line-height: 1.45;
+    box-shadow: var(--ombra);
+  }
+
+  /* L'ANNULLA del mazzo. Sta in BASSO, dove il pollice ha appena
+     premuto: un messaggio in cima alla pagina, su una carta alta mezzo
+     schermo, non lo vedresti. Stessa forma della barra «nuova
+     versione», che e' la cosa che qui significa gia' «un'azione, ora». */
+  .disfare {
+    position: fixed; left: 12px; right: 12px;
+    bottom: calc(74px + env(safe-area-inset-bottom)); z-index: 50;
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 15px; border-radius: 14px;
+    background: var(--acceso); color: var(--acceso-testo);
+    box-shadow: var(--ombra); font-size: 14px; font-weight: 560;
+  }
+  /* il titolo puo' essere lunghissimo: una riga, e taglia */
+  .disfare span {
+    flex: 1; min-width: 0; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap;
+  }
+  .disfare button {
+    flex: 0 0 auto; padding: 9px 14px; border-radius: 10px;
+    font-size: 14px; font-weight: 660; min-height: 40px;
+    background: var(--acceso-testo); color: var(--acceso);
+  }
 
   /* ------------------------------------------------- aggiornamento */
   .nuova {
@@ -1323,7 +1371,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261001105228";
+const VERSIONE = "20261001111418";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -1752,6 +1800,11 @@ const rassegnati = {
   aggiungi(v) {
     if (this.ha(v.tipo, v.id)) return;
     this.tutto = [{ tipo: v.tipo, id: v.id }, ...this.tutto];
+  },
+  // serve all'annulla del mazzo: disfare un «avanti» vuol dire
+  // rimettere il titolo nella rassegna da cui l'avevi tolto
+  togli(tipo, id) {
+    this.tutto = this.tutto.filter(x => !(x.tipo === tipo && String(x.id) === String(id)));
   },
 };
 
@@ -3031,7 +3084,16 @@ async function schedaGrezza(tipo, id) {
     for (const p of italia[t] || []) {
       const pid = String(p.provider_id);
       const vale = t === "flatrate" ? miei.includes(pid) : true;
-      if (vale && !visti.has(pid)) {
+      // Un provider scartato resta GIUDICATO, e il giro dopo non lo
+      // ripesca. TMDB elenca lo stesso provider in due canali per certi
+      // titoli - Apple TV sta sia in flatrate sia in free per Ted Lasso,
+      // Silo, Slow Horses, Dark Matter - e senza questa riga il canale
+      // free lo riprendeva e rispondeva "E' gratis" su un abbonamento
+      // che NON hai. Misurato: 4 titoli Apple TV+ su 28.
+      // Il gratis vero non passa da qui: Rai Play o Plex stanno in free
+      // e non in flatrate, quindi non vengono mai scartati.
+      if (!vale) { visti.add(pid); continue; }
+      if (!visti.has(pid)) {
         visti.add(pid);
         if (t === "flatrate") cePaga = true;
         compresi.push({
@@ -3266,12 +3328,26 @@ function grigliaDi(elementi, mostraMio = false) {
   elementi.forEach(v => {
     const c = el("button", "carta" +
       (v.tua === false ? " nonTua" : "") + (v.questo ? " questo" : ""));
+    // Il TUO voto e quello di TMDB non possono stare nello stesso angolo
+    // con la stessa veste: uno e' il giudizio del mondo, l'altro il tuo,
+    // e passando da «Da guardare» a «Visti» vedevi 7.8 e ★★★★★ nello
+    // stesso punto. Il tuo scende in basso a sinistra, in crema - il
+    // colore che qui vuol dire «tuo» - e si scrive ★5: cinque stelle a
+    // 11px mangiavano il 73% del bordo alto del poster, e a colpo
+    // d'occhio quattro non si distinguevano da cinque.
     const distintivo = mostraMio && v.mio
-      ? '<span class="voto">' + "★".repeat(v.mio) + "</span>"
+      ? '<span class="mioVoto" role="img" aria-label="Il tuo voto: ' +
+        v.mio + ' su 5">★' + v.mio + "</span>"
       : (v.voto ? '<span class="voto">' + v.voto.toFixed(1) + "</span>" : "");
     c.innerHTML =
       '<div class="tela">' +
-        (v.locandina ? locandina(v.locandina) : '<div class="manca">' + esc(v.titolo) + "</div>") +
+        // aria-hidden perche' il titolo e' gia' nell'h3 qui sotto: resta
+        // identico da vedere, smette di esistere per chi ascolta. Senza
+        // questo il pulsante si annuncia «titolo, voto, titolo, anno», e
+        // sui titoli senza locandina - cioe' gli oscuri, cioe' righe
+        // intere di griglia - era ogni carta.
+        (v.locandina ? locandina(v.locandina)
+          : '<div class="manca" aria-hidden="true">' + esc(v.titolo) + "</div>") +
         distintivo +
       "</div>" +
       "<h3>" + esc(v.titolo) + "</h3>" +
@@ -5343,7 +5419,42 @@ async function parteVotare() {
   // titolo dopo, e quando ne restano pochi ne carico altri in
   // sottofondo, cosi' non ci si ferma mai.
   let inArrivo = false;
-  const dopoUnAzione = () => { aggiorna(); disegnaScartati(); disegnaRassegna(); prossima(); };
+
+  // L'ANNULLA. Ogni azione del mazzo scrive e fa avanzare la carta: se
+  // il dito prende la stella sbagliata - e sono cinque bersagli
+  // attaccati, usati di corsa - il titolo e' gia' fuori schermo, e per
+  // correggere dovresti ricordarti quale era e cercarlo nei Visti.
+  // Quindi ogni azione lascia qualche secondo per disfarla. La barra
+  // sta dentro `schermo`: cambiando scheda se ne va da se'.
+  let barraDisfa = null, timerDisfa = null;
+  const scordaDisfa = () => {
+    if (timerDisfa) clearTimeout(timerDisfa);
+    timerDisfa = null;
+    if (barraDisfa) barraDisfa.remove();
+    barraDisfa = null;
+  };
+  const offriDisfa = (testo, disfare) => {
+    scordaDisfa();
+    if (!disfare) return;
+    barraDisfa = el("div", "disfare");
+    barraDisfa.appendChild(el("span", null, testo));
+    const b = el("button", null, "Annulla");
+    b.onclick = () => {
+      disfare();
+      scordaDisfa();
+      aggiorna(); disegnaScartati(); disegnaRassegna();
+      disegna();            // la carta disfatta torna davanti
+    };
+    barraDisfa.appendChild(b);
+    schermo.appendChild(barraDisfa);
+    timerDisfa = setTimeout(scordaDisfa, 5000);
+  };
+
+  const dopoUnAzione = (testo, disfare) => {
+    aggiorna(); disegnaScartati(); disegnaRassegna();
+    offriDisfa(testo, disfare);
+    prossima();
+  };
 
   // Pesca altri titoli da votare finche' non ce ne sono abbastanza di
   // NUOVI (non ancora votati). Una pagina sola puo' essere tutta roba
@@ -5463,7 +5574,22 @@ function cardaPerVotare(v, avanza) {
     if (n <= giaVotato) b.className = "piena";   // mostra il voto che hai gia' dato
     b.setAttribute("aria-label", n + (n === 1 ? " stella" : " stelle"));
     b.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.7 6.2.6-4.7 4.2 1.4 6.1L12 16.9l-5.5 3.2 1.4-6.1L3.2 9.8l6.2-.6z"/></svg>';
-    b.onclick = () => { votaDalMazzo(dati, n, !!giaVotato); via("su"); };
+    b.onclick = () => {
+      // lo stato di prima, per poterci tornare
+      const votoPrima = giaVotato;
+      const eraInLista = lista.ha(dati.tipo, dati.id);
+      const eraRassegnato = rassegnati.ha(dati.tipo, dati.id);
+      votaDalMazzo(dati, n, !!giaVotato);
+      // «★1», non «★»: una stella sola ripetuta non dice il voto, ed e'
+      // proprio il voto che devi poter rileggere per accorgerti dello
+      // sbaglio. Stessa forma del distintivo sulle carte dei Visti.
+      via("su", "Votato ★" + n + " · " + v.titolo, () => {
+        if (votoPrima) visti.segna(dati, votoPrima);
+        else visti.togli(dati.tipo, dati.id);
+        if (eraInLista) lista.aggiungi(dati);
+        if (!eraRassegnato) rassegnati.togli(dati.tipo, dati.id);
+      });
+    };
     stelle.appendChild(b);
   }
   c.appendChild(stelle);
@@ -5494,12 +5620,22 @@ function cardaPerVotare(v, avanza) {
     notte.setAttribute("aria-pressed", String(dormire.ha(v.tipo, v.id)));
     notte.setAttribute("aria-label", "È da dormire");
     notte.innerHTML = luna;
-    notte.onclick = () => { dormire.aggiungi(dati); via("su"); };
+    notte.onclick = () => {
+      const eraNotte = dormire.ha(v.tipo, v.id);
+      dormire.aggiungi(dati);
+      via("su", "Segnato 🌙 · " + v.titolo, () => {
+        if (!eraNotte) dormire.togli(v.tipo, v.id);
+      });
+    };
 
     const avanti = el("button", "tondo");
     avanti.setAttribute("aria-label", "Avanti");
     avanti.innerHTML = '<svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>';
-    avanti.onclick = () => { rassegnati.aggiungi(dati); via("su"); };
+    avanti.onclick = () => {
+      rassegnati.aggiungi(dati);
+      via("su", "Saltato · " + v.titolo,
+          () => rassegnati.togli(v.tipo, v.id));
+    };
 
     azioni.appendChild(colonna(notte, "è da dormire"));
     azioni.appendChild(colonna(avanti, "avanti →"));
@@ -5507,7 +5643,11 @@ function cardaPerVotare(v, avanza) {
     const noVisto = el("button", "tondo salta");
     noVisto.setAttribute("aria-label", "Non l’ho visto");
     noVisto.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>';
-    noVisto.onclick = () => { scartati.aggiungi(dati); via("sx"); };
+    noVisto.onclick = () => {
+      scartati.aggiungi(dati);
+      via("sx", "Non visto · " + v.titolo,
+          () => scartati.togli(v.tipo, v.id));
+    };
 
     const notte = el("button", "tondo notte");
     const disNotte = () => notte.setAttribute("aria-pressed",
@@ -5524,7 +5664,11 @@ function cardaPerVotare(v, avanza) {
     const cuore = el("button", "tondo voglio");
     cuore.setAttribute("aria-label", "Lo voglio vedere");
     cuore.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 20.5s-7.5-4.6-7.5-9.7A4.3 4.3 0 0112 8.4a4.3 4.3 0 017.5 2.4c0 5.1-7.5 9.7-7.5 9.7z"/></svg>';
-    cuore.onclick = () => { lista.aggiungi(dati); via("dx"); };
+    cuore.onclick = () => {
+      lista.aggiungi(dati);
+      via("dx", "Nella lista · " + v.titolo,
+          () => lista.togli(v.tipo, v.id));
+    };
 
     azioni.appendChild(colonna(noVisto, "← non visto"));
     azioni.appendChild(colonna(notte, "per dormire"));
@@ -5535,7 +5679,9 @@ function cardaPerVotare(v, avanza) {
   // l'uscita: la carta scivola via nella direzione dell'azione, poi
   // avanza. Un attimo, cosi' si vede cosa e' successo.
   let uscita = false;
-  const via = (dir) => {
+  // `testo` e `disfare` viaggiano con l'uscita: chi ha fatto l'azione sa
+  // come si disfa, e la schermata li usa per offrire l'annulla
+  const via = (dir, testo, disfare) => {
     if (uscita) return;
     uscita = true;
     c.style.transition = "transform .22s ease, opacity .22s ease";
@@ -5543,7 +5689,7 @@ function cardaPerVotare(v, avanza) {
       : dir === "sx" ? "translateX(-120%) rotate(-8deg)"
       : "translateY(-30%) scale(.9)";
     c.style.opacity = "0";
-    setTimeout(avanza, 200);
+    setTimeout(() => avanza(testo, disfare), 200);
   };
 
   // il trascinamento: segue il dito, e oltre soglia commette.
@@ -5565,8 +5711,16 @@ function cardaPerVotare(v, avanza) {
   });
   const rilascia = () => {
     if (x0 === null) return;
-    if (dx > 90) { lista.aggiungi(dati); via("dx"); }
-    else if (dx < -90) { scartati.aggiungi(dati); via("sx"); }
+    if (dx > 90) {
+      lista.aggiungi(dati);
+      via("dx", "Nella lista · " + v.titolo,
+          () => lista.togli(v.tipo, v.id));
+    }
+    else if (dx < -90) {
+      scartati.aggiungi(dati);
+      via("sx", "Non visto · " + v.titolo,
+          () => scartati.togli(v.tipo, v.id));
+    }
     else {
       c.style.transition = "transform .18s ease";
       c.style.transform = "";
@@ -5807,13 +5961,33 @@ function schermoTelecomando() {
   const corpoTel = el("div", "telecomando");
   schermo.appendChild(corpoTel);
 
-  let avviso_attivo = null;
+  let avviso_attivo = null, lamento = null, lamentoTimer = null;
+  // L'errore va DOVE GUARDI. Sette tasti - volume, riproduzione,
+  // accensione - stanno sotto la piega: premendone uno, un messaggio
+  // scritto solo nella barra in cima finisce mezzo schermo piu' su,
+  // fuori vista (misurato: -457px), e intanto il tasto si illumina di
+  // crema per 170ms come quando il comando riesce. Si legge «fatto» e
+  // non si legge «fallito». Quindi l'errore compare anche in BASSO,
+  // sopra la barra di navigazione, dove il pollice ha appena premuto;
+  // la riga in cima resta per lo stato tranquillo.
   function lamenta(testo) {
     if (avviso_attivo) clearTimeout(avviso_attivo);
     const q = barra.querySelector(".quale");
     q.textContent = testo;
     barra.querySelector(".pallina").className = "pallina morta";
     avviso_attivo = setTimeout(aggiorna, 2600);
+
+    if (lamentoTimer) clearTimeout(lamentoTimer);
+    if (!lamento) {
+      lamento = el("div", "lamento");
+      // cosi' VoiceOver lo annuncia: il tasto da solo non dice niente
+      lamento.setAttribute("role", "status");
+      schermo.appendChild(lamento);
+    }
+    lamento.textContent = testo;
+    lamentoTimer = setTimeout(() => {
+      if (lamento) { lamento.remove(); lamento = null; }
+    }, 4000);
   }
 
   // Ogni tasto e' una POST: ottimista, ma se fallisce lo dice.
@@ -6034,9 +6208,34 @@ function schermoTelecomando() {
   corpoTel.appendChild(zonaModi);
 
   // ------------------------------------------------------------ stato
+  // Quando la TV non risponde i comandi NON devono sembrare pronti:
+  // ventisette tasti premibili su un apparecchio irraggiungibile si
+  // scoprono rotti uno per uno, premendoli. La regola .tasto:disabled
+  // era gia' scritta nel CSS, mancava solo chi la accendesse.
+  // Spengo SOLO quello che era vivo, e segno chi ho spento io: se no,
+  // riaccendendo, riaccenderei anche i pulsanti spenti per ragioni loro
+  // (il «Manda» della tastiera col campo vuoto, per esempio).
+  const comandiVivi = (si) => {
+    if (si) {
+      corpoTel.querySelectorAll("[data-spento]").forEach(b => {
+        b.disabled = false;
+        b.removeAttribute("data-spento");
+      });
+    } else {
+      corpoTel.querySelectorAll(".tasto, .scorciatoia, .chip").forEach(b => {
+        if (b.disabled) return;
+        b.disabled = true;
+        b.setAttribute("data-spento", "1");
+      });
+    }
+  };
+
   async function aggiorna() {
     try {
       const st = await statoTv();
+      comandiVivi(true);
+      ricarica.textContent = "Aggiorna";
+      ricarica.onclick = aggiorna;
       barra.querySelector(".pallina").className = "pallina " + (st.accesa ? "viva" : "");
       const nome = nomeApp(st.app);
       barra.querySelector(".quale").textContent = st.accesa
@@ -6097,6 +6296,13 @@ function schermoTelecomando() {
     } catch (e) {
       barra.querySelector(".pallina").className = "pallina morta";
       barra.querySelector(".quale").textContent = e.message;
+      comandiVivi(false);
+      // Se il collegamento non c'e' per niente, «Aggiorna» non puo'
+      // servire a niente: al suo posto la cosa che serve davvero.
+      if (!oauth.collegato && !chiavi.token) {
+        ricarica.textContent = "Collega";
+        ricarica.onclick = () => vai("impostazioni");
+      }
     }
   }
 
@@ -6472,7 +6678,11 @@ function bloccoStanza(pad) {
 //    provava due cose diverse: quando una delle due non andava, non
 //    si capiva quale.
 function bloccoTmdb(pad) {
-  pad.appendChild(el("p", "sezione", "Chiave TMDB"));
+  // Niente intestazione di sezione: diceva CHIAVE TMDB e otto pixel
+  // sotto l'etichetta del campo ripeteva Chiave TMDB. E' il primo campo
+  // che vedi aprendo l'app la prima volta, e lo vedevi doppio. Con una
+  // sezione che contiene un campo solo, l'intestazione non separa
+  // niente: restano 34px, proprio dove la tastiera e' aperta.
   const c = el("div", "campo");
   c.innerHTML = '<label for="k1">Chiave TMDB</label>' +
     '<textarea id="k1" rows="2" autocapitalize="off" autocomplete="off" ' +
