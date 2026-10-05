@@ -1414,7 +1414,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261005111959";
+const VERSIONE = "20261005142321";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -6087,27 +6087,56 @@ async function schermoPrendi(quale, voci) {
   if (!voci.length) return vuoto("Questo indirizzo non contiene nessun titolo.");
   girello();
 
-  const pieni = (await Promise.all(voci.slice(0, 60).map(async v => {
-    try {
-      const d = await tmdb("/" + v.tipo + "/" + v.id,
-                           { language: LINGUA, append_to_response: "keywords" });
-      return {
-        tipo: v.tipo, id: v.id, mio: v.mio,
-        titolo: d.title || d.name || "?",
-        anno: (d.release_date || d.first_air_date || "").slice(0, 4),
-        voto: d.vote_average || 0,
-        locandina: d.poster_path,
-        generiId: (d.genres || []).map(g => String(g.id)),
-        keyword: (((d.keywords || {}).keywords) || ((d.keywords || {}).results) || [])
-          .slice(0, 3).map(k => String(k.id)),
-      };
-    } catch (e) { return null; }
-  }))).filter(Boolean);
+  // A LOTTI, e non i primi sessanta. Prima il tetto era
+  // `voci.slice(0, 60)`: il link conteneva tutto, ma chi lo apriva ne
+  // prendeva sessanta e il resto spariva IN SILENZIO, che e' la parte
+  // peggiore. Il tetto serviva a non sparare duecento richieste
+  // insieme a TMDB; a lotti di venti il problema non c'e' e non si
+  // perde niente.
+  const LOTTO = 20;
+  const pieni = [];
+  const avanzamento = el("p", "nota");
+  avanzamento.style.cssText = "text-align:center";
+  for (let i = 0; i < voci.length; i += LOTTO) {
+    if (voci.length > LOTTO) {
+      avanzamento.textContent = "Prendo " +
+        Math.min(i + LOTTO, voci.length) + " di " + voci.length + "\u2026";
+      if (!avanzamento.parentElement) schermo.appendChild(avanzamento);
+    }
+    const parte = await Promise.all(voci.slice(i, i + LOTTO).map(async v => {
+      try {
+        const d = await tmdb("/" + v.tipo + "/" + v.id,
+                             { language: LINGUA, append_to_response: "keywords" });
+        return {
+          tipo: v.tipo, id: v.id, mio: v.mio,
+          titolo: d.title || d.name || "?",
+          anno: (d.release_date || d.first_air_date || "").slice(0, 4),
+          voto: d.vote_average || 0,
+          locandina: d.poster_path,
+          generiId: (d.genres || []).map(g => String(g.id)),
+          keyword: (((d.keywords || {}).keywords) || ((d.keywords || {}).results) || [])
+            .slice(0, 3).map(k => String(k.id)),
+        };
+      } catch (e) { return null; }
+    }));
+    pieni.push(...parte.filter(Boolean));
+  }
+  // quelli che TMDB non ha dato: lo dico, invece di farli sparire
+  const persi = voci.length - pieni.length;
 
   schermo.innerHTML = "";
   const su = el("button", "indietro", "← Chiudi");
   su.onclick = () => vai("lista");
   schermo.appendChild(su);
+
+  if (persi > 0) {
+    const avviso = el("p", "nota");
+    avviso.style.cssText = "margin:0 16px";
+    avviso.innerHTML = "<b>" + persi + "</b> " +
+      quanti(persi, "titolo non \u00e8 arrivato", "titoli non sono arrivati") +
+      ": TMDB non li ha dati. Gli altri ci sono tutti.";
+    schermo.appendChild(avviso);
+  }
 
   const pad = el("div", "pad");
   pad.appendChild(el("h1", "titolone",
