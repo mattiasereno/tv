@@ -1419,7 +1419,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261005203223";
+const VERSIONE = "20261005203656";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -7960,9 +7960,14 @@ function bloccoDiagnosi(pad) {
           : c === -25300 ? "non c'è (-25300)"
           : c === -34018 ? "permesso negato (-34018)"
           : "codice " + c;
+        // ATTENZIONE: questa riga diceva «lo vede anche il widget», ed
+        // era una deduzione sbagliata. L'app accede al gruppo condiviso
+        // per diritto proprio - quel gruppo E' il suo identificativo -
+        // mentre il widget chiede un gruppo che non e' il suo e il
+        // profilo gratuito glielo puo' negare. Dall'app non si puo'
+        // sapere: lo dice il widget, scrivendo «negato» accanto al nome
+        // della stanza.
         const condiviso = k["nel gruppo condiviso"] === 0;
-        riga("  lo vede anche il widget", condiviso ? "sì" : "NO",
-             condiviso);
         riga("  nel gruppo condiviso", nome(k["nel gruppo condiviso"]),
              condiviso);
         riga("  nel portachiavi privato", nome(k["senza gruppo"]), null);
