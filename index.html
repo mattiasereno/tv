@@ -1419,7 +1419,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261005203656";
+const VERSIONE = "20261005204108";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -7945,6 +7945,12 @@ function bloccoDiagnosi(pad) {
       rT.aggiorna(st.tv ? "c'è" : "manca: la TV chiederà il consenso", !!st.tv);
       rF.aggiorna(st.fire ? "c'è" : "manca", !!st.fire);
       rS.aggiorna(st.strada === "fire" ? "Fire Stick" : "TV Samsung");
+      // IL NOME con cui l'app si presenta alla TV. La TV autorizza per
+      // nome: se il widget ne usa un altro, per lei sono due
+      // apparecchi e il token non gli serve. Il widget scrive «nome?»
+      // quando sta ancora usando il predefinito.
+      riga("Nome verso la TV", st.nome || "—",
+           st.nome ? (st.nome === "TV-iphone" ? null : true) : false);
 
       // I CODICI DEL PORTACHIAVI, quando il token manca. «Non c'è»
       // (-25300) e «non mi è permesso» (-34018) a schermo si
