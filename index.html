@@ -538,6 +538,18 @@
     background: var(--fondo-alto); border: 1px solid var(--bordo);
   }
   .visto .domanda { margin: 0 0 10px; font-size: 14.5px; color: var(--tenue); }
+  /* La parola del voto: quella data in grande, oppure la chiave della
+     scala quando non hai ancora votato. */
+  .visto .parolaVoto {
+    margin: 6px 1px 0; font-size: 15px; font-weight: 620;
+    letter-spacing: -.01em; color: var(--acceso);
+  }
+  .visto .parolaVoto.v1, .visto .parolaVoto.v2 { color: var(--rosso); }
+  .visto .parolaVoto.v3 { color: var(--testo); }
+  .visto .parolaVoto.chiave {
+    font-size: 11.5px; font-weight: 400; color: var(--debole);
+    letter-spacing: .01em;
+  }
   .stelle { display: flex; gap: 4px; }
   .stelle button {
     width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
@@ -707,6 +719,9 @@
     color: var(--tenue); font-size: 13.5px; line-height: 1.55;
   }
   .gusto b { color: var(--testo); font-weight: 600; }
+  /* i generi bocciati: si leggono come il contrario, non come un errore */
+  .gusto .fuggo { color: var(--rosso); }
+  .gusto .fuggo::before { content: ""; }
 
   /* L'errore di un tasto: ATTACCATO al tasto che ha fallito, non in
      cima dove non stai guardando e non fissato in basso, dove copriva
@@ -937,6 +952,8 @@
     font-size: 13px; font-weight: 560; white-space: nowrap;
   }
   .strada b { color: var(--testo); font-weight: 600; }
+  .strada svg { width: 14px; height: 14px; fill: none; stroke: currentColor;
+    stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: 0 0 14px; }
 
   /* La scelta all'avvio: due riquadri grandi, uno per strada. */
   .bivio { padding: 8vh 16px 0; }
@@ -1397,7 +1414,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261001115316";
+const VERSIONE = "20261005111959";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -2274,16 +2291,55 @@ function leggiAltroTelefono(pezzo) {
 
 // Il gusto: conto generi e keyword dei titoli che hai votato bene,
 // pesando 4 stelle 1 e 5 stelle 2. Non e' magia, e' un conteggio.
+// LA SCALA DEI VOTI. Ogni stella e' una frase, non una quantita', e
+// pesa di conseguenza:
+//   ★     orribile            -3
+//   ★★    non da rivedere     -1
+//   ★★★   carino              +1   <- conta: se e' carino, generi simili vanno bene
+//   ★★★★  mi piace molto      +3
+//   ★★★★★ capolavoro          +5
+// Prima contavano SOLO le 4 e le 5 stelle (filtro `>= 4` in sette
+// punti del file): dare «orribile» a un horror era identico a dargli
+// «carino», cioe' niente, e l'app te ne riproponeva altri il giorno
+// dopo. Meta' della scala non arrivava da nessuna parte.
+//
+// Le soglie sono fatte perche' serva piu' di una serata per cambiare
+// idea: un genere entra fra quelli cercati con +3 (un «mi piace molto»,
+// o tre «carini») e fra quelli evitati con -3 (un «orribile», o tre
+// «non da rivedere»). I numeri si cambiano qui e valgono per tutta
+// l'app.
+const PESO_VOTO = { 1: -3, 2: -1, 3: 1, 4: 3, 5: 5 };
+const PAROLA_VOTO = {
+  1: "orribile", 2: "non da rivedere", 3: "carino",
+  4: "mi piace molto", 5: "capolavoro",
+};
+const SOGLIA_CERCO = 3, SOGLIA_EVITO = -3;
+
+// I generi e le keyword pesati coi voti, in positivo e in negativo.
+// `generi`/`keyword` sono quelli da cercare, `senzaGeneri` quelli da
+// cui stare alla larga - e li' finisce il segnale dei voti bassi, che
+// prima si buttava via.
 function profiloGusto() {
-  const buoni = visti.tutto.filter(v => (v.mio || 0) >= 4);
+  const votati = visti.tutto.filter(v => PESO_VOTO[v.mio || 0] !== undefined);
   const generi = {}, keyword = {};
-  buoni.forEach(v => {
-    const peso = v.mio >= 5 ? 2 : 1;
+  votati.forEach(v => {
+    const peso = PESO_VOTO[v.mio];
     (v.generiId || []).forEach(g => { generi[g] = (generi[g] || 0) + peso; });
     (v.keyword || []).forEach(k => { keyword[k] = (keyword[k] || 0) + peso; });
   });
-  const cima = o => Object.entries(o).sort((a, b) => b[1] - a[1]).slice(0, 4).map(x => x[0]);
-  return { quanti: buoni.length, generi: cima(generi), keyword: cima(keyword) };
+  const cima = (o, soglia) => Object.entries(o)
+    .filter(([, p]) => p >= soglia)
+    .sort((a, b) => b[1] - a[1]).slice(0, 4).map(x => x[0]);
+  const fondo = (o) => Object.entries(o)
+    .filter(([, p]) => p <= SOGLIA_EVITO)
+    .sort((a, b) => a[1] - b[1]).slice(0, 4).map(x => x[0]);
+  return {
+    quanti: votati.length,
+    generi: cima(generi, SOGLIA_CERCO),
+    keyword: cima(keyword, SOGLIA_CERCO),
+    senzaGeneri: fondo(generi),
+    punti: generi,            // per la schermata che spiega il profilo
+  };
 }
 
 // Il gusto DI CASA: non la media dei due, ma l'INCROCIO. Un genere
@@ -2295,14 +2351,16 @@ function profiloGusto() {
 // detesta batterebbe un genere che piace a entrambi - ed e'
 // esattamente il titolo che poi nessuno dei due vuole guardare.
 function profiloDiCasa() {
+  // stessa scala di profiloGusto: i voti bassi contano in negativo
   const pesa = (voci) => {
     const g = {}, k = {};
-    voci.filter(v => (v.mio || 0) >= 4).forEach(v => {
-      const peso = v.mio >= 5 ? 2 : 1;
+    const votate = voci.filter(v => PESO_VOTO[v.mio || 0] !== undefined);
+    votate.forEach(v => {
+      const peso = PESO_VOTO[v.mio];
       (v.generiId || []).forEach(x => { g[x] = (g[x] || 0) + peso; });
       (v.keyword || []).forEach(x => { k[x] = (k[x] || 0) + peso; });
     });
-    return { g, k, quanti: voci.filter(v => (v.mio || 0) >= 4).length };
+    return { g, k, quanti: votate.length };
   };
 
   const mio = pesa(visti.tutto);
@@ -2315,8 +2373,12 @@ function profiloDiCasa() {
     const fuori = {};
     Object.keys(mio[campo]).forEach(id => {
       let minimo = mio[campo][id];
+      if (minimo <= 0) return;          // a me non piace: fuori
       for (const l of loro) {
-        if (!l[campo][id]) return;      // a qualcuno non piace: fuori
+        // non basta che il genere ci sia: deve piacere anche a lui. Un
+        // peso negativo vuol dire che l'ha votato male, e allora e' il
+        // contrario di un gusto in comune.
+        if (!l[campo][id] || l[campo][id] <= 0) return;
         minimo = Math.min(minimo, l[campo][id]);
       }
       fuori[id] = minimo;
@@ -2325,12 +2387,26 @@ function profiloDiCasa() {
       .slice(0, 4).map(x => x[0]);
   };
 
+  // Quello che basta UNO a bocciare: se un genere fa orrore a qualcuno
+  // di casa, la serata insieme non si fa li'. Qui l'unione, non
+  // l'incrocio - al contrario dei gusti.
+  const bocciati = () => {
+    const fuori = new Set();
+    [mio, ...loro].forEach(p => {
+      Object.entries(p.g).forEach(([id, peso]) => {
+        if (peso <= SOGLIA_EVITO) fuori.add(id);
+      });
+    });
+    return [...fuori].slice(0, 6);
+  };
+
   return {
     // «quanti» e' il minimo: se uno ha votato tre titoli e l'altro
     // trenta, quello che sappiamo di sicuro sono tre
     quanti: loro.length ? Math.min(mio.quanti, ...loro.map(l => l.quanti))
                         : 0,
     chi, generi: incrocia("g"), keyword: incrocia("k"),
+    senzaGeneri: bocciati(),
   };
 }
 
@@ -2935,8 +3011,11 @@ function esclusiDaiConsigli() {
 }
 
 async function cinqueSimili(tipo, quanti = 5) {
+  // Da 3 stelle in su: «carino» vuol dire che i simili vanno bene. Resta
+  // l'ordine per voto, quindi i capolavori fanno da seme per primi e i
+  // carini solo se non bastano.
   const semi = visti.tutto
-    .filter(v => (v.mio || 0) >= 4 && v.tipo === tipo)
+    .filter(v => (v.mio || 0) >= 3 && v.tipo === tipo)
     .sort((a, b) => (b.mio || 0) - (a.mio || 0))
     .slice(0, 6);
   if (!semi.length) return [];
@@ -2951,6 +3030,10 @@ async function cinqueSimili(tipo, quanti = 5) {
   const pool = mescolaAGiro(liste, esclusi);
 
   const durata = (DURATE.movie || []).find(x => x.n === STASERA.durata);
+  // I generi che hai bocciato: il grafo dei simili di TMDB non sa niente
+  // dei tuoi voti bassi, e fra i consigliati di un film che ami puo'
+  // benissimo infilarti il genere che non sopporti.
+  const evitati = new Set(profiloGusto().senzaGeneri.map(String));
   const scelti = [];
   let chiamate = 0;
   for (const v of pool) {
@@ -2959,6 +3042,8 @@ async function cinqueSimili(tipo, quanti = 5) {
     let d;
     try { d = await scheda(v.tipo, v.id); } catch (e) { continue; }
     if (!d.compresi.length) continue;                 // non lo paghi: fuori
+    if (evitati.size && (d.generiId || []).some(g => evitati.has(String(g))))
+      continue;                                       // genere bocciato: fuori
     if (tipo === "movie" && durata && d.minuti) {      // rispetta la durata
       if (durata.gte && d.minuti < durata.gte) continue;
       if (durata.lte && d.minuti > durata.lte) continue;
@@ -3610,12 +3695,36 @@ function mostraTour() {
 
 // Il bollino accanto al titolo: dice in che modo sei, e con un tocco
 // si cambia.
-function bolloStrada() {
+// Il bollino della strada. Un tocco CAMBIA, non apre una schermata: era
+// montato solo nel titolo di Sfoglia e per passare da una stanza
+// all'altra ci volevano quattro passaggi - andare su Sfoglia, toccare,
+// scegliere nel bivio a tutto schermo, tornare - per un interruttore a
+// due posizioni. Il bivio resta per la PRIMA scelta, quando le due
+// strade vanno spiegate; qui le conosci gia'.
+// Un tocco lungo (o il tasto di scelta rapida) riapre la spiegazione.
+// `ridisegna` e' come si rifa' la schermata in cui sei: dalla scheda di
+// un titolo «vai(scheda_attiva)» ti riportava su Sfoglia, cioe' perdevi
+// il titolo proprio nel momento in cui volevi vedere l'altro pulsante.
+function bolloStrada(ridisegna) {
+  const rifai = ridisegna || (() => vai(scheda_attiva));
   const b = el("button", "strada");
-  b.innerHTML = "<b>" + esc(nomeStrada()) + "</b>";
-  b.setAttribute("aria-label",
-    "Stai usando " + nomeStrada() + ". Toccalo per cambiare.");
-  b.onclick = () => schermoBivio(() => vai(scheda_attiva));
+  const scrivi = () => {
+    const altra = chiavi.strada === "fire" ? "TV Samsung" : "Fire Stick";
+    b.innerHTML = ICONE.scambia + "<b>" + esc(nomeStrada()) + "</b>";
+    b.setAttribute("aria-label",
+      "Stai usando " + nomeStrada() + ". Toccalo per passare a " + altra + ".");
+    b.setAttribute("title", "Passa a " + altra);
+  };
+  scrivi();
+  b.onclick = () => {
+    chiavi.strada = chiavi.strada === "fire" ? "tv" : "fire";
+    rifai();                            // la schermata si rifa' nel modo nuovo
+  };
+  // chi vuole rileggere cosa fa ciascuna strada: tocco lungo
+  b.oncontextmenu = (e) => {
+    e.preventDefault();
+    schermoBivio(rifai);
+  };
   return b;
 }
 
@@ -3960,8 +4069,8 @@ async function schermoStasera() {
     const p = el("div", "gusto");
     p.innerHTML = gusto.quanti >= 3 && nomi.length
       ? "Pesco fra <b>" + nomi.map(esc).join(", ") + "</b>, da " + gusto.quanti +
-        " titoli che hai votato 4 o 5 stelle."
-      : "Mi servono almeno <b>3 titoli votati 4 o 5 stelle</b> per sapere cosa ti piace. " +
+        " titoli che hai votato."
+      : "Mi servono almeno <b>3 titoli votati</b> per sapere cosa ti piace. " +
         "Ne hai " + gusto.quanti + ": vota dalle schede, poi torna qui.";
     schermo.appendChild(p);
   }
@@ -3975,7 +4084,7 @@ async function schermoStasera() {
       ? "Pesco fra <b>" + nomi.map(esc).join(", ") + "</b>: sono i generi " +
         "che piacciono <b>a tutti e due</b>, non la media.<br>" +
         "In casa: tu e " + c.chi.map(esc).join(", ") + "."
-      : "Per il gusto di casa servono <b>3 titoli votati 4 o 5 stelle a " +
+      : "Per il gusto di casa servono <b>3 titoli votati a " +
         "testa</b>, e almeno un genere in comune. Al momento ne contiamo " +
         c.quanti + (c.chi.length
           ? " in comune con " + c.chi.map(esc).join(", ") + "."
@@ -3989,10 +4098,10 @@ async function schermoStasera() {
     const p = el("div", "gusto");
     p.innerHTML = quanti
       ? "Pesco fra " + (quanti === 1
-          ? "<b>l\u2019unico</b> titolo che hai votato 4 o 5 stelle"
-          : "i <b>" + quanti + "</b> titoli che hai votato 4 o 5 stelle") +
+          ? "<b>l\u2019unico</b> titolo che hai votato"
+          : "i <b>" + quanti + "</b> titoli che hai votato") +
         ", e ti dico se sono ancora fra i tuoi abbonamenti."
-      : "Non hai ancora votato niente con 4 o 5 stelle.";
+      : "Non hai ancora votato niente.";
     schermo.appendChild(p);
   }
 
@@ -4095,9 +4204,9 @@ async function schermoStasera() {
                          ...g.keyword.map(x => ({ keyword: x }))];
         if (g.quanti < 3 || !segnali.length) {
           risultato.innerHTML = '<p class="nota">' + (diCasa
-            ? "Per il gusto di casa servono 3 titoli votati 4 o 5 stelle " +
+            ? "Per il gusto di casa servono 3 titoli votati a testa " +
               "a testa, e almeno un genere in comune."
-            : "Vota almeno 3 titoli con 4 o 5 stelle e comincio a " +
+            : "Vota almeno 3 titoli e comincio a " +
               "consigliarti sul tuo gusto.") + "</p>";
           return;
         }
@@ -4113,7 +4222,11 @@ async function schermoStasera() {
           const scelto = segnali[Math.floor(Math.random() * segnali.length)];
           const f = { tipo: STASERA.tipo, genere: scelto.genere || "",
                       keyword: scelto.keyword || "", ordine: "vote_average.desc",
-                      servizio: "", decennio: "Tutti", durata: STASERA.durata };
+                      servizio: "", decennio: "Tutti", durata: STASERA.durata,
+                      // i generi bocciati coi voti bassi: discover sa
+                      // escluderli da se', e' il without_genres che usa
+                      // gia' «Per dormire»
+                      senzaGenere: (g.senzaGeneri || []).join(",") };
           elenco = (await cinqueDaDiscover(f)).map(v => ({ v }));
         }
 
@@ -4503,6 +4616,11 @@ async function schermoDettaglio(tipo, id, torna) {
   const su = el("button", "indietro", "← Indietro");
   su.onclick = torna || (() => vai(scheda_attiva));
   barraSu.appendChild(su);
+  // Il bollino della strada: e' questa schermata che cambia di piu'
+  // fra le due stanze - qui compare «Apri Disney+ sulla TV» oppure il
+  // pulsante del Fire - e prima non c'era modo di sapere in quale sei
+  // ne' di cambiarla senza tornare su Sfoglia.
+  barraSu.appendChild(bolloStrada(() => schermoDettaglio(tipo, id, torna)));
 
   const cuore = el("button", "cuore");
   cuore.setAttribute("aria-label", "Metti fra i titoli da guardare");
@@ -4637,7 +4755,8 @@ async function schermoDettaglio(tipo, id, torna) {
     for (let n = 1; n <= 5; n++) {
       const b = el("button");
       b.className = n <= mio ? "piena" : "";
-      b.setAttribute("aria-label", n + (n === 1 ? " stella" : " stelle"));
+      b.setAttribute("aria-label", n + (n === 1 ? " stella" : " stelle") +
+                               " \u2014 " + PAROLA_VOTO[n]);
       b.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.7 6.2.6-4.7 4.2 1.4 6.1L12 16.9l-5.5 3.2 1.4-6.1L3.2 9.8l6.2-.6z"/></svg>';
       b.onclick = () => {
         visti.segna({
@@ -4652,6 +4771,16 @@ async function schermoDettaglio(tipo, id, torna) {
       fila.appendChild(b);
     }
     blocco.appendChild(fila);
+
+    // La parola sotto le stelle. Il voto e' una frase, non una
+    // quantita': «capolavoro» non va spiegato, «5 su 5» si'. Se non hai
+    // ancora votato mostro le due estremita', che sono la chiave di
+    // lettura di tutta la scala.
+    const parola = el("p", "parolaVoto" + (mio ? " v" + mio : " chiave"));
+    parola.innerHTML = mio
+      ? esc(PAROLA_VOTO[mio])
+      : "★ orribile · ★★★ carino · ★★★★★ capolavoro";
+    blocco.appendChild(parola);
 
     // Il voto di chi altro sta in casa. Non si mescola col tuo: si
     // affianca. E' l'unico modo perche' «Stasera» possa pescare
@@ -4876,6 +5005,8 @@ async function schermoPersona(id, torna) {
 }
 
 const ICONE = {
+  // le due frecce del bollino della strada: dice che si scambia
+  scambia: '<svg viewBox="0 0 24 24"><path d="M7 4L3.5 7.5 7 11"/><path d="M3.5 7.5H16a4.5 4.5 0 010 9h-1"/><path d="M17 20l3.5-3.5L17 13"/></svg>',
   su:    '<svg viewBox="0 0 24 24"><path d="M12 19V6M5.5 12.5L12 6l6.5 6.5"/></svg>',
   giu:   '<svg viewBox="0 0 24 24"><path d="M12 5v13M5.5 11.5L12 18l6.5-6.5"/></svg>',
   sx:    '<svg viewBox="0 0 24 24"><path d="M19 12H6M12.5 5.5L6 12l6.5 6.5"/></svg>',
@@ -5186,18 +5317,28 @@ function parteVisti() {
   if (g.quanti >= 3) {
     const nomi = [...g.generi.map(nomeGenere), ...g.keyword.map(nomeKeyword)]
       .filter(Boolean).slice(0, 4);
-    if (nomi.length) {
+    const fuori = g.senzaGeneri.map(nomeGenere).filter(Boolean);
+    if (nomi.length || fuori.length) {
       const p = el("div", "gusto");
-      p.innerHTML = "Da " + g.quanti + " titoli che hai votato 4 o 5 stelle, ti piacciono " +
-        "<b>" + nomi.map(esc).join(", ") + "</b>. " +
-        "«Stasera → Sul mio gusto» pesca da qui.";
+      // Quello che l'app ha capito, detto in chiaro e in due versi: non
+      // solo cosa cerca ma anche cosa scarta, che e' il lavoro dei voti
+      // bassi e prima non si vedeva da nessuna parte.
+      p.innerHTML =
+        "Da <b>" + g.quanti + "</b> " + quanti(g.quanti, "titolo votato", "titoli votati") +
+        (nomi.length
+          ? ": cerco <b>" + nomi.map(esc).join(", ") + "</b>"
+          : ": non ho ancora un genere su cui puntare") +
+        (fuori.length
+          ? " ed <span class=\"fuggo\">evito " + fuori.map(esc).join(", ") + "</span>"
+          : "") +
+        ". «Stasera › Sul mio gusto» pesca da qui.";
       schermo.appendChild(p);
     }
   } else {
     const p = el("div", "gusto");
     // e dico anche DOVE votarne in fretta: «Da votare» e' la
     // linguetta accanto, ma se non lo scrivo qui non si trova
-    p.innerHTML = "Vota almeno <b>3 titoli con 4 o 5 stelle</b> e «Stasera» " +
+    p.innerHTML = "Vota almeno <b>3 titoli</b> e «Stasera» " +
       "comincia a pescare sul tuo gusto. Ne hai " + g.quanti + ".<br>" +
       "Il modo rapido \u00e8 la linguetta <b>Da votare</b>, qui sopra.";
     schermo.appendChild(p);
@@ -5627,7 +5768,8 @@ function cardaPerVotare(v, avanza) {
   for (let n = 1; n <= 5; n++) {
     const b = el("button");
     if (n <= giaVotato) b.className = "piena";   // mostra il voto che hai gia' dato
-    b.setAttribute("aria-label", n + (n === 1 ? " stella" : " stelle"));
+    b.setAttribute("aria-label", n + (n === 1 ? " stella" : " stelle") +
+                               " \u2014 " + PAROLA_VOTO[n]);
     b.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.7 6.2.6-4.7 4.2 1.4 6.1L12 16.9l-5.5 3.2 1.4-6.1L3.2 9.8l6.2-.6z"/></svg>';
     b.onclick = () => {
       // lo stato di prima, per poterci tornare
@@ -5638,7 +5780,8 @@ function cardaPerVotare(v, avanza) {
       // «★1», non «★»: una stella sola ripetuta non dice il voto, ed e'
       // proprio il voto che devi poter rileggere per accorgerti dello
       // sbaglio. Stessa forma del distintivo sulle carte dei Visti.
-      via("su", "Votato ★" + n + " · " + v.titolo, () => {
+      via("su", "Votato ★" + n + " · " + PAROLA_VOTO[n] +
+               " · " + v.titolo, () => {
         if (votoPrima) visti.segna(dati, votoPrima);
         else visti.togli(dati.tipo, dati.id);
         if (eraInLista) lista.aggiungi(dati);
@@ -5651,8 +5794,8 @@ function cardaPerVotare(v, avanza) {
   // Legenda fissa: sempre visibile, cosi' non si deve indovinare. Sui
   // gia' votati cambia: qui il punto e' il 🌙, non il voto.
   c.appendChild(el("p", "didascStelle", giaVotato
-    ? "Già visto — segna 🌙 se è da dormire"
-    : "L’ho visto — dai un voto"));
+    ? "L’hai appena votato — dimmi solo se è da dormire"
+    : "L’ho visto — ★ orribile · ★★★ carino · ★★★★★ capolavoro"));
 
   // Le azioni. Ogni pulsante con l'etichetta sotto: le frecce ← →
   // dicono che si puo' anche TRASCINARE la carta (swipe), non solo
@@ -6002,7 +6145,10 @@ async function schermoPrendi(quale, voci) {
 function schermoTelecomando() {
   schermo.innerHTML = "";
   const pad = el("div", "pad");
-  pad.appendChild(el("h1", "titolone", "Telecomando"));
+  const testaTel = el("div", "capo");
+  testaTel.appendChild(el("h1", "titolone", "Telecomando"));
+  testaTel.appendChild(bolloStrada());
+  pad.appendChild(testaTel);
   schermo.appendChild(pad);
 
   const barra = el("div", "stato");
