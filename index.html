@@ -1419,7 +1419,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261005204108";
+const VERSIONE = "20261005204442";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -7951,6 +7951,12 @@ function bloccoDiagnosi(pad) {
       // quando sta ancora usando il predefinito.
       riga("Nome verso la TV", st.nome || "—",
            st.nome ? (st.nome === "TV-iphone" ? null : true) : false);
+      // Le ultime quattro cifre del token dell'app. Il widget mostra
+      // le sue accanto al nome della stanza: se non coincidono, i due
+      // stanno usando token diversi - ed e' quello il guasto, non il
+      // nome e non il permesso.
+      riga("Token (ultime cifre)", st.coda ? "…" + st.coda : "nessuno",
+           !!st.coda);
 
       // I CODICI DEL PORTACHIAVI, quando il token manca. «Non c'è»
       // (-25300) e «non mi è permesso» (-34018) a schermo si
