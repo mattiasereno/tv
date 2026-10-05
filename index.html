@@ -1291,7 +1291,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261005212100";
+const VERSIONE = "20261005215434";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -2687,6 +2687,14 @@ async function cercaSulFire(titolo, fino, avanza) {
   });
   if (!esito.ok) throw erroreNativo(esito, "non riuscito");
   return { passi: passi.length };
+}
+
+/// Un tasto al Fire Stick, subito. Niente attese e niente pause: e'
+/// una pressione sola, e il tempo e' quello della connessione ADB -
+/// circa 250 ms da freddo piu' 137 per il tasto, misurati sul Fire
+/// vero.
+function tastoAlFire(nome) {
+  return nativoManda([nome], { strada: "fire", attesa: 0, pausa: 0 });
 }
 
 /// Ferma la scrittura in corso. Risponde ok anche se non c'era niente
@@ -7386,50 +7394,100 @@ function bloccoFire(pad) {
    --tasti resta dentro firestick.py: da riga di comando serve, e per
    capire cosa e' rotto quando si rompe serve ancora di piu'.        */
 
-// La testa della schermata Comandi quando sei in modo Fire Stick.
+// La schermata Comandi in modo Fire Stick.
+//
+// LE FRECCE CI SONO, e per un po' non c'erano: con la catena vecchia
+// una freccia costava circa tre secondi - un viaggio di a-Shell per
+// tasto - e una croce che risponde dopo tre secondi e' peggio di
+// nessuna croce. Col nativo sono 137 ms, misurati sul Fire vero, e
+// allora ha senso.
+//
+// Resta anche il collegamento al telecomando servito DAL Fire Stick:
+// per chi usa la pagina nel browser e' l'unica strada, perche' una
+// pagina https non puo' aprire una socket verso il Fire.
 function bloccoFireComandi(dove) {
   const p = el("div", "pad");
   p.style.cssText = "padding-top:0";
-
-  // L'HUB. Da qui si RAGGIUNGE il telecomando vero, non se ne fa una
-  // brutta copia. Il telecomando istantaneo lo serve l'app sul Fire
-  // Stick (play/pausa, indietro, home, apri le sette app), e questa
-  // pagina non puo' parlargli in fetch - e' https, lui e' http locale,
-  // stesso muro del ponte a-Shell. Ma puo' APRIRLO: una navigazione
-  // https->http e' permessa, e da li' i tasti sono istantanei.
   const ip = chiavi.fireip;
+
   if (!ip) {
     p.appendChild(el("p", "nota",
-      "Dimmi l\u2019indirizzo del Fire Stick in Opzioni e qui compare " +
+      "Dimmi l’indirizzo del Fire Stick in Opzioni e qui compare " +
       "il telecomando."));
     dove.appendChild(p);
     return;
   }
 
+  if (NATIVO) {
+    // L'errore va VICINO al tasto che l'ha causato: un avviso in cima
+    // alla schermata, con la croce a meta' pagina, non si vede - ed e'
+    // lo stesso difetto che la croce della TV aveva e che e' stato
+    // corretto misurandolo (copriva tre scorciatoie).
+    let avviso = null, spegni = null;
+    const dillo = (testo, vicinoA) => {
+      if (spegni) clearTimeout(spegni);
+      if (!avviso) avviso = el("div", "avvisoPonte");
+      avviso.textContent = testo;
+      const blocco = vicinoA.closest(".croce, .fila") || vicinoA;
+      if (avviso.previousSibling !== blocco) blocco.after(avviso);
+      spegni = setTimeout(() => { if (avviso) avviso.remove(); }, 6000);
+    };
+    const premi = (b, nome) => {
+      b.onclick = () => {
+        b.classList.add("acceso");
+        setTimeout(() => b.classList.remove("acceso"), 160);
+        tastoAlFire(nome).then((e) => {
+          if (!e.ok) dillo(e.errore || "non riuscito", b);
+        }).catch((e) => dillo(e.message, b));
+      };
+      return b;
+    };
+    const tasto = (etichetta, nome, classe) =>
+      premi(el("button", "tasto" + (classe ? " " + classe : ""), etichetta), nome);
+
+    p.appendChild(el("p", "sezione", "Croce"));
+    const croce = el("div", "croce");
+    croce.appendChild(tasto("▲", "UP", "su"));
+    croce.appendChild(tasto("◀", "LEFT", "sx"));
+    croce.appendChild(tasto("OK", "OK", "ok"));
+    croce.appendChild(tasto("▶", "RIGHT", "dx"));
+    croce.appendChild(tasto("▼", "DOWN", "giu"));
+    p.appendChild(croce);
+
+    p.appendChild(el("p", "sezione", "Comandi"));
+    const fila1 = el("div", "fila");
+    fila1.appendChild(tasto("Indietro", "BACK"));
+    fila1.appendChild(tasto("Home", "HOME"));
+    fila1.appendChild(tasto("Menu", "MENU"));
+    p.appendChild(fila1);
+
+    const fila2 = el("div", "fila");
+    fila2.appendChild(tasto("⏪", "RW"));
+    fila2.appendChild(tasto("⏯", "PLAY"));
+    fila2.appendChild(tasto("⏩", "FF"));
+    p.appendChild(fila2);
+
+    p.appendChild(el("p", "nota",
+      "Circa un quarto di secondo per tasto: il tempo di aprire il " +
+      "collegamento col Fire Stick, che deve essere accesso o in attesa. " +
+      "Nessuna conferma è possibile — il riscontro sei tu che guardi."));
+  }
+
+  // L'ALTRO telecomando, servito dal Fire Stick stesso. Serve a chi non
+  // ha l'app: una pagina https non puo' aprire una socket verso il
+  // Fire, ma puo' APRIRE un indirizzo http in rete locale.
   const url = "http://" + ip + ":8080/";
-  const spiega = el("div", "gusto");
-  spiega.innerHTML =
-    "Il <b>telecomando del Fire Stick</b> \u2014 in camera, sul " +
-    "proiettore. Play e pausa, indietro, home, e apri l\u2019app " +
-    "giusta: tutto <b>istantaneo</b>, servito dal Fire Stick stesso.";
-  p.appendChild(spiega);
-
-  const apri = el("a", "apri fatto");
+  const apri = el("a", "apri" + (NATIVO ? "" : " fatto"));
   apri.href = url;
-  apri.style.cssText = "display:flex;text-decoration:none";
+  apri.style.cssText = "display:flex;text-decoration:none;margin-top:10px";
   apri.innerHTML = '<span class="logo"></span><span class="etichetta">' +
-    "Apri il telecomando Fire Stick<small>Frecce, OK, play, home, apri " +
-    "l\u2019app \u2014 " + esc(url) + "</small></span>";
+    (NATIVO ? "Il telecomando servito dal Fire Stick" : "Apri il telecomando Fire Stick") +
+    "<small>" + (NATIVO
+      ? "L’alternativa, se i tasti qui sopra non arrivano: lo serve il "
+        + "Fire Stick stesso, e ci vuole l’app Ponte accesa là"
+      : "Frecce, OK, play, home, apri l’app — " + esc(url)) +
+    "</small></span>";
   p.appendChild(apri);
-
-  p.appendChild(comeSiFa(
-    "La prima volta va acceso: sul Fire Stick apri l\u2019app " +
-    "<b>Ponte</b> (col telecomando, una volta). Da l\u00ec in poi il " +
-    "telecomando \u2014 frecce comprese \u2014 resta attivo.<br><br>" +
-    "Le <b>frecce</b> passano da un aiutante che, dopo un riavvio del " +
-    "Fire Stick, va riacceso: il tasto qui sopra lo fa dal telefono. " +
-    "Play, home e apri-app invece ripartono da soli.",
-    "Come funziona"));
 
   dove.appendChild(p);
 }
