@@ -1203,14 +1203,6 @@ const TASTIERE = { "8": "netflix", "39": "now", "337": "disney",
                    "1899": "hbomax", "584": "discovery",
                    "119": "prime", "359": "infinity" };
 
-// Da dove a-Shell scarica lo script che scrive sulla TV. In un posto
-// solo, perche' finisce in un comando che l'utente incolla a mano:
-// se cambia, deve cambiare qui e basta.
-const POSIZIONE_SCRIPT =
-  "https://mattiasereno.github.io/tv/scrivi_telefono.py";
-const POSIZIONE_FIRE =
-  "https://mattiasereno.github.io/tv/firestick.py";
-
 // Dove si ferma la catena sul Fire TV, e come si chiama in italiano.
 // L'ordine e' dal piu' prudente al piu' spiccio.
 const FERMATE_FIRE = [
@@ -1219,68 +1211,6 @@ const FERMATE_FIRE = [
    "Apre il primo risultato: guardi che sia quello e premi OK"],
   ["servizio", "Parte", "Apre il primo risultato e avvia"],
 ];
-
-// Il comando da incollare nella Scorciatoia di iOS.
-//
-// NON contiene percorsi: scarica lo script al volo. Su a-Shell la
-// cartella da cui parte una Scorciatoia non e' quella della finestra
-// interattiva, e indovinarla e' costato tre tentativi. Cosi' il
-// telefono non ha nessuna copia da tenere aggiornata, che e' stata
-// due volte la causa di guasti silenziosi.
-//
-// E' una funzione e non una stringa perche' le prove devono poterlo
-// ESEGUIRE: un comando che l'utente incolla a mano e che nessuno
-// prova e' un comando che non funziona.
-// Il testo da passare alla Scorciatoia: la disposizione, le opzioni
-// e il titolo. In una funzione perche' le prove devono poter usare
-// QUESTA e non una copia - e perche' e' l'unico canale che l'app ha
-// verso lo script: il comando nella Scorciatoia e' fisso e varia solo
-// il testo.
-function testoPerScorciatoia(tastiera, comeEAndata, titolo) {
-  // PROVATO E TOLTO, 29/09/2026: qui passava " --carica=2" quando
-  // l'app era GIA' APERTA, per risparmiare i quattordici secondi di
-  // attesa che in quel caso sembravano sprecati. Sulla TV vera NON E'
-  // PARTITO, e si e' scelto di tornare all'attesa piena.
-  //
-  // Perche' non riproporlo alla leggera: "gia aperta" secondo
-  // SmartThings non vuol dire "pronta a ricevere tasti". Il
-  // tvChannelName dice quale app e' in primo piano, non se ha finito
-  // di disegnare - e i primi tasti persi sono stati uno dei difetti
-  // piu' fastidiosi di tutta la serata.
-  //
-  // comeEAndata resta nella firma perche' lancia() lo calcola
-  // comunque e le prove lo fissano: se un giorno si trova un modo di
-  // sapere che l'app e' davvero pronta, il posto e' questo.
-  return tastiera + " " + titolo;
-}
-
-function comandoScorciatoia(titolo) {
-  // Tutto passa come ARGOMENTI, non nell'ambiente: a-Shell non e' una
-  // shell completa e il prefisso VAR=valore davanti al comando non lo
-  // interpreta.
-  //
-  // --nome perche' il token della TV e' legato al nome con cui ci si
-  // presenta, e il Mac si chiama TVProject: senza un nome proprio i
-  // due si rubano il permesso e la TV lo richiede ogni volta.
-  //
-  // --token perche' sul telefono non c'e' nessun file dove tenerlo, e
-  // cercarlo nelle cartelle non funziona: la Scorciatoia parte da un
-  // posto diverso dalla finestra interattiva di a-Shell.
-  return 'python3 -c "import urllib.request as u;' +
-         "exec(u.urlopen('" + POSIZIONE_SCRIPT + "').read())\"" +
-         " --nome=" + chiavi.tvnome +
-         (chiavi.tvtoken ? " --token=" + chiavi.tvtoken : "") +
-         ' --apri "' + titolo + '"';
-}
-
-// Un indirizzo di rete ha una forma. Dirlo subito vale piu' che
-// scoprirlo quando lo script non trova niente: «non arrivo a
-// 1921680121» non fa capire che il difetto e' nel numero.
-function indirizzoBuono(ip) {
-  const pezzi = String(ip).split(".");
-  return pezzi.length === 4 && pezzi.every(
-    p => /^[0-9]{1,3}$/.test(p) && Number(p) <= 255);
-}
 
 // Il comando per la Scorciatoia del Fire Stick. Stessa forma di
 // quello Samsung - niente percorsi, lo script si scarica al volo -
@@ -1325,19 +1255,6 @@ function testoPerScorciatoiaFire(titolo, fino) {
   const f = fino || "risultati";
   return testoFire((f === "risultati" ? "" : "--fino=" + f + " ") +
                    "--cerca " + titolo);
-}
-
-// Una fila di tasti, tutti in un viaggio. E' il punto: un viaggio per
-// tasto vorrebbe dire tre secondi a freccia - la generazione della
-// chiave da sola ne vale uno e mezzo - e nessuno naviga un menu
-// cosi'. La schermata non li offre piu' (vedi bloccoFireComandi), ma
-// da riga di comando servono.
-function testoTastiFire(elenco) {
-  return testoFire("--tasti " + elenco.join(" "));
-}
-
-function testoTastoFire(tasto) {
-  return testoFire("--tasto " + tasto);
 }
 
 const NOMI_PACCHETTO = {
@@ -1419,7 +1336,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261005205003";
+const VERSIONE = "20261005211429";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -1449,33 +1366,15 @@ const chiavi = {
   get tv()     { return localStorage.getItem("st_device") || ""; },
   set tv(v)    { localStorage.setItem("st_device", v); },
 
-  // Il token del WebSocket locale della TV: altra cosa dal token
-  // SmartThings, che e' cloud. Serve solo per finire dentro il
-  // comando della Scorciatoia, cosi' sul telefono non serve nessun
-  // file - ne' lo script, ne' tastiere.py, ne' token.txt. Sono solo
-  // cifre, e qualunque altra cosa si incolli viene ripulita.
-  get tvtoken()  { return localStorage.getItem("tv_token") || ""; },
-  set tvtoken(v) { localStorage.setItem("tv_token", String(v).replace(/\D/g, "")); },
-
-  // Il nome con cui questo dispositivo si presenta alla TV. Ne serve
-  // uno PROPRIO: il token della TV e' legato al nome, quindi due
-  // dispositivi che si chiamano uguale si invalidano il permesso a
-  // vicenda, e il sintomo e' "me lo chiede ogni volta". Il Mac si
-  // chiama TVProject, quindi il telefono deve chiamarsi altrimenti.
-  // Generato una volta e conservato: cambiarlo vorrebbe dire
-  // riapprovare sulla TV.
-  get tvnome() {
-    let n = localStorage.getItem("tv_nome");
-    if (!n) {
-      n = "TV-" + Math.random().toString(36).slice(2, 6);
-      localStorage.setItem("tv_nome", n);
-    }
-    return n;
-  },
-  set tvnome(v) {
-    const pulito = String(v).replace(/[^A-Za-z0-9-]/g, "").slice(0, 24);
-    if (pulito) localStorage.setItem("tv_nome", pulito);
-  },
+  // IL TOKEN E IL NOME verso la TV non stanno piu' qui: li tiene
+  // l'app nativa, nel suo portachiavi, e se li gestisce da sola.
+  //
+  // Stavano qui per finire nel comando della Scorciatoia. Tenerne una
+  // copia nella pagina e' diventato un danno: il guscio la travasava a
+  // ogni caricamento e sovrascriveva il token buono con quello vecchio,
+  // riportando il popup del consenso. E il nome generato qui
+  // («TV-5nct») cambiava appena si svuotava il deposito, rendendo il
+  // token carta straccia - la TV lo lega al nome.
 
   // Distinguo "non ho mai scelto" (chiave assente -> predefiniti) da
   // "ho scelto niente" (lista vuota -> nessun filtro possibile, e
@@ -1489,12 +1388,6 @@ const chiavi = {
     } catch (e) { return SERVIZI_PREDEFINITI.slice(); }
   },
   set servizi(a) { localStorage.setItem("servizi", JSON.stringify(a.map(String))); },
-
-  // Il nome della Scorciatoia iOS che scrive sulla TV. Vuoto = non
-  // ce l'hai, e il pulsante non compare: meglio niente che un
-  // pulsante che apre Scorciatoie e dice "non trovata".
-  get scorciatoia() { return localStorage.getItem("scorciatoia") || ""; },
-  set scorciatoia(v) { localStorage.setItem("scorciatoia", (v || "").trim()); },
 
   // Il Fire Stick e' l'ALTRA strada, non un pezzo della stessa: non
   // passa da SmartThings, non naviga nessuna tastiera, e scrive il
@@ -2227,10 +2120,10 @@ function daMandare() {
        invalidano a vicenda. Copiarlo farebbe danno.
      - il nome: deve essere DIVERSO, altrimenti i voti si
        sovrascrivono a vicenda. Lo chiede l'altro telefono.
-     - la Scorciatoia e a-Shell: NON SERVONO. Su quel telefono
-       funziona tutto tranne scrivere il titolo dentro l'app della
-       TV; aprire un'app sulla TV invece si' - quello passa dal
-       cloud.
+     - niente da installare: la Scorciatoia e a-Shell non esistono
+       piu'. Su quel telefono funziona tutto tranne scrivere il
+       titolo dentro l'app della TV, che richiede l'app nativa;
+       aprire un'app sulla TV invece si' - quello passa dal cloud.
 
    IL LINK CONTIENE DELLE CHIAVI. Va passato di mano (AirDrop), non
    messo in una chat di gruppo. Scritto anche nella schermata.      */
@@ -2659,10 +2552,12 @@ async function rinnovaSeServe(forza = false) {
   return rinnovoInCorso;
 }
 
-// Scrivere sulla TV: il browser non puo' (pagina https, e il
-// certificato della TV vale solo per 127.0.0.1), ma una Scorciatoia
-// iOS puo', perche' e' nativa. Quindi l'app non scrive: passa il
-// testo alla Scorciatoia, che chiama a-Shell, che apre il WebSocket.
+// Resta SOLO per il Fire Stick: la ricerca sul Fire passa ancora da
+// una Scorciatoia, perche' non e' stata portata nel nativo.
+//
+// Per la TV non serve piu': i tasti li manda l'app, e il browser non
+// c'entra. Era l'unico modo quando l'unica strada era una pagina
+// https, che non puo' parlare col certificato della TV.
 //
 // Funziona solo in casa: e' un indirizzo di rete locale.
 function urlScorciatoia(nome, testo) {
@@ -2673,18 +2568,17 @@ function urlScorciatoia(nome, testo) {
          "&input=text&text=" + encodeURIComponent(pulito);
 }
 
-function scriviConScorciatoia(testo) {
-  if (!chiavi.scorciatoia) return false;
-  location.href = urlScorciatoia(chiavi.scorciatoia, testo);
-  return true;
-}
-
 // ------------------------------------------------------------ il ponte
-// Dentro l'app nativa i tasti li manda lei, e spariscono la Scorciatoia,
-// a-Shell e il Mac acceso. Fuori - nella pagina aggiunta alla Home, che
-// e' quella che usa chi non ha l'app - resta la strada di prima: un
-// browser non puo' aprire ne' il WebSocket della TV ne' una socket
-// verso il Fire, e questo non cambia.
+// Dentro l'app nativa i tasti li manda lei. La Scorciatoia, a-Shell e
+// il Mac acceso sono spariti per davvero - il codice che li usava non
+// c'e' piu' (05/10/2026), dopo che questa strada ha scritto due titoli
+// di fila sulla TV vera.
+//
+// Fuori dall'app - nella pagina aggiunta alla Home, che e' quella che
+// usa chi non ha l'app - scrivere sulla TV non si puo' e non si
+// finge: il pulsante non compare. Un browser non puo' aprire ne' il
+// WebSocket della TV ne' una socket verso il Fire, e questo non
+// cambia.
 const NATIVO = !!(window.webkit && window.webkit.messageHandlers &&
                   window.webkit.messageHandlers.nativo);
 
@@ -4855,7 +4749,10 @@ function pulsanteLancio(i, d) {
   // rete locale, che un browser non puo' aprire (il certificato della
   // TV vale solo per 127.0.0.1).
   const tastiera = TASTIERE[i.pid];
-  const cercaDentro = !!(tastiera && chiavi.scorciatoia);
+  // Si puo' cercare dentro l'app solo se i tasti li manda il nativo:
+  // la tastiera misurata serve a questo, e fuori dall'app non c'e'
+  // nessuno che prema.
+  const cercaDentro = !!(tastiera && NATIVO);
   b.innerHTML =
     (i.logo ? '<img class="logo" src="' + IMG + "/w92" + i.logo + '" alt="">' : '<span class="logo"></span>') +
     '<span class="etichetta">' + (cercaDentro
@@ -4890,10 +4787,12 @@ function pulsanteLancio(i, d) {
               .catch(() => {});
             return;
           }
-          et.innerHTML = esc(i.nome) +
-            " è aperta<small>Passo «" + esc(d.titolo) + "» alla Scorciatoia…</small>";
-          scriviConScorciatoia(
-            testoPerScorciatoia(tastiera, comeEAndata, d.titolo));
+          // Fuori dall'app nativa non si scrive: un browser non puo'
+          // aprire il WebSocket della TV, e la catena che passava dalla
+          // Scorciatoia e da a-Shell non c'e' piu'. L'app si e' aperta,
+          // ed e' gia' qualcosa: il titolo si cerca col telecomando.
+          et.innerHTML = esc(i.nome) + " è aperta<small>Cerca «" +
+            esc(d.titolo) + "» col telecomando della TV</small>";
           return;
         }
         b.querySelector(".etichetta").innerHTML = esc(i.nome) +
@@ -5026,7 +4925,10 @@ async function schermoDettaglio(tipo, id, torna) {
     // Scrivere il titolo sulla TV passando per la Scorciatoia iOS.
     // Compare solo se hai detto in Opzioni di averla: un pulsante che
     // apre Scorciatoie per dire "non trovata" non aiuta nessuno.
-    if (chiavi.scorciatoia || NATIVO) {
+    // Solo dentro l'app: e' lei che preme i tasti. Nel browser questo
+    // pulsante non comparirebbe mai, e va bene cosi' - meglio niente
+    // che un pulsante che apre Scorciatoie per dire «non trovata».
+    if (NATIVO) {
       const sb = el("button", "apri");
       sb.innerHTML = '<span class="logo cerca"><svg viewBox="0 0 24 24">' +
         '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>' +
@@ -5034,9 +4936,6 @@ async function schermoDettaglio(tipo, id, torna) {
         esc(d.titolo) + '» sulla TV<small>Apre la ricerca della TV e scrive il ' +
         "titolo. Poi scegli il risultato con la croce nel Telecomando.</small></span>";
       sb.onclick = () => {
-        if (!NATIVO) return scriviConScorciatoia(d.titolo);
-        // senza lancio l'app e' in uno stato qualunque: serve una
-        // tastiera con ancoraggio, altrimenti non si sa da dove si parte
         const t = TASTIERE[(d.compresi[0] || {}).pid] || "netflix";
         // senza lancio l'app e' gia' sullo schermo: un secondo basta
         scriviSulPulsante(sb, "Sulla tastiera di " + t, d.titolo, t, 1)
@@ -6740,37 +6639,16 @@ function schermoTelecomando() {
   const zonaTastiera = el("div", "tastiera");
   corpoTel.appendChild(zonaTastiera);
 
-  // Il testo passa SOLO dalla Scorciatoia iOS: SmartThings non ha
-  // nessun comando per il testo, e una pagina https non puo' aprire un
-  // WebSocket verso la TV (il suo certificato vale solo per se
-  // stessa). Il ponte via server locale c'era e non c'e' piu': faceva
-  // le stesse cose e andava tenuto allineato a mano.
-  if (chiavi.scorciatoia) {
-    const riga = el("div", "campo2");
-    const campo = el("input");
-    campo.type = "text";
-    campo.placeholder = "Testo da scrivere sulla TV";
-    campo.autocomplete = "off";
-    campo.enterKeyHint = "send";
-    const manda = el("button", "manda", "Invia");
-    const invia = () => {
-      if (!campo.value.trim()) return campo.focus();
-      scriviConScorciatoia(campo.value);
-    };
-    manda.onclick = invia;
-    campo.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); invia(); } };
-    riga.appendChild(campo);
-    riga.appendChild(manda);
-    zonaTastiera.appendChild(riga);
-    zonaTastiera.appendChild(el("div", "avvisoPonte",
-      "Passa dalla Scorciatoia «" + esc(chiavi.scorciatoia) + "», " +
-      "quindi funziona solo in casa. Metti a fuoco il campo di ricerca " +
-      "sulla TV prima di inviare."));
-  } else {
-    zonaTastiera.appendChild(el("div", "avvisoPonte",
-      "Non disponibile da qui. Serve una Scorciatoia iOS: si configura " +
-      "in Opzioni, e da lì il telefono stesso fa da ponte verso la TV."));
-  }
+  // Un campo per scrivere un testo QUALUNQUE sulla TV qui non c'e'
+  // piu', e non e' una dimenticanza. Passava dalla Scorciatoia, che non
+  // c'e' piu'; e il nativo non puo' sostituirlo, perche' per premere i
+  // tasti giusti bisogna sapere quale tastiera c'e' sullo schermo - e
+  // la TV non lo dice. Dalla scheda di un titolo invece si sa: e'
+  // quella dell'app che stiamo aprendo. E' per questo che «Cerca sulla
+  // TV» funziona e un campo libero no.
+  zonaTastiera.appendChild(el("div", "avvisoPonte",
+    "Per scrivere un titolo, aprilo da una scheda e usa «Cerca sulla "
+    + "TV»: lì so quale tastiera ha l'app, e lo scrivo da solo."));
 
 
   corpoTel.appendChild(el("p", "sezione", "Accensione"));
@@ -7352,112 +7230,20 @@ function bloccoTv(pad) {
   }
 
   pad.appendChild(el("p", "sezione", "Scrivere sulla TV"));
-  pad.appendChild(el("p", "nota",
-    "Con la Scorciatoia impostata, il pulsante sulle schede diventa " +
-    "«Apri l\u2019app e cerca il titolo». Lascia vuoto se non ce " +
-    "l\u2019hai."));
+  pad.appendChild(el("p", "nota", NATIVO
+    ? "Lo fa l’app: dalla scheda di un titolo, «Cerca sulla TV» apre "
+      + "l’app giusta e scrive il titolo nella sua ricerca."
+    : "Da qui non si può: una pagina web non riesce a parlare con la TV "
+      + "in rete locale. Lo fa l’app TV sul telefono, e da lì il pulsante "
+      + "«Cerca sulla TV» compare sulle schede."));
   pad.appendChild(comeSiFa(
-    "Una pagina web non pu\u00f2 parlare con la TV in rete locale, " +
-    "perch\u00e9 il certificato della TV vale solo per s\u00e9 stessa. " +
-    "Una <b>Scorciatoia</b> di iOS s\u00ec, passando da a-Shell: \u00e8 " +
-    "lei che apre l\u2019app sulla TV e scrive il titolo nella sua " +
-    "ricerca, lettera per lettera, navigando la tastiera a schermo.",
-    "Perch\u00e9 serve una Scorciatoia"));
-
-  const campoSc = el("div", "campo");
-  campoSc.innerHTML =
-    '<label for="sc">Nome della Scorciatoia</label>' +
-    '<textarea id="sc" rows="1" autocapitalize="off" autocomplete="off" spellcheck="false"></textarea>';
-  pad.appendChild(campoSc);
-  document.getElementById("sc").value = chiavi.scorciatoia;
-
-  const salvaSc = el("button", "svuota", "Salva il nome");
-  salvaSc.style.cssText = "width:100%;margin:4px 0 0";
-  salvaSc.onclick = () => {
-    chiavi.scorciatoia = document.getElementById("sc").value;
-    salvaSc.textContent = chiavi.scorciatoia ? "Salvato" : "Tolto";
-    setTimeout(() => { salvaSc.textContent = "Salva il nome"; }, 1600);
-  };
-  pad.appendChild(salvaSc);
-
-  // Il comando da mettere nella Scorciatoia, pronto da copiare.
-  // NON contiene percorsi: scarica lo script al volo. Su a-Shell la
-  // cartella da cui parte una Scorciatoia non e' quella della
-  // finestra interattiva, e indovinarla e' costato tre tentativi.
-  // Cosi' il telefono non ha nessuna copia da tenere aggiornata, che
-  // e' stata due volte la causa di guasti silenziosi.
-  // Dichiarato prima perche' il pulsante del token lo aggiorna: il
-  // comando cambia appena il token c'e', e vederlo cambiare e' il
-  // riscontro che il salvataggio ha funzionato.
-  const boxCmd = el("div", "diagnosi");
-
-  unaVoltaSola(pad, "Il permesso della TV", !!chiavi.tvtoken, (pad) => {
-  const spiegaNome = el("div", "nota");
-  spiegaNome.innerHTML =
-    "Questo telefono si presenta alla TV come <b>" + esc(chiavi.tvnome) +
-    "</b>. \u00c8 il nome che vedi nell\u2019elenco dispositivi della TV, " +
-    "e serve che sia diverso da quello del computer: il permesso della TV " +
-    "\u00e8 legato al nome, e due dispositivi con lo stesso nome se lo " +
-    "rubano a vicenda.";
-  pad.appendChild(spiegaNome);
-
-  const campoTk = el("div", "campo");
-  campoTk.innerHTML =
-    '<label for="tk">Token della TV (solo cifre, facoltativo)</label>' +
-    '<textarea id="tk" rows="1" inputmode="numeric" autocapitalize="off" ' +
-    'autocomplete="off" spellcheck="false"></textarea>';
-  pad.appendChild(campoTk);
-  document.getElementById("tk").value = chiavi.tvtoken;
-  const spiegaTk = el("div", "nota");
-  spiegaTk.innerHTML =
-    "Lascialo vuoto la prima volta: la TV chieder\u00e0 il permesso, tu " +
-    "accetti, e lo script ti dir\u00e0 il numero da mettere qui. Da quel " +
-    "momento la TV non chiede pi\u00f9 niente.<br>Non \u00e8 il token di " +
-    "SmartThings, ed \u00e8 diverso da quello del computer perch\u00e9 il " +
-    "nome \u00e8 diverso.";
-  pad.appendChild(spiegaTk);
-
-  const salvaTk = el("button", "svuota", "Salva il token");
-  salvaTk.style.cssText = "width:100%;margin:4px 0 0";
-  salvaTk.onclick = () => {
-    chiavi.tvtoken = document.getElementById("tk").value;
-    document.getElementById("tk").value = chiavi.tvtoken;
-    salvaTk.textContent = chiavi.tvtoken ? "Salvato" : "Tolto";
-    boxCmd.textContent = comandoScorciatoia("TITOLO");
-    setTimeout(() => { salvaTk.textContent = "Salva il token"; }, 1600);
-  };
-  pad.appendChild(salvaTk);
-  });
-
-  unaVoltaSola(pad, "Il comando per la Scorciatoia della TV",
-               !!chiavi.scorciatoia, (pad) => {
-  const spiegaCmd = el("div", "gusto");
-  spiegaCmd.innerHTML =
-    "Nella Scorciatoia serve una sola azione: <b>a-Shell \u203a Esegui " +
-    "comando</b>. Incolla qui sotto, poi <b>al posto di " +
-    "<code>TITOLO</code> inserisci la variabile «Ingresso comando " +
-    "rapido»</b> lasciando le virgolette.";
-  pad.appendChild(spiegaCmd);
-
-  boxCmd.style.cssText = "white-space:pre-wrap;word-break:break-all";
-  boxCmd.textContent = comandoScorciatoia("TITOLO");
-  pad.appendChild(boxCmd);
-
-  const copia = el("button", "svuota", "Copia il comando");
-  copia.style.cssText = "width:100%;margin:4px 0 0";
-  copia.onclick = async () => {
-    try {
-      await navigator.clipboard.writeText(boxCmd.textContent);
-      copia.textContent = "Copiato";
-    } catch (e) {
-      // Senza permesso non resta niente da fare: il testo e' li'
-      // sopra e si seleziona a mano.
-      copia.textContent = "Copia a mano qui sopra";
-    }
-    setTimeout(() => { copia.textContent = "Copia il comando"; }, 2000);
-  };
-  pad.appendChild(copia);
-  });
+    "Il titolo si scrive muovendosi sulla tastiera a schermo dell’app, "
+    + "una lettera per volta, perché nessuna di quelle app accetta testo "
+    + "dalla TV. Le tastiere sono misurate una per una: griglia, bordi, "
+    + "e la strada dal lancio al campo di ricerca.<br><br>"
+    + "Prima passava da una Scorciatoia di iOS, da a-Shell e dal Mac "
+    + "acceso. Adesso no: calcola la pagina, premono i tasti l’app.",
+    "Come fa a scrivere"));
 }
 
 
@@ -8006,9 +7792,6 @@ function bloccoDiagnosi(pad) {
     riga("Scorciatoia Fire", chiavi.scorciatoiaFire || "non impostata",
          !!chiavi.scorciatoiaFire);
     riga("Si ferma", chiavi.firefino);
-  } else {
-    riga("Scorciatoia per scrivere", chiavi.scorciatoia || "non impostata",
-         !!chiavi.scorciatoia);
   }
   riga("Rete", navigator.onLine === false ? "assente" : "presente",
        navigator.onLine !== false);
