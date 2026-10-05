@@ -1419,7 +1419,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261005195837";
+const VERSIONE = "20261005201233";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -2690,13 +2690,28 @@ const NATIVO = !!(window.webkit && window.webkit.messageHandlers &&
 
 let contaRisposte = 0;
 
-// I millisecondi fra un tasto e l'altro sulla TV. Sessanta e' il valore
-// prudente con cui non si perde niente, ma un titolo lungo su Infinity
-// sono 347 tasti: ventun secondi di sola attesa. Sta QUI e non nel
-// guscio perche' tararlo vuol dire pubblicare, non ricompilare e
-// bruciare un giro dei sette giorni. Da console si prova senza
-// pubblicare: localStorage.setItem("pausa_tasti", 30)
-const PAUSA_TASTI = Number(localStorage.getItem("pausa_tasti")) || 60;
+// I millisecondi fra un tasto e l'altro. NON e' un numero del
+// progetto: e' una proprieta' di ogni singola app, misurata sulla TV
+// e scritta in tastiere.py accanto alla disposizione. Netflix perde a
+// 120 ms e regge a 150; HBO Max a 150 ms scarta quasi tutto (47
+// pressioni, UNA lettera scritta) e vuole 400.
+//
+// Per un po' qui c'e' stato un 60 fisso, e scriveva solo casino:
+// troppo veloce per tutte e sette. Il tempo non si guadagna da qui -
+// si guadagna accorciando i percorsi.
+//
+// L'override da console serve solo a tarare, e vale per TUTTE le app -
+// quindi usarlo per andare piu' veloci rompe le piu' lente:
+//     localStorage.setItem("pausa_tasti", 200)
+const PAUSA_FORZATA = Number(localStorage.getItem("pausa_tasti")) || 0;
+const PASSO_PREDEFINITO = 150;
+
+/// I millisecondi giusti per QUESTA app.
+function passoDi(tastiera) {
+  if (PAUSA_FORZATA) return PAUSA_FORZATA;
+  const d = (typeof DISPOSIZIONI === "object" && DISPOSIZIONI[tastiera]) || {};
+  return Math.round((Number(d.passo) || PASSO_PREDEFINITO / 1000) * 1000);
+}
 
 /// Chiede al nativo di premere una sequenza. Torna una promessa con
 /// l'esito, cosi' chi chiama puo' dire com'e' andata invece di sperare.
@@ -2707,7 +2722,7 @@ const PAUSA_TASTI = Number(localStorage.getItem("pausa_tasti")) || 60;
 function nativoManda(tasti, opzioni) {
   opzioni = opzioni || {};
   if (!NATIVO) return Promise.reject(new Error("non siamo nell'app"));
-  const pausa = opzioni.pausa || PAUSA_TASTI;
+  const pausa = opzioni.pausa || PASSO_PREDEFINITO;
   const attesa = opzioni.attesa || 0;
   return new Promise((risolvi) => {
     const n = ++contaRisposte;
@@ -2791,33 +2806,113 @@ function nativoFerma() {
 /// `attesa` sono i secondi prima del primo tasto: un'app appena
 /// lanciata non e' pronta a riceverli, e i primi tasti persi sono
 /// stati uno dei difetti peggiori della catena con la Scorciatoia.
+// Quanto aspettare fra i tasti della NAVIGAZIONE: un secondo e due
+// decimi, molto piu' dei 150-500 ms della scrittura. Le schermate di
+// un'app si muovono con animazioni, e un BACK mandato troppo presto
+// non viene raccolto. Misurato nella catena vecchia (TV_NAVIGA).
+const PASSO_NAVIGA = 1200;
+// Fra l'apertura della ricerca e il primo tasto del titolo: la
+// tastiera a schermo compare dopo il campo (TV_TASTIERA).
+const ATTESA_TASTIERA = 5;
+
+/// Scrive un titolo nella ricerca di un'app della TV, facendo TUTTO
+/// il giro: normalizza l'app, va al campo di ricerca, aspetta la
+/// tastiera, e solo allora scrive.
+///
+/// Per un po' questa funzione scriveva SUBITO, dando per buono che il
+/// cursore fosse gia' sulla tastiera. Dall'app appena aperta non lo e'
+/// mai - sei sulla sua home - e i tasti finivano dove capitava. La
+/// catena vecchia (`scrivi_telefono.py --apri`) faceva il giro
+/// completo, e si rifiutava di scrivere se la strada non era misurata.
+/// Qui si fa lo stesso: meglio non premere niente che premere alla
+/// cieca.
 async function scriviConNativo(titolo, tastiera, attesa, avanza) {
   if (typeof digita !== "function") throw new Error("tastiere.js non caricato");
-  const r = digita(titolo, tastiera, 0);
-  if (!r.tasti.length) throw new Error("niente da scrivere");
-  const esito = await nativoManda(r.tasti, {
-    strada: "tv", attesa: attesa === undefined ? 14 : attesa, avanza: avanza,
-  });
-  if (!esito.ok) {
-    const e = new Error(esito.errore || "non riuscito");
-    // «l'ho fermata io» non e' un guasto, e non va raccontato come tale
-    e.fermato = !!esito.fermato;
-    throw e;
+  const d = (typeof DISPOSIZIONI === "object" && DISPOSIZIONI[tastiera]) || {};
+  const viaggio = (d.normalizza || []).concat(d.strada || []);
+  if (!viaggio.length) {
+    throw new Error("la strada fino alla ricerca di " + (d.nome || tastiera) +
+                    " non è misurata: scriverei dove capita");
   }
-  return { premuti: r.tasti.length, saltati: r.saltati };
+
+  // AZZERA quanto dice la DISPOSIZIONE, non un numero fisso: dove c'e'
+  // il cestino basta 1, dove non c'e' servono 30 cancella - e tre non
+  // bastavano, si e' visto («the bear» + tre cancella = «the b», e il
+  // titolo nuovo attaccato in coda).
+  //
+  // ANCORA = false: il compito della strada e' proprio lasciare il
+  // cursore sulla casella di partenza dichiarata. Ancorarsi di nuovo
+  // e' inutile, e su HBO Max era DANNOSO - la sua ancora esce dalla
+  // tastiera verso il menu, e appena aperta la ricerca il fuoco e'
+  // altrove: usciva "hall6" e il fuoco scappato.
+  // Prima si guarda se c'e' qualcosa DA SCRIVERE, e si guarda senza
+  // l'azzeramento: con l'azzeramento un titolo vuoto produce comunque
+  // trenta cancella, cioe' «qualcosa da premere» - e il ponte faceva
+  // tutto il viaggio fino alla ricerca per poi svuotare il campo e
+  // basta.
+  if (!digita(titolo, tastiera, 0, false).tasti.length) {
+    throw new Error("niente da scrivere");
+  }
+  const r = digita(titolo, tastiera, d.azzera || 0, false);
+
+  const totale = viaggio.length + r.tasti.length;
+  const avanzaTutto = (fatti, quanti, fase) =>
+    avanza && avanza(fase === "viaggio" ? fatti : viaggio.length + fatti,
+                     totale, fase);
+
+  // 1. normalizzare e arrivare alla ricerca, con calma
+  const uno = await nativoManda(viaggio, {
+    strada: "tv", attesa: attesa === undefined ? 14 : attesa,
+    pausa: PASSO_NAVIGA,
+    avanza: avanza ? (f) => avanzaTutto(f, viaggio.length, "viaggio") : null,
+  });
+  if (!uno.ok) throw erroreNativo(uno, "non sono arrivato alla ricerca");
+
+  // 2. e ora il titolo, al passo di QUESTA app
+  const due = await nativoManda(r.tasti, {
+    strada: "tv", attesa: ATTESA_TASTIERA, pausa: passoDi(tastiera),
+    avanza: avanza ? (f) => avanzaTutto(f, r.tasti.length, "scrittura") : null,
+  });
+  if (!due.ok) throw erroreNativo(due, "non riuscito");
+
+  return { premuti: totale, saltati: r.saltati };
+}
+
+/// Un errore che si ricorda se l'hai fermato tu: «fermato» non e' un
+/// guasto e non va raccontato come tale.
+function erroreNativo(esito, quando) {
+  const e = new Error(esito.errore || quando);
+  e.fermato = !!esito.fermato;
+  return e;
 }
 
 /// Quanti tasti servono, senza premerne nessuno: serve a dire in
 /// anticipo quanto ci vorra', che con venti secondi di attesa cambia
 /// la faccia della cosa.
 function quantiTasti(titolo, tastiera) {
-  try { return digita(titolo, tastiera, 0).tasti.length; } catch (e) { return 0; }
+  const d = (typeof DISPOSIZIONI === "object" && DISPOSIZIONI[tastiera]) || {};
+  const viaggio = (d.normalizza || []).concat(d.strada || []).length;
+  try {
+    return viaggio + digita(titolo, tastiera, d.azzera || 0, false).tasti.length;
+  } catch (e) { return 0; }
 }
 
-/// «circa dodici secondi», da mettere in un'etichetta.
-function quantoCi(tasti, attesa) {
-  const s = Math.round((attesa || 0) + tasti * PAUSA_TASTI / 1000);
+/// «circa un minuto», da mettere in un'etichetta. Conta tutto: la
+/// caricata, il viaggio fino alla ricerca, l'attesa della tastiera e
+/// la scrittura. Dire «venti secondi» e metterne settanta e' peggio
+/// che non dire niente.
+function quantoCi(titolo, tastiera, attesa) {
+  const d = (typeof DISPOSIZIONI === "object" && DISPOSIZIONI[tastiera]) || {};
+  const viaggio = (d.normalizza || []).concat(d.strada || []).length;
+  let scritti = 0;
+  try {
+    scritti = digita(titolo, tastiera, d.azzera || 0, false).tasti.length;
+  } catch (e) {}
+  const s = Math.round((attesa === undefined ? 14 : attesa) +
+                       viaggio * PASSO_NAVIGA / 1000 + ATTESA_TASTIERA +
+                       scritti * passoDi(tastiera) / 1000);
   if (s < 10) return "pochi secondi";
+  if (s >= 100) return "circa " + Math.round(s / 60) + " minuti";
   return "circa " + s + " second" + (s === 1 ? "o" : "i");
 }
 
@@ -2840,13 +2935,17 @@ function scriviSulPulsante(b, nome, titolo, tastiera, attesa) {
 
   b.disabled = false;
   b.className = "apri";
-  dentro("Scrivo «" + esc(titolo) + "», " + quantoCi(totale, attesa) +
+  dentro("Scrivo «" + esc(titolo) + "», " + quantoCi(titolo, tastiera, attesa) +
          "<br>Tocca qui per fermare");
   b.onclick = () => { fermata = true; dentro("Fermo…"); nativoFerma(); };
 
-  return scriviConNativo(titolo, tastiera, attesa, (fatti) => {
+  return scriviConNativo(titolo, tastiera, attesa, (fatti, quanti, fase) => {
     if (fermata) return;
-    dentro("Scrivo «" + esc(titolo) + "»: tasto " + fatti + " di " + totale +
+    // Si dice anche COSA sta facendo: durante il viaggio non si vede
+    // scrivere niente, e senza una parola sembra che si sia piantata.
+    dentro((fase === "viaggio" ? "Apro la ricerca di " + esc(nome)
+                               : "Scrivo «" + esc(titolo) + "»") +
+           ": tasto " + fatti + " di " + (quanti || totale) +
            "<br>Tocca qui per fermare");
   }).then((r) => {
     b.className = "apri fatto";
