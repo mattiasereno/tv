@@ -1419,7 +1419,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261005154101";
+const VERSIONE = "20261005175407";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -2690,27 +2690,77 @@ const NATIVO = !!(window.webkit && window.webkit.messageHandlers &&
 
 let contaRisposte = 0;
 
+// I millisecondi fra un tasto e l'altro sulla TV. Sessanta e' il valore
+// prudente con cui non si perde niente, ma un titolo lungo su Infinity
+// sono 347 tasti: ventun secondi di sola attesa. Sta QUI e non nel
+// guscio perche' tararlo vuol dire pubblicare, non ricompilare e
+// bruciare un giro dei sette giorni. Da console si prova senza
+// pubblicare: localStorage.setItem("pausa_tasti", 30)
+const PAUSA_TASTI = Number(localStorage.getItem("pausa_tasti")) || 60;
+
 /// Chiede al nativo di premere una sequenza. Torna una promessa con
 /// l'esito, cosi' chi chiama puo' dire com'e' andata invece di sperare.
+///
+/// `opzioni.avanza(fatti, totale)` viene chiamata a ogni tasto: con
+/// venti secondi di scrittura, sapere dove e' arrivata e' la differenza
+/// fra aspettare e credere che si sia piantata.
 function nativoManda(tasti, opzioni) {
   opzioni = opzioni || {};
   if (!NATIVO) return Promise.reject(new Error("non siamo nell'app"));
+  const pausa = opzioni.pausa || PAUSA_TASTI;
+  const attesa = opzioni.attesa || 0;
   return new Promise((risolvi) => {
-    const nome = "_rispostaNativo" + (++contaRisposte);
-    window[nome] = (esito) => { delete window[nome]; risolvi(esito || {}); };
+    const n = ++contaRisposte;
+    const nome = "_rispostaNativo" + n;
+    const nomeAvanza = opzioni.avanza ? "_avanzaNativo" + n : null;
+    const pulisci = () => {
+      delete window[nome];
+      if (nomeAvanza) delete window[nomeAvanza];
+    };
+    window[nome] = (esito) => { pulisci(); risolvi(esito || {}); };
+    if (nomeAvanza) {
+      // un errore qui non deve far fallire la scrittura: e' solo il
+      // contatore che si aggiorna
+      window[nomeAvanza] = (d) => {
+        try { opzioni.avanza((d || {}).fatti, (d || {}).totale); } catch (e) {}
+      };
+    }
     window.webkit.messageHandlers.nativo.postMessage({
       azione: "tasti", tasti: tasti,
       strada: opzioni.strada || chiavi.strada,
-      attesa: opzioni.attesa || 0,
+      attesa: attesa,
+      pausa: pausa,
+      avanza: nomeAvanza,
       chiama: nome,
     });
-    // se il nativo non risponde non si resta appesi per sempre
+    // Se il nativo non risponde non si resta appesi per sempre. Il
+    // limite si calcola dal lavoro chiesto e non e' fisso: con un
+    // numero fisso, un titolo lungo veniva dichiarato «non ha
+    // risposto» mentre stava ancora scrivendo.
+    const previsto = attesa * 1000 + tasti.length * pausa;
     setTimeout(() => {
       if (window[nome]) {
-        delete window[nome];
+        pulisci();
         risolvi({ ok: false, errore: "il nativo non ha risposto" });
       }
-    }, 120000);
+    }, previsto + 30000);
+  });
+}
+
+/// Ferma la scrittura in corso. Risponde ok anche se non c'era niente
+/// da fermare: chi lo chiede vuole che non si stia scrivendo, e quello
+/// e' vero in entrambi i casi.
+function nativoFerma() {
+  if (!NATIVO) return Promise.resolve({ ok: true });
+  return new Promise((risolvi) => {
+    const nome = "_fermaNativo" + (++contaRisposte);
+    window[nome] = (esito) => { delete window[nome]; risolvi(esito || {}); };
+    window.webkit.messageHandlers.nativo.postMessage({
+      azione: "ferma", chiama: nome,
+    });
+    setTimeout(() => {
+      if (window[nome]) { delete window[nome]; risolvi({ ok: true }); }
+    }, 5000);
   });
 }
 
@@ -2720,13 +2770,88 @@ function nativoManda(tasti, opzioni) {
 /// `attesa` sono i secondi prima del primo tasto: un'app appena
 /// lanciata non e' pronta a riceverli, e i primi tasti persi sono
 /// stati uno dei difetti peggiori della catena con la Scorciatoia.
-async function scriviConNativo(titolo, tastiera, attesa) {
+async function scriviConNativo(titolo, tastiera, attesa, avanza) {
   if (typeof digita !== "function") throw new Error("tastiere.js non caricato");
   const r = digita(titolo, tastiera, 0);
   if (!r.tasti.length) throw new Error("niente da scrivere");
-  const esito = await nativoManda(r.tasti, { strada: "tv", attesa: attesa || 14 });
-  if (!esito.ok) throw new Error(esito.errore || "non riuscito");
+  const esito = await nativoManda(r.tasti, {
+    strada: "tv", attesa: attesa === undefined ? 14 : attesa, avanza: avanza,
+  });
+  if (!esito.ok) {
+    const e = new Error(esito.errore || "non riuscito");
+    // «l'ho fermata io» non e' un guasto, e non va raccontato come tale
+    e.fermato = !!esito.fermato;
+    throw e;
+  }
   return { premuti: r.tasti.length, saltati: r.saltati };
+}
+
+/// Quanti tasti servono, senza premerne nessuno: serve a dire in
+/// anticipo quanto ci vorra', che con venti secondi di attesa cambia
+/// la faccia della cosa.
+function quantiTasti(titolo, tastiera) {
+  try { return digita(titolo, tastiera, 0).tasti.length; } catch (e) { return 0; }
+}
+
+/// «circa dodici secondi», da mettere in un'etichetta.
+function quantoCi(tasti, attesa) {
+  const s = Math.round((attesa || 0) + tasti * PAUSA_TASTI / 1000);
+  if (s < 10) return "pochi secondi";
+  return "circa " + s + " second" + (s === 1 ? "o" : "i");
+}
+
+/// Scrive un titolo usando il pulsante come schermo: dice quanto ci
+/// vorra', conta i tasti mentre vanno, e si lascia fermare con un
+/// tocco.
+///
+/// Il tocco per fermare non e' un vezzo: su Mediaset Infinity un
+/// titolo lungo sono trecentoquarantasette tasti, e stare a guardare
+/// venti secondi di frecce che scrivono la cosa sbagliata - senza
+/// poterle fermare - e' il difetto che rende inutile tutto il resto.
+function scriviSulPulsante(b, nome, titolo, tastiera, attesa) {
+  const et = b.querySelector(".etichetta") || b;
+  const totale = quantiTasti(titolo, tastiera);
+  const dentro = (piccolo) => {
+    et.innerHTML = esc(nome) + "<small>" + piccolo + "</small>";
+  };
+  const click = b.onclick;
+  let fermata = false;
+
+  b.disabled = false;
+  b.className = "apri";
+  dentro("Scrivo «" + esc(titolo) + "», " + quantoCi(totale, attesa) +
+         "<br>Tocca qui per fermare");
+  b.onclick = () => { fermata = true; dentro("Fermo…"); nativoFerma(); };
+
+  return scriviConNativo(titolo, tastiera, attesa, (fatti) => {
+    if (fermata) return;
+    dentro("Scrivo «" + esc(titolo) + "»: tasto " + fatti + " di " + totale +
+           "<br>Tocca qui per fermare");
+  }).then((r) => {
+    b.className = "apri fatto";
+    b.onclick = click;
+    dentro("Scritto «" + esc(titolo) + "»" +
+           (r.saltati.length
+             ? " — " + r.saltati.length + " " +
+               quanti(r.saltati.length, "carattere saltato", "caratteri saltati")
+             : "") +
+           ". Scegli il risultato con la croce.");
+    return r;
+  }).catch((e) => {
+    b.onclick = click;
+    if (e.fermato || fermata) {
+      // Fermata a meta': sul campo della TV e' rimasto un pezzo di
+      // titolo, e dirlo evita di chiedersi perche' la ricerca mostra
+      // una cosa strana.
+      b.className = "apri";
+      dentro("Fermato. Sul campo della TV è rimasto un pezzo di titolo: " +
+             "cancellalo col telecomando, o riprova da qui.");
+    } else {
+      b.className = "apri male";
+      dentro("Non ho potuto scrivere: " + esc(e.message));
+    }
+    throw e;
+  });
 }
 
 const schermo = document.getElementById("schermo");
@@ -4636,22 +4761,13 @@ function pulsanteLancio(i, d) {
             // Dentro l'app: il percorso lo calcola questa pagina
             // (tastiere.js) e i tasti li manda il nativo. Niente
             // Scorciatoia, niente a-Shell, niente Mac acceso.
-            et.innerHTML = esc(i.nome) + " è aperta<small>Scrivo «" +
-              esc(d.titolo) + "» sulla sua tastiera…</small>";
-            scriviConNativo(d.titolo, tastiera).then(r => {
-              b.className = "apri fatto";
-              et.innerHTML = esc(i.nome) + "<small>Scritto «" +
-                esc(d.titolo) + "»" +
-                (r.saltati.length
-                  ? " — " + r.saltati.length + " " +
-                    quanti(r.saltati.length, "carattere saltato", "caratteri saltati")
-                  : "") +
-                ". Scegli il risultato con la croce.</small>";
-            }).catch(e => {
-              b.className = "apri male";
-              et.innerHTML = esc(i.nome) + " è aperta<small>Non ho potuto " +
-                "scrivere: " + esc(e.message) + "</small>";
-            });
+            //
+            // I quattordici secondi servono SOLO se l'app deve
+            // caricare: `lancia` dice «gia» quando era gia' aperta, e
+            // aspettarli comunque era buttarne tredici.
+            scriviSulPulsante(b, i.nome, d.titolo, tastiera,
+                              comeEAndata === "gia" ? 1 : 14)
+              .catch(() => {});
             return;
           }
           et.innerHTML = esc(i.nome) +
@@ -4802,13 +4918,9 @@ async function schermoDettaglio(tipo, id, torna) {
         // senza lancio l'app e' in uno stato qualunque: serve una
         // tastiera con ancoraggio, altrimenti non si sa da dove si parte
         const t = TASTIERE[(d.compresi[0] || {}).pid] || "netflix";
-        const sotto = sb.querySelector("small");
-        sotto.textContent = "Scrivo sulla tastiera di " + t + "…";
-        scriviConNativo(d.titolo, t, 1)
-          .then(r => { sb.className = "apri fatto";
-                       sotto.textContent = "Scritto. Scegli con la croce."; })
-          .catch(e => { sb.className = "apri male";
-                        sotto.textContent = "Non riuscito: " + e.message; });
+        // senza lancio l'app e' gia' sullo schermo: un secondo basta
+        scriviSulPulsante(sb, "Sulla tastiera di " + t, d.titolo, t, 1)
+          .catch(() => {});
       };
       pad.appendChild(sb);
     }
