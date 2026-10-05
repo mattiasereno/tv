@@ -1419,7 +1419,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261005201233";
+const VERSIONE = "20261005202639";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -7945,6 +7945,24 @@ function bloccoDiagnosi(pad) {
       rT.aggiorna(st.tv ? "c'è" : "manca: la TV chiederà il consenso", !!st.tv);
       rF.aggiorna(st.fire ? "c'è" : "manca", !!st.fire);
       rS.aggiorna(st.strada === "fire" ? "Fire Stick" : "TV Samsung");
+
+      // I CODICI DEL PORTACHIAVI, quando il token manca. «Non c'è»
+      // (-25300) e «non mi è permesso» (-34018) a schermo si
+      // assomigliano, e portano a cercare in due posti diversi.
+      const k = st.portachiavi;
+      if (k && !st.tv) {
+        const nome = (c) => c === 0 ? "c'è"
+          : c === -25300 ? "non c'è (-25300)"
+          : c === -34018 ? "permesso negato (-34018)"
+          : "codice " + c;
+        riga("  nel gruppo condiviso", nome(k["nel gruppo condiviso"]),
+             k["nel gruppo condiviso"] === 0);
+        riga("  nel portachiavi privato", nome(k["senza gruppo"]),
+             k["senza gruppo"] === 0);
+        riga("  ultima scrittura", k["ultima scrittura"] === 0 ? "riuscita"
+             : nome(k["ultima scrittura"]), k["ultima scrittura"] === 0);
+        riga("  gruppo", String(k.gruppo || "—"));
+      }
     });
   }
 
