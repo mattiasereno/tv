@@ -1419,7 +1419,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261005204442";
+const VERSIONE = "20261005204805";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -7957,6 +7957,14 @@ function bloccoDiagnosi(pad) {
       // nome e non il permesso.
       riga("Token (ultime cifre)", st.coda ? "…" + st.coda : "nessuno",
            !!st.coda);
+      // Com'e' andata l'ULTIMA pressione dal widget. Il widget non ha
+      // un posto dove dirlo - nessuna console, nessuno spazio a
+      // schermo - quindi lo scrive nel portachiavi condiviso e lo
+      // leggiamo qui.
+      if (st.esitoWidget) {
+        riga("Ultimo tasto dal widget", st.esitoWidget,
+             / fatto$/.test(st.esitoWidget));
+      }
 
       // I CODICI DEL PORTACHIAVI, quando il token manca. «Non c'è»
       // (-25300) e «non mi è permesso» (-34018) a schermo si
