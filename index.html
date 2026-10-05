@@ -1419,7 +1419,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261005175407";
+const VERSIONE = "20261005195837";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -2744,6 +2744,27 @@ function nativoManda(tasti, opzioni) {
         risolvi({ ok: false, errore: "il nativo non ha risposto" });
       }
     }, previsto + 30000);
+  });
+}
+
+/// Chiede al nativo chi e' e cosa sa fare. Serve alla Diagnostica:
+/// quando «non funziona», la prima cosa da sapere e' se la pagina sta
+/// parlando con l'app o se e' sola in un browser - e quella differenza
+/// a schermo non si vede.
+function nativoStato() {
+  if (!NATIVO) return Promise.resolve({ nativo: false });
+  return new Promise((risolvi) => {
+    const nome = "_statoNativo" + (++contaRisposte);
+    window[nome] = (esito) => { delete window[nome]; risolvi(esito || {}); };
+    window.webkit.messageHandlers.nativo.postMessage({
+      azione: "stato", chiama: nome,
+    });
+    setTimeout(() => {
+      if (window[nome]) {
+        delete window[nome];
+        risolvi({ nativo: true, muto: true });
+      }
+    }, 5000);
   });
 }
 
@@ -7776,6 +7797,16 @@ function bloccoDiagnosi(pad) {
     r.innerHTML = "<span>" + esc(cosa) + '</span><span class="' +
       (stato === true ? "si" : stato === false ? "no" : "") + '">' + esc(valore) + "</span>";
     d.appendChild(r);
+    // chi chiama puo' riempirla dopo, quando la risposta arriva
+    return {
+      aggiorna: (v2, s2) => {
+        const sp = r.lastElementChild;
+        sp.textContent = v2;
+        sp.className = s2 === true ? "si" : s2 === false ? "no" : "";
+        const i = voci.findIndex(([c]) => c === cosa);
+        if (i >= 0) voci[i][1] = v2;
+      },
+    };
   };
 
   riga("Versione", VERSIONE);
@@ -7795,6 +7826,29 @@ function bloccoDiagnosi(pad) {
       chiavi.ultimoScambio > 0);
     riga("Voti degli altri", String(altrui.tutto.length));
   }
+  // L'APP NATIVA. Quando «non funziona», queste quattro righe dicono
+  // quale dei quattro casi e': non sei nell'app, l'app non risponde,
+  // manca il token della TV, manca l'indirizzo del Fire. Senza, si
+  // tira a indovinare davanti alla TV.
+  riga("Dentro l'app", NATIVO ? "sì, i tasti partono da qui"
+       : "no, sei nel browser", NATIVO);
+  if (NATIVO) {
+    const rT = riga("Token TV nell'app", "controllo…");
+    const rF = riga("Fire Stick nell'app", "controllo…");
+    const rS = riga("Strada del nativo", "controllo…");
+    nativoStato().then((st) => {
+      if (st.muto) {
+        rT.aggiorna("l'app non risponde", false);
+        rF.aggiorna("l'app non risponde", false);
+        rS.aggiorna("—");
+        return;
+      }
+      rT.aggiorna(st.tv ? "c'è" : "manca: la TV chiederà il consenso", !!st.tv);
+      rF.aggiorna(st.fire ? "c'è" : "manca", !!st.fire);
+      rS.aggiorna(st.strada === "fire" ? "Fire Stick" : "TV Samsung");
+    });
+  }
+
   riga("Strada scelta", chiavi.strada === "fire" ? "Fire Stick" : "TV Samsung");
   if (chiavi.strada === "fire") {
     riga("Indirizzo Fire Stick", chiavi.fireip || "manca", !!chiavi.fireip);
