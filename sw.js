@@ -20,6 +20,7 @@ const ESSENZIALI = [
   "./icona-180.png",
   "./icona-192.png",
   "./icona-512.png",
+  "./tastiere.js",
 ];
 
 self.addEventListener("install", e => {

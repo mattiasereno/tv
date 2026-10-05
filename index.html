@@ -1093,6 +1093,11 @@
   </button>
 </nav>
 
+<!-- Il calcolo dei percorsi sulle tastiere a schermo: file a parte
+     perche' e' tradotto da tastiere.py e si verifica contro quello
+     (prove/confronta_tastiere.py). Niente rete dentro: date una
+     tastiera e un titolo, da' la sequenza di tasti. -->
+<script src="tastiere.js"></script>
 <script>
 "use strict";
 
@@ -1414,7 +1419,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261005142321";
+const VERSIONE = "20261005154101";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -2672,6 +2677,56 @@ function scriviConScorciatoia(testo) {
   if (!chiavi.scorciatoia) return false;
   location.href = urlScorciatoia(chiavi.scorciatoia, testo);
   return true;
+}
+
+// ------------------------------------------------------------ il ponte
+// Dentro l'app nativa i tasti li manda lei, e spariscono la Scorciatoia,
+// a-Shell e il Mac acceso. Fuori - nella pagina aggiunta alla Home, che
+// e' quella che usa chi non ha l'app - resta la strada di prima: un
+// browser non puo' aprire ne' il WebSocket della TV ne' una socket
+// verso il Fire, e questo non cambia.
+const NATIVO = !!(window.webkit && window.webkit.messageHandlers &&
+                  window.webkit.messageHandlers.nativo);
+
+let contaRisposte = 0;
+
+/// Chiede al nativo di premere una sequenza. Torna una promessa con
+/// l'esito, cosi' chi chiama puo' dire com'e' andata invece di sperare.
+function nativoManda(tasti, opzioni) {
+  opzioni = opzioni || {};
+  if (!NATIVO) return Promise.reject(new Error("non siamo nell'app"));
+  return new Promise((risolvi) => {
+    const nome = "_rispostaNativo" + (++contaRisposte);
+    window[nome] = (esito) => { delete window[nome]; risolvi(esito || {}); };
+    window.webkit.messageHandlers.nativo.postMessage({
+      azione: "tasti", tasti: tasti,
+      strada: opzioni.strada || chiavi.strada,
+      attesa: opzioni.attesa || 0,
+      chiama: nome,
+    });
+    // se il nativo non risponde non si resta appesi per sempre
+    setTimeout(() => {
+      if (window[nome]) {
+        delete window[nome];
+        risolvi({ ok: false, errore: "il nativo non ha risposto" });
+      }
+    }, 120000);
+  });
+}
+
+/// Scrive un titolo dentro l'app della TV, calcolando qui il percorso
+/// sulla sua tastiera e facendolo premere al nativo.
+///
+/// `attesa` sono i secondi prima del primo tasto: un'app appena
+/// lanciata non e' pronta a riceverli, e i primi tasti persi sono
+/// stati uno dei difetti peggiori della catena con la Scorciatoia.
+async function scriviConNativo(titolo, tastiera, attesa) {
+  if (typeof digita !== "function") throw new Error("tastiere.js non caricato");
+  const r = digita(titolo, tastiera, 0);
+  if (!r.tasti.length) throw new Error("niente da scrivere");
+  const esito = await nativoManda(r.tasti, { strada: "tv", attesa: attesa || 14 });
+  if (!esito.ok) throw new Error(esito.errore || "non riuscito");
+  return { premuti: r.tasti.length, saltati: r.saltati };
 }
 
 const schermo = document.getElementById("schermo");
@@ -4576,7 +4631,30 @@ function pulsanteLancio(i, d) {
           // Quello normalizza lo stato dell'app (BACK ripetuti, che
           // sbattono sul tasto Home in alto senza fare danni), va
           // sulla ricerca e scrive il titolo lettera per lettera.
-          b.querySelector(".etichetta").innerHTML = esc(i.nome) +
+          const et = b.querySelector(".etichetta");
+          if (NATIVO) {
+            // Dentro l'app: il percorso lo calcola questa pagina
+            // (tastiere.js) e i tasti li manda il nativo. Niente
+            // Scorciatoia, niente a-Shell, niente Mac acceso.
+            et.innerHTML = esc(i.nome) + " è aperta<small>Scrivo «" +
+              esc(d.titolo) + "» sulla sua tastiera…</small>";
+            scriviConNativo(d.titolo, tastiera).then(r => {
+              b.className = "apri fatto";
+              et.innerHTML = esc(i.nome) + "<small>Scritto «" +
+                esc(d.titolo) + "»" +
+                (r.saltati.length
+                  ? " — " + r.saltati.length + " " +
+                    quanti(r.saltati.length, "carattere saltato", "caratteri saltati")
+                  : "") +
+                ". Scegli il risultato con la croce.</small>";
+            }).catch(e => {
+              b.className = "apri male";
+              et.innerHTML = esc(i.nome) + " è aperta<small>Non ho potuto " +
+                "scrivere: " + esc(e.message) + "</small>";
+            });
+            return;
+          }
+          et.innerHTML = esc(i.nome) +
             " è aperta<small>Passo «" + esc(d.titolo) + "» alla Scorciatoia…</small>";
           scriviConScorciatoia(
             testoPerScorciatoia(tastiera, comeEAndata, d.titolo));
@@ -4712,14 +4790,26 @@ async function schermoDettaglio(tipo, id, torna) {
     // Scrivere il titolo sulla TV passando per la Scorciatoia iOS.
     // Compare solo se hai detto in Opzioni di averla: un pulsante che
     // apre Scorciatoie per dire "non trovata" non aiuta nessuno.
-    if (chiavi.scorciatoia) {
+    if (chiavi.scorciatoia || NATIVO) {
       const sb = el("button", "apri");
       sb.innerHTML = '<span class="logo cerca"><svg viewBox="0 0 24 24">' +
         '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>' +
         '</span><span class="etichetta">Cerca «' +
         esc(d.titolo) + '» sulla TV<small>Apre la ricerca della TV e scrive il ' +
         "titolo. Poi scegli il risultato con la croce nel Telecomando.</small></span>";
-      sb.onclick = () => scriviConScorciatoia(d.titolo);
+      sb.onclick = () => {
+        if (!NATIVO) return scriviConScorciatoia(d.titolo);
+        // senza lancio l'app e' in uno stato qualunque: serve una
+        // tastiera con ancoraggio, altrimenti non si sa da dove si parte
+        const t = TASTIERE[(d.compresi[0] || {}).pid] || "netflix";
+        const sotto = sb.querySelector("small");
+        sotto.textContent = "Scrivo sulla tastiera di " + t + "…";
+        scriviConNativo(d.titolo, t, 1)
+          .then(r => { sb.className = "apri fatto";
+                       sotto.textContent = "Scritto. Scegli con la croce."; })
+          .catch(e => { sb.className = "apri male";
+                        sotto.textContent = "Non riuscito: " + e.message; });
+      };
       pad.appendChild(sb);
     }
 
