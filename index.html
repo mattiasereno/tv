@@ -1419,7 +1419,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261005202639";
+const VERSIONE = "20261005203010";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -8043,8 +8043,26 @@ async function controllaVersione() {
     const avviso = el("div", "nuova");
     avviso.innerHTML = "<span>C'è una versione nuova dell'app.</span>";
     const b = el("button", null, "Aggiorna");
-    b.onclick = () => {
-      location.replace(location.pathname + "?v=" + encodeURIComponent(d.versione) + location.hash);
+    b.onclick = async () => {
+      b.disabled = true;
+      b.textContent = "Aggiorno…";
+      // Cambiare l'indirizzo con ?v= NON bastava: dentro l'app la copia
+      // vecchia tornava comunque, perche' se la tiene la cache - e da
+      // qui l'unico modo di liberarla e' buttare i depositi e togliere
+      // il service worker, che si rimette da se' al caricamento dopo.
+      // Il localStorage non si tocca: dentro ci sono voti e chiavi.
+      try {
+        if (window.caches) {
+          const nomi = await caches.keys();
+          await Promise.all(nomi.map((n) => caches.delete(n)));
+        }
+        if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(regs.map((r) => r.unregister()));
+        }
+      } catch (e) { /* si ricarica comunque: peggio di cosi' non va */ }
+      location.replace(location.pathname + "?v=" +
+                       encodeURIComponent(d.versione) + location.hash);
     };
     const chiudi = el("button", null, "Dopo");
     chiudi.style.cssText = "background:transparent;color:var(--acceso-testo);opacity:.7";
