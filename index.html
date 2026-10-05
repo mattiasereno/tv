@@ -1419,7 +1419,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261005203010";
+const VERSIONE = "20261005203223";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -7949,16 +7949,23 @@ function bloccoDiagnosi(pad) {
       // I CODICI DEL PORTACHIAVI, quando il token manca. «Non c'è»
       // (-25300) e «non mi è permesso» (-34018) a schermo si
       // assomigliano, e portano a cercare in due posti diversi.
+      // Si mostra SEMPRE, non solo quando il token manca: sapere DOVE
+      // sta dice in anticipo se il widget lo vedra'. Se e' nel gruppo
+      // condiviso si'; se e' nel portachiavi privato - il ripiego - no,
+      // e il widget continuera' a chiedere il consenso alla TV. Senza
+      // questa riga lo si scopre solo premendo un tasto dal widget.
       const k = st.portachiavi;
-      if (k && !st.tv) {
+      if (k) {
         const nome = (c) => c === 0 ? "c'è"
           : c === -25300 ? "non c'è (-25300)"
           : c === -34018 ? "permesso negato (-34018)"
           : "codice " + c;
+        const condiviso = k["nel gruppo condiviso"] === 0;
+        riga("  lo vede anche il widget", condiviso ? "sì" : "NO",
+             condiviso);
         riga("  nel gruppo condiviso", nome(k["nel gruppo condiviso"]),
-             k["nel gruppo condiviso"] === 0);
-        riga("  nel portachiavi privato", nome(k["senza gruppo"]),
-             k["senza gruppo"] === 0);
+             condiviso);
+        riga("  nel portachiavi privato", nome(k["senza gruppo"]), null);
         riga("  ultima scrittura", k["ultima scrittura"] === 0 ? "riuscita"
              : nome(k["ultima scrittura"]), k["ultima scrittura"] === 0);
         riga("  gruppo", String(k.gruppo || "—"));
