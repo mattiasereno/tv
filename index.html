@@ -1369,7 +1369,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261006123730";
+const VERSIONE = "20261006161010";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -4659,12 +4659,47 @@ async function schermoStasera() {
         const g = diCasa ? profiloDiCasa() : profiloGusto();
         const segnali = [...g.generi.map(x => ({ genere: x })),
                          ...g.keyword.map(x => ({ keyword: x }))];
-        if (g.quanti < 3 || !segnali.length) {
-          risultato.innerHTML = '<p class="nota">' + (diCasa
-            ? "Per il gusto di casa servono 3 titoli votati a testa " +
-              "a testa, e almeno un genere in comune."
-            : "Vota almeno 3 titoli e comincio a " +
-              "consigliarti sul tuo gusto.") + "</p>";
+
+        // LA PORTA D'INGRESSO GUARDA I SEMI, NON I GENERI.
+        //
+        // Prima chiedeva generi o keyword in cima al profilo, e si
+        // rifiutava di partire senza. Ma il motore di questa modalita'
+        // non usa i generi: usa i CONSIGLIATI dei singoli titoli che
+        // hai amato, che e' un segnale piu' fine - «mi e' piaciuto
+        // Inception» non vuol dire «mi piace la fantascienza».
+        //
+        // Il guasto era doppio: i voti dati dal mazzo nascevano senza
+        // generi (corretto il 06/10/2026), quindi il profilo restava
+        // senza segnali e «Sul mio gusto» diceva «vota almeno 3
+        // titoli» a chi ne aveva votati cinquanta. E chi aveva votato
+        // solo film, cercando una serie, riceveva lo stesso messaggio
+        // sbagliato: i semi vanno cercati NEL TIPO che stai guardando.
+        if (!diCasa) {
+          const semi = visti.tutto.filter(
+            v => (v.mio || 0) >= 3 && v.tipo === STASERA.tipo);
+          if (semi.length < 3) {
+            const altroTipo = visti.tutto.filter(
+              v => (v.mio || 0) >= 3 && v.tipo !== STASERA.tipo).length;
+            const cosa = STASERA.tipo === "movie" ? "film" : "serie";
+            const altra = STASERA.tipo === "movie" ? "serie" : "film";
+            risultato.innerHTML = '<p class="nota">' +
+              (altroTipo >= 3
+                ? "Di " + cosa + " ne hai votati " + semi.length +
+                  " da tre stelle in su, e me ne servono tre per capire " +
+                  "cosa cercare. Di " + altra + " ne hai abbastanza: " +
+                  "prova a cambiare qui sopra."
+                : "Vota almeno tre " + cosa + " che hai già visto, da " +
+                  "tre stelle in su, e comincio a consigliarti sul tuo " +
+                  "gusto.") + "</p>";
+            return;
+          }
+        } else if (g.quanti < 3 || !segnali.length) {
+          // il gusto DI CASA resta sui generi in comune, e li' i
+          // segnali servono per davvero: i simili di CHI, se i
+          // preferiti sono di due persone?
+          risultato.innerHTML = '<p class="nota">' +
+            "Per il gusto di casa servono 3 titoli votati a testa " +
+            "a testa, e almeno un genere in comune.</p>";
           return;
         }
         // Sul MIO gusto uso il grafo dei SIMILI di TMDB: i consigliati
