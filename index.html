@@ -1265,6 +1265,31 @@ const FERMATE_FIRE = [
   ["servizio", "Parte", "Apre il primo risultato e avvia"],
 ];
 
+// LE APP SUL FIRE STICK, col loro pacchetto Android.
+//
+// Sono un'altra cosa dai pacchetti Tizen qui sotto: la stessa Netflix
+// e' `org.tizen.netflix-app` sulla TV e `com.netflix.ninja` sul Fire.
+// Letti una volta dal Fire vero con `pm list packages -3` e scritti
+// qui, perche' indovinarli vuol dire premere un pulsante che non fa
+// niente e non capire perche'.
+//
+// DUE COSE CHE NON SI INDOVINANO:
+//   - PRIME VIDEO non e' un'app: su Fire TV sta dentro il launcher, e
+//     la home stessa E' Prime Video. Quindi si apre la home.
+//   - il pid e' quello di TMDB, lo stesso che usa TASTIERE, cosi' da
+//     un titolo si sa quale app aprire.
+const APP_FIRE = {
+  "8":    ["com.netflix.ninja", "Netflix"],
+  "119":  ["com.amazon.tv.launcher", "Prime Video"],
+  "337":  ["com.disney.disneyplus", "Disney+"],
+  "39":   ["com.nowtv.it", "NOW"],
+  "1899": ["com.hbo.hbonow", "HBO Max"],
+  "584":  ["com.discovery.discoplus", "Discovery+"],
+  "359":  ["it.mediaset.infinitytv1", "Mediaset Infinity"],
+  "350":  ["com.apple.atve.amazon.appletv", "Apple TV+"],
+  "yt":   ["com.amazon.firetv.youtube", "YouTube"],
+};
+
 const NOMI_PACCHETTO = {
   "org.tizen.netflix-app": "Netflix",
   "org.tizen.primevideo": "Prime Video",
@@ -1344,7 +1369,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261006122219";
+const VERSIONE = "20261006123148";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -2817,6 +2842,34 @@ async function cercaSulFire(titolo, fino, avanza) {
   });
   if (!esito.ok) throw erroreNativo(esito, "non riuscito");
   return { passi: passi.length };
+}
+
+/// Apre un'app sul Fire Stick. Un passo solo: nessuna navigazione,
+/// e' il sistema che la porta in primo piano.
+function apriAppSulFire(pacchetto) {
+  return nativoManda(null, {
+    azione: "fire",
+    passi: [{ cosa: "apri", pacchetto: pacchetto, pausa: 600 }],
+  });
+}
+
+/// Chiede qualcosa al Fire Stick e torna la sua risposta. Solo le
+/// domande che il nativo accetta (vedi Telecomando.domandeAlFire).
+function chiediAlFire(cosa) {
+  if (!NATIVO) return Promise.reject(new Error("non siamo nell'app"));
+  return new Promise((risolvi) => {
+    const nome = "_fireDice" + (++contaRisposte);
+    window[nome] = (esito) => { delete window[nome]; risolvi(esito || {}); };
+    window.webkit.messageHandlers.nativo.postMessage({
+      azione: "chiediAlFire", cosa: cosa, chiama: nome,
+    });
+    setTimeout(() => {
+      if (window[nome]) {
+        delete window[nome];
+        risolvi({ ok: false, errore: "il Fire non ha risposto" });
+      }
+    }, 20000);
+  });
 }
 
 /// Un tasto al Fire Stick, subito. Niente attese e niente pause: e'
@@ -7496,6 +7549,45 @@ function bloccoFire(pad) {
     "L\u2019indirizzo sta in <b>Informazioni \u203a Rete</b>.",
     "Come si accende il Debug ADB"));
 
+  // QUALI APP CI SONO DAVVERO. I pacchetti Android li ho scritti a mano
+  // leggendoli una volta dal Fire: se Amazon li cambia, o se un'app
+  // viene disinstallata, il pulsante che la apre non fa niente e non si
+  // capisce perche'. Questo lo chiede a lui.
+  if (NATIVO) {
+    const vedi = el("button", "svuota", "Quali app ci sono sul Fire Stick");
+    const esito = el("div", "diagnosi");
+    esito.style.cssText = "margin-top:8px";
+    vedi.onclick = async () => {
+      vedi.disabled = true;
+      vedi.textContent = "Chiedo al Fire…";
+      try {
+        const r = await chiediAlFire("appInstallate");
+        if (!r.ok) throw new Error(r.errore || "non riuscito");
+        const pacchetti = String(r.risposta || "")
+          .split("\n").map(x => x.replace("package:", "").trim()).filter(Boolean);
+        esito.innerHTML = "";
+        Object.entries(APP_FIRE).forEach(([pid, [pacchetto, nome]]) => {
+          const c = pacchetti.includes(pacchetto);
+          const riga = el("div", "riga2");
+          riga.innerHTML = "<span>" + esc(nome) + '</span><span class="' +
+            (c ? "si" : "no") + '">' + (c ? "c’è" : "non installata") + "</span>";
+          esito.appendChild(riga);
+        });
+        esito.appendChild(el("p", "nota", pacchetti.length +
+          " app in tutto sul Fire Stick."));
+        vedi.textContent = "Richiedi";
+      } catch (e) {
+        esito.innerHTML = "";
+        esito.appendChild(el("p", "nota", "Non riuscito: " + esc(e.message) +
+          " — il Fire Stick deve essere accesso e in rete."));
+        vedi.textContent = "Riprova";
+      }
+      vedi.disabled = false;
+    };
+    pad.appendChild(vedi);
+    pad.appendChild(esito);
+  }
+
   // NIENTE PULSANTE SALVA, e non per gusto: prima c'era, stava sotto
   // due campi, e si perdeva. Peggio, toccando una fermata la
   // schermata si rifaceva e buttava via quello che avevi scritto e
@@ -7659,6 +7751,56 @@ function bloccoFireComandi(dove) {
       "Circa un quarto di secondo per tasto: il tempo di aprire il " +
       "collegamento col Fire Stick, che deve essere accesso o in attesa. " +
       "Nessuna conferma è possibile — il riscontro sei tu che guardi."));
+
+    // APRIRE LE APP, che in modo Fire Stick non si poteva fare.
+    //
+    // Non era una dimenticanza: le app sulla TV le apre SmartThings,
+    // cioe' il cloud Samsung, e il Fire Stick non ha niente di simile.
+    // Una pagina web non puo' aprire una socket verso il Fire, quindi
+    // da qui non c'era modo. Adesso i tasti li manda l'app, e aprire
+    // un'app e' un comando come un altro.
+    p.appendChild(el("p", "sezione", "Apri un'app"));
+    // la stessa forma della sezione gemella in modo TV: logo e nome,
+    // classe `scorciatoia`. La stessa cosa con la stessa faccia.
+    const zona = el("div", "scorciatoie");
+    // nell'ordine dei TUOI abbonamenti, poi le altre: quello che paghi
+    // viene prima di quello che c'e' e non guardi
+    const miei = chiavi.servizi.filter(x => APP_FIRE[x]);
+    const altri = Object.keys(APP_FIRE).filter(x => !miei.includes(x));
+    [...miei, ...altri].forEach((pid) => {
+      const [pacchetto, nome] = APP_FIRE[pid];
+      const b = el("button", "scorciatoia");
+      const lg = (MAPPA[pid] || {}).logo || logoProvider(pid);
+      b.innerHTML = (lg ? '<img src="' + IMG + "/w92" + lg +
+          '" alt="" onerror="this.style.display=\'none\'">' : "") +
+        "<span>" + esc(nome) + "</span>";
+      b.onclick = () => {
+        const et = b.querySelector("span");
+        const prima = et.textContent;
+        b.disabled = true;
+        et.textContent = "Apro…";
+        apriAppSulFire(pacchetto).then((e) => {
+          b.disabled = false;
+          if (e.ok) {
+            et.textContent = prima;
+            b.classList.add("fatto");
+            setTimeout(() => b.classList.remove("fatto"), 1200);
+          } else {
+            et.textContent = prima;
+            dillo(e.errore || "non riuscito", b);
+          }
+        }).catch((e) => {
+          b.disabled = false;
+          et.textContent = prima;
+          dillo(e.message, b);
+        });
+      };
+      zona.appendChild(b);
+    });
+    p.appendChild(zona);
+    p.appendChild(el("p", "nota",
+      "Se un’app non si apre, forse non è installata su questo Fire "
+      + "Stick: in Opzioni c’è «Quali app ci sono» che lo chiede a lui."));
   }
 
   // L'ALTRO telecomando, servito dal Fire Stick stesso. Serve a chi non
