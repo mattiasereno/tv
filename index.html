@@ -1369,7 +1369,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261006123148";
+const VERSIONE = "20261006123730";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -1599,6 +1599,19 @@ function leggiIndirizzo() {
   // liste condivise: #/lista/m27205,t1396  e  #/visti/m155:5,t1396:4
   const l = (location.hash || "").match(/^#\/(lista|visti)\/([mt0-9,:]+)$/);
   if (l) return { cosa: l[1], voci: decodificaVoci(l[2]) };
+  // UN TITOLO CHIESTO A VOCE: #/cerca/<titolo>
+  //
+  // Lo scrive il guscio quando Siri ha preso un titolo: un intent non
+  // ha la WebView, e il percorso sulla tastiera lo sa calcolare solo
+  // la pagina. Quindi Siri apre l'app con questo indirizzo, e la
+  // ricerca parte da se'.
+  const c = (location.hash || "").match(/^#\/cerca\/(.+)$/);
+  if (c) {
+    try {
+      const q = decodeURIComponent(c[1]).trim();
+      if (q) return { cosa: "cerca", query: q };
+    } catch (e) { /* un indirizzo storto non deve rompere l'avvio */ }
+  }
   // un telefono nuovo da preparare: #/telefono/<dati>
   const t = (location.hash || "").match(/^#\/telefono\/([A-Za-z0-9_-]+)$/);
   if (t) {
@@ -4877,6 +4890,9 @@ function schermoCerca() {
   input.autocomplete = "off";
   input.enterKeyHint = "search";
   input.setAttribute("aria-label", "Titolo da cercare");
+  // un id, perche' ci si deve poter arrivare da fuori: un titolo
+  // chiesto a Siri finisce qui senza che nessuno digiti
+  input.id = "campoCerca";
   barra.appendChild(input);
   schermo.appendChild(barra);
 
@@ -8246,6 +8262,19 @@ async function controllaVersione() {
 
 // Un indirizzo condiviso apre direttamente quella scheda.
 function apriIndirizzo(dove) {
+  // il titolo chiesto a voce: si va su Cerca e si cerca, senza che
+  // nessuno debba digitare niente
+  if (dove.cosa === "cerca") {
+    vai("cerca");
+    const campo = document.getElementById("campoCerca");
+    if (campo) {
+      campo.value = dove.query;
+      // `input` e non solo il valore: e' l'evento che fa partire la
+      // ricerca, come se l'avessi digitato
+      campo.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    return;
+  }
   // Questo viene PRIMA del controllo sulla chiave: e' proprio il link
   // che serve a chi non ha ancora niente.
   if (dove.cosa === "telefono") return schermoAltroTelefono(dove.dati);
