@@ -199,6 +199,17 @@
   .carta img.rotta, .fila2 img.rotta { display: none; }
   .carta:active .tela { transform: scale(.972); }
   .carta .tela { transition: transform .13s ease; }
+  /* La durata sta accanto all'anno e NON si deve notare: e' un numero
+     che consulti quando stai decidendo, non un richiamo. */
+  .carta .dura { color: var(--debole); }
+  /* «Ora e' su Netflix» invece e' una notizia, e la prima volta lo e'
+     davvero: quando un titolo che NON pagavi arriva su un servizio
+     tuo, `nuovo` lo accende col colore che qui vuol dire «fatto». */
+  .carta .oraCompreso {
+    margin: 1px 0 0; font-size: 11px; line-height: 1.3;
+    color: var(--debole);
+  }
+  .carta .oraCompreso.nuovo { color: var(--verde); font-weight: 600; }
   .carta .manca {
     display: flex; align-items: center; justify-content: center;
     height: 100%; padding: 10px; text-align: center;
@@ -1369,7 +1380,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261006163001";
+const VERSIONE = "20261006164337";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -3607,6 +3618,62 @@ async function cercaTitoli(query) {
 // giro di un minuto. La cache tiene la PROMESSA, non il valore: due
 // richieste vicine per lo stesso titolo aspettano la stessa chiamata.
 // (Il verdetto «lo paghi» dipende dagli abbonamenti: sono nella chiave.)
+// QUANTO DURA UNA SERIE INTERA, in minuti. Una stima, e si dice.
+//
+// TMDB non lo sa dire in modo diretto, misurato il 06/10/2026:
+//   - `episode_run_time` e' VUOTO su tutte le serie provate (The Bear,
+//     Trono di Spade, Simpson, Arcane).
+//   - `last_episode_to_air.runtime` c'e' (62 min per The Bear) ma e'
+//     l'ULTIMO episodio, spesso un finale lungo: la media vera di The
+//     Bear e' 30 minuti, quindi quel numero sbaglia del 100%.
+//   - dentro una STAGIONE ogni episodio ha il suo `runtime`: la
+//     stagione 1 di The Bear da' [28,32,30,31,26,31,21,48], media 30.
+//
+// Quindi si chiede UNA stagione e si usa la sua media per tutte. Una
+// chiamata in piu' per serie, e un numero che serve a decidere «la
+// comincio o no» - dove sbagliare di cinque minuti su trenta ore non
+// cambia la risposta, ma sbagliare del doppio si'.
+const _cacheDurata = new Map();
+async function minutiDiTutto(d) {
+  if (d.tipo === "movie") return d.minuti || 0;
+  if (!d.quantiEpisodi) return 0;
+  const k = "tv:" + d.id;
+  if (!_cacheDurata.has(k)) {
+    _cacheDurata.set(k, (async () => {
+      // LA PRIMA STAGIONE VERA, cioe' NON la zero.
+      //
+      // La stagione 0 sono gli speciali, e sono episodi brevissimi:
+      // prendendola per prima le stime uscivano sbagliate di quattro
+      // volte. Misurato il 06/10/2026 - Trono di Spade dava 13 minuti
+      // per episodio invece di 57, Rick and Morty 4 invece di 22 - e
+      // non si vedeva, perche' un numero plausibile non ha l'aria di
+      // essere sbagliato.
+      const prima = (d.stagioni || []).find(x => x.quanti > 0 && x.numero >= 1);
+      if (!prima) return 0;
+      const st = await tmdb("/tv/" + d.id + "/season/" + prima.numero,
+                            { language: LINGUA });
+      const durate = (st.episodes || []).map(e => e.runtime).filter(x => x > 0);
+      if (!durate.length) return 0;
+      const media = durate.reduce((a, b) => a + b, 0) / durate.length;
+      return Math.round(media * d.quantiEpisodi);
+    })().catch(() => 0));
+  }
+  return _cacheDurata.get(k);
+}
+
+/// «circa 23 ore», o «1 h 45» per un film: la forma che si legge.
+function quantoDura(minuti) {
+  if (!minuti) return "";
+  if (minuti < 90) return minuti + " min";
+  const ore = Math.round(minuti / 60);
+  // I GIORNI solo da due in su: «circa 24 ore (1 giorno di fila)» e'
+  // la stessa cosa detta due volte, e la seconda non aggiunge niente.
+  // Da due giorni in su invece la conversione serve: «69 ore» non si
+  // immagina, «tre giorni di fila» si'.
+  if (ore < 48) return ore === 1 ? "un'ora" : "circa " + ore + " ore";
+  return "circa " + ore + " ore (" + Math.round(ore / 24) + " giorni di fila)";
+}
+
 const _cacheScheda = new Map();
 function scheda(tipo, id) {
   // Nella chiave anche gli abbonamenti: se li cambi, «lo paghi gia'»
@@ -3907,7 +3974,19 @@ function grigliaDi(elementi, mostraMio = false) {
         distintivo +
       "</div>" +
       "<h3>" + esc(v.titolo) + "</h3>" +
-      '<p>' + (v.anno || "—") + "</p>";
+      // L'anno, e accanto quello che si e' scoperto ricontrollando:
+      // dove lo paghi ORA e quanto dura in tutto. Due informazioni che
+      // la lista non dava, ed erano il motivo per cui la lista esiste:
+      // ci metti dentro anche quello che non hai, e nessuno ti diceva
+      // quando arrivava.
+      '<p>' + (v.anno || "—") +
+        (v.minutiTotali ? ' <span class="dura">· ' + esc(quantoDura(v.minutiTotali)) +
+                          "</span>" : "") +
+      "</p>" +
+      (v.compreso && v.dove && v.dove.length
+        ? '<p class="oraCompreso' + (v.arrivato ? " nuovo" : "") + '">' +
+          (v.arrivato ? "✦ ora è su " : "su ") + esc(v.dove.join(", ")) + "</p>"
+        : "");
     c.onclick = () => { cache.scroll = window.scrollY; schermoDettaglio(v.tipo, v.id); };
     g.appendChild(c);
   });
@@ -5640,18 +5719,55 @@ function generiDiLista(voci) {
 // oggetti `voci` in memoria, cosi' il filtro li vede subito. Torna
 // true se ha cambiato qualcosa (le chip vanno ridisegnate).
 async function backfillGeneriLista(voci) {
-  const mancanti = voci.filter(v => !(v.generiId && v.generiId.length)).slice(0, 40);
+  // TRE COSE IN UN GIRO SOLO, e non tre giri: la scheda che serve ai
+  // generi e' la stessa che dice se ORA lo paghi e quanto dura una
+  // serie. Chiederla tre volte sarebbe tre volte la stessa chiamata.
+  const dafare = voci.filter(v =>
+    !(v.generiId && v.generiId.length) ||
+    v.compreso === undefined ||
+    // il verdetto invecchia: i cataloghi cambiano, e un «non lo paghi»
+    // di tre settimane fa non vuol dire niente
+    (Date.now() - (v.controllato || 0)) > 7 * 24 * 3600 * 1000
+  ).slice(0, 40);
   let cambiato = false;
-  for (let i = 0; i < mancanti.length; i += 5) {
-    await Promise.all(mancanti.slice(i, i + 5).map(async v => {
+  for (let i = 0; i < dafare.length; i += 5) {
+    await Promise.all(dafare.slice(i, i + 5).map(async v => {
       try {
         const d = await scheda(v.tipo, v.id);
+        const campi = { controllato: Date.now() };
+
         if (d.generiId && d.generiId.length) {
           v.generiId = d.generiId;   // l'oggetto in memoria, per il filtro
           v.keyword = d.keyword;
-          lista.aggiornaMeta(v.tipo, v.id, { generiId: d.generiId, keyword: d.keyword });
-          cambiato = true;
+          campi.generiId = d.generiId;
+          campi.keyword = d.keyword;
         }
+
+        // ORA LO PAGHI? E' la domanda per cui la lista esiste: ci
+        // metti dentro anche quello che NON hai, e nessuno ti avvisava
+        // quando arrivava su un servizio tuo.
+        const prima = v.compreso;
+        const dove = (d.compresi || []).map(x => x.nome || x);
+        campi.compreso = dove.length > 0;
+        campi.dove = dove.slice(0, 3);
+        // «nuovo» solo se PRIMA sapevamo che non lo pagavi: al primo
+        // controllo non si festeggia niente, altrimenti tutta la lista
+        // si accende di bollini la prima volta
+        campi.arrivato = prima === false && campi.compreso;
+        v.compreso = campi.compreso;
+        v.dove = campi.dove;
+        v.arrivato = campi.arrivato;
+
+        // QUANTO DURA: il numero di episodi c'era, i minuti no - e
+        // sapere che sono trenta ore cambia la decisione di cominciare.
+        const tot = await minutiDiTutto(d);
+        if (tot) {
+          campi.minutiTotali = tot;
+          v.minutiTotali = tot;
+        }
+
+        lista.aggiornaMeta(v.tipo, v.id, campi);
+        cambiato = true;
       } catch (e) { /* un titolo senza scheda non ferma gli altri */ }
     }));
   }
@@ -5790,16 +5906,27 @@ function schermoLista() {
         zonaGen.appendChild(c);
       });
     };
-    Promise.all([generi("movie"), generi("tv")]).catch(() => {}).then(async () => {
+    Promise.all([generi("movie"), generi("tv")]).catch(() => {}).then(() => {
       costruisciGeneri();                         // coi generi gia' salvati
-      // i titoli vecchi (o da ricerca) non hanno i generi: li rimpolpo,
-      // poi ridisegno le chip - cosi' i generi compaiono anche per loro
-      if (await backfillGeneriLista(voci)) {
-        costruisciGeneri();
-        if (genereLista) disegnaGriglia();
-      }
     });
   }
+
+  // IL RICONTROLLO VA SEMPRE, e non solo con otto titoli in lista.
+  //
+  // Stava dentro il blocco qui sopra, che compare da otto titoli in su:
+  // con tre titoli non partiva, quindi non si sapeva mai se fossero
+  // arrivati su un servizio tuo. E con pochi titoli e' anche piu'
+  // rapido - e' chi ne ha due o tre che guarda la lista aspettandosi
+  // una risposta.
+  //
+  // In sottofondo: la griglia e' gia' a schermo coi dati che c'erano, e
+  // si ridisegna quando il ricontrollo ha scoperto qualcosa.
+  backfillGeneriLista(voci).then((cambiato) => {
+    if (!cambiato) return;
+    disegnaGriglia();
+    // le chip dei generi esistono solo da otto titoli in su
+    if (voci.length >= 8 && typeof costruisciGeneri === "function") costruisciGeneri();
+  }).catch(() => {});
 
   disegnaGriglia();
 
