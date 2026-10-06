@@ -1344,7 +1344,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261006115706";
+const VERSIONE = "20261006122219";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -4136,9 +4136,18 @@ async function schermoSfoglia() {
   // ------------------------------------------------------------- capo
   const testa = el("div", "pad");
   const capo = el("div", "capo");
+  // IL TITOLONE «TV» NON C'E' PIU'.
+  //
+  // Diceva il nome dell'app in una schermata dove la barra in basso
+  // dice gia' dove sei, e dal momento in cui la targhetta della stanza
+  // e' diventata [TV | Fire] c'erano due «TV» uno accanto all'altro -
+  // il nome dell'app e l'apparecchio - che e' peggio di ridondante:
+  // sembrano la stessa cosa e non lo sono.
+  //
+  // Guadagno: lo spazio di un titolone su una schermata che ne
+  // spendeva gia' troppo prima di mostrare un titolo.
   const titolo = el("div");
   titolo.style.cssText = "display:flex;align-items:center;flex-wrap:wrap";
-  titolo.appendChild(el("h1", "titolone", "TV"));
   titolo.appendChild(bolloStrada());
   capo.appendChild(titolo);
   const azioni = el("div", "azioni");
