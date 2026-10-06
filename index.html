@@ -962,6 +962,34 @@
     font-weight: 600;
   }
   .servizio .senzaApp { font-size: 9.5px; opacity: .8; }
+
+  /* COSA PAGHI E NON GUARDI: una riga per abbonamento, col campo del
+     prezzo in fondo - dove uno si aspetta il prezzo. */
+  .spesa { margin: 8px 0 0; }
+  .vocespesa {
+    display: flex; align-items: center; gap: 11px;
+    padding: 11px 0; border-bottom: 1px solid var(--bordo);
+  }
+  .vocespesa img { width: 34px; height: 34px; border-radius: 8px; flex: 0 0 34px; }
+  .vocespesa > span { flex: 0 0 34px; }
+  .vocespesa .che { flex: 1; min-width: 0; }
+  .vocespesa .che b { display: block; font-size: 14.5px; font-weight: 550; }
+  .vocespesa .che span {
+    display: block; font-size: 12px; color: var(--tenue); line-height: 1.35;
+  }
+  /* «FERMO» e' rosso tenue e non rosso pieno: e' un sospetto, non un
+     errore. La decisione resta di chi paga. */
+  .vocespesa.fermo .che b { color: var(--rosso); }
+  .vocespesa .euro {
+    flex: 0 0 68px; width: 68px; padding: 8px 9px; border-radius: 10px;
+    background: var(--piano); border: 1px solid var(--bordo);
+    color: var(--testo); font-size: 14px; text-align: right;
+    font-family: inherit;
+  }
+  .contoTotale {
+    margin: 12px 0 0; font-size: 14px; color: var(--tenue); line-height: 1.45;
+  }
+  .contoTotale b { color: var(--testo); font-weight: 600; }
   .cerca-servizio {
     width: 100%; margin: 14px 0 0; background: var(--piano);
     border: 1px solid var(--bordo); border-radius: 12px; color: var(--testo);
@@ -1413,7 +1441,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261006171511";
+const VERSIONE = "20261006174349";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -1782,6 +1810,137 @@ const visti = {
     this.tutto = this.tutto.filter(x => !(x.tipo === tipo && String(x.id) === String(id)));
     tombe.metti("voto", tipo, id);
     daMandare();
+  },
+};
+
+// COSA PAGHI E NON GUARDI.
+//
+// Il registro di quando apri ciascun servizio. Lo scrive l'app ogni
+// volta che premi «Apri Netflix sulla TV» o lanci un'app sul Fire -
+// cioe' il momento esatto in cui quel servizio ti serve davvero.
+//
+// Tengo l'ULTIMA volta e QUANTE volte, e non tutte le date: la
+// domanda e' «mi serve ancora?», e per rispondere bastano questi due
+// numeri. Una lista di cento timestamp per servizio e' peso in piu'
+// in localStorage e nello scambio con la famiglia, per dire la stessa
+// cosa.
+//
+// Il registro parte vuoto, e questo va detto a chi guarda: il primo
+// mese l'unica risposta onesta e' «non lo so ancora».
+const usiServizi = {
+  get tutto() {
+    try {
+      const v = JSON.parse(localStorage.getItem("usi_servizi") || "{}");
+      return v && typeof v === "object" && !Array.isArray(v) ? v : {};
+    } catch (e) { return {}; }
+  },
+  set tutto(o) { localStorage.setItem("usi_servizi", JSON.stringify(o)); },
+  segna(pid) {
+    if (!pid) return;
+    const t = this.tutto;
+    const p = t[String(pid)] || { volte: 0 };
+    t[String(pid)] = { volte: (p.volte || 0) + 1, quando: Date.now() };
+    this.tutto = t;
+    // da quando guardo: se non c'e', lo metto adesso. Serve a non
+    // dire «non lo apri da sempre» a chi ha il registro di ieri.
+    if (!localStorage.getItem("usi_da")) {
+      localStorage.setItem("usi_da", String(Date.now()));
+    }
+  },
+  uso(pid) { return this.tutto[String(pid)] || null; },
+  /// Da quando sto guardando: senza questa data i conti non si
+  /// possono leggere. Se manca, la metto adesso - cosi' il blocco
+  /// comincia a contare dalla prima volta che lo apri, non dal 1970.
+  get da() {
+    const v = Number(localStorage.getItem("usi_da") || 0);
+    if (v) return v;
+    localStorage.setItem("usi_da", String(Date.now()));
+    return Date.now();
+  },
+};
+
+/// IL CONTO DI OGNI ABBONAMENTO: lo apri? ti serve?
+///
+/// Due numeri, e sono diversi fra loro:
+///
+///   - QUANTE VOLTE L'HAI APERTO. Dal registro, quindi parte da
+///     quando hai l'app. E' il fatto.
+///   - QUANTI TITOLI DELLA TUA LISTA stanno SOLO li'. Questo si sa
+///     da subito, perche' il ricontrollo della lista salva dove si
+///     trova ogni titolo. E' il motivo per tenerlo: un servizio che
+///     copre zero titoli della tua lista e che non apri da due mesi
+///     e' l'unico candidato onesto a saltare.
+///
+/// «Solo li'» e non «anche li'»: se un titolo c'e' su Netflix E su
+/// Prime, disdire uno dei due non te lo porta via. Il numero che
+/// conta per decidere e' quello che perderesti.
+function contoServizi() {
+  const miei = chiavi.servizi;
+  if (!miei.length) return [];
+  // Quanti servizi coprono ciascun titolo della lista: serve per
+  // sapere chi e' l'unico a coprirlo.
+  const voci = lista.tutto.filter(v => (v.dove || []).length);
+
+  // UN SERVIZIO HA DUE NOMI, e il confronto per nome secco non
+  // funzionava.
+  //
+  // `v.dove` lo scrive il ricontrollo della lista, che prende il nome
+  // da MAPPA - «Disney+», «Prime Video». `nomeProvider` prende prima
+  // quello di TMDB - «Disney Plus», «Amazon Prime Video». Confrontare
+  // le due forme dava zero per TUTTI i servizi, e quindi «niente
+  // della tua lista» su ogni riga: una risposta sbagliata che pero'
+  // non ha l'aria di un guasto, perche' «niente» e' plausibile.
+  // Visto a schermo il 06/10/2026 su tre abbonamenti veri.
+  const nomiDi = (pid) => [
+    (MAPPA[pid] || {}).nome, (PROVIDER[pid] || {}).nome,
+  ].filter(Boolean);
+  const perNome = {};
+  miei.forEach(pid => { nomiDi(pid).forEach(n2 => { perNome[n2] = pid; }); });
+  return miei.map(pid => {
+    // Il nome di MAPPA per primo: e' quello che vedi nel verdetto
+    // («Su Disney+»), e due nomi per la stessa cosa nella stessa app
+    // sono due cose.
+    const nome = (MAPPA[pid] || {}).nome || nomeProvider(pid);
+    const suoi = nomiDi(pid);
+    const ci = voci.filter(v => (v.dove || []).some(d => suoi.includes(d)));
+    // di quelli, quanti NON stanno su nessun altro dei miei
+    const solo = ci.filter(v => (v.dove || [])
+      .filter(d => perNome[d] && perNome[d] !== pid).length === 0);
+    const u = usiServizi.uso(pid);
+    return {
+      pid, nome,
+      volte: u ? u.volte : 0,
+      quando: u ? u.quando : 0,
+      inLista: ci.length,
+      soloQui: solo.length,
+      prezzo: prezziServizi.prezzo(pid),
+    };
+  });
+}
+
+/// Quanto paghi ogni servizio al mese. Lo scrivi tu, ed e' facoltativo:
+/// senza i prezzi il blocco dice comunque cosa non apri, con i prezzi
+/// dice anche quanto ti costa non aprirlo.
+///
+/// Non li metto io dei valori predefiniti: i prezzi degli abbonamenti
+/// in Italia cambiano piu' volte l'anno e cambiano per piano, e un
+/// numero sbagliato che sembra giusto e' peggio di nessun numero -
+/// qui porterebbe a disdire la cosa sbagliata.
+const prezziServizi = {
+  get tutto() {
+    try {
+      const v = JSON.parse(localStorage.getItem("prezzi_servizi") || "{}");
+      return v && typeof v === "object" && !Array.isArray(v) ? v : {};
+    } catch (e) { return {}; }
+  },
+  set tutto(o) { localStorage.setItem("prezzi_servizi", JSON.stringify(o)); },
+  prezzo(pid) { return Number(this.tutto[String(pid)] || 0) || 0; },
+  metti(pid, euro) {
+    const t = this.tutto;
+    const n = Number(euro);
+    if (!n || n <= 0) delete t[String(pid)];
+    else t[String(pid)] = Math.round(n * 100) / 100;
+    this.tutto = t;
   },
 };
 
@@ -2350,6 +2509,24 @@ function votiSenzaGeneri() {
                                  && !(v.generiId || []).length);
 }
 
+/// I voti a cui manca qualcosa per il profilo di gusto: i generi, le
+/// keyword, o tutt'e due.
+///
+/// LE KEYWORD CONTANO PIU' DEI GENERI, e per molto. Un genere dice
+/// «commedia», e di commedie ce ne sono diecimila; una keyword dice
+/// «ambientato in una cucina», «rapina», «viaggio nel tempo» - cioe'
+/// la cosa per cui quel film ti e' piaciuto. Il profilo le pesa
+/// entrambe, ma i titoli simili partono dalle keyword.
+///
+/// I voti dati dal mazzo - cioe' la maggior parte - non ne hanno
+/// nessuna: `normalizza()` lavora sui dati di lista, e TMDB nelle
+/// liste non manda le keyword.
+function votiDaCompletare() {
+  return visti.tutto.filter(v => PESO_VOTO[v.mio || 0] !== undefined
+                                 && (!(v.generiId || []).length
+                                     || !(v.keyword || []).length));
+}
+
 /// Recupera da TMDB i generi dei voti che non li hanno.
 ///
 /// Serve perche' per un pezzo `normalizza()` buttava via i `genre_ids`
@@ -2374,16 +2551,19 @@ function votiSenzaGeneri() {
 /// su titoli che TMDB non conosce piu'.
 async function recuperaGeneriDaSolo() {
   if (!chiavi.tmdb) return;
-  if (localStorage.getItem("generi_recuperati")) return;
-  const da = votiSenzaGeneri();
-  if (!da.length) { localStorage.setItem("generi_recuperati", "niente"); return; }
+  // UNA CHIAVE NUOVA, e non quella di prima: chi aveva gia' finito il
+  // giro dei soli generi risultava a posto, e non sarebbe mai
+  // ripassato a prendere le keyword - che sono la parte che conta.
+  if (localStorage.getItem("gusto_recuperato")) return;
+  const da = votiDaCompletare();
+  if (!da.length) { localStorage.setItem("gusto_recuperato", "niente"); return; }
   await new Promise(r => setTimeout(r, 10000));
   try {
     const e = await recuperaGeneri();
     // Si segna SOLO se e' andata del tutto: se la rete e' caduta a
     // meta', la prossima apertura riprende da dove era.
     if (e.presi + e.persi >= e.quanti) {
-      localStorage.setItem("generi_recuperati", String(Date.now()));
+      localStorage.setItem("gusto_recuperato", String(Date.now()));
     }
     // Niente ridisegno della schermata aperta: i generi nuovi si
     // vedono al prossimo giro fra le schede, e forzare un ridisegno
@@ -2392,22 +2572,38 @@ async function recuperaGeneriDaSolo() {
 }
 
 async function recuperaGeneri(avanza) {
-  const da = votiSenzaGeneri();
+  const da = votiDaCompletare();
   let presi = 0, persi = 0;
   for (let i = 0; i < da.length; i += 5) {
     const lotto = da.slice(i, i + 5);
     await Promise.all(lotto.map(async (v) => {
       try {
-        const d = await tmdb("/" + v.tipo + "/" + v.id, { language: LINGUA });
+        // LE KEYWORD VENGONO GRATIS: stessa chiamata, un parametro in
+        // piu'. Prendere generi e keyword in due giri sarebbe il
+        // doppio delle chiamate per lo stesso risultato.
+        const d = await tmdb("/" + v.tipo + "/" + v.id,
+                             { language: LINGUA, append_to_response: "keywords" });
         const generi = (d.genres || []).map(g => String(g.id));
-        if (!generi.length) { persi += 1; return; }
+        // Le serie le mettono sotto `results`, i film sotto `keywords`.
+        // Le prime tre e come stringhe, nella stessa forma in cui le
+        // salva un voto dato dalla scheda: TMDB le manda in ordine di
+        // rilevanza, e un voto con venti keyword peserebbe venti volte
+        // tanto nel profilo di uno dato dalla scheda.
+        const kw = (((d.keywords || {}).keywords) || ((d.keywords || {}).results) || [])
+          .slice(0, 3).map(x => String(x.id)).filter(x => x && x !== "undefined");
+        if (!generi.length && !kw.length) { persi += 1; return; }
         // si riscrive il voto CONSERVANDO il resto: il voto, la data,
-        // la locandina. Qui si aggiungono i generi e basta.
+        // la locandina. Qui si aggiungono generi e keyword, e solo se
+        // sono arrivati: una risposta povera non deve cancellare
+        // quello che il voto aveva gia'.
         const dentro = visti.tutto;
         const k = dentro.findIndex(x => x.tipo === v.tipo
                                         && String(x.id) === String(v.id));
         if (k < 0) { persi += 1; return; }
-        dentro[k] = Object.assign({}, dentro[k], { generiId: generi });
+        const agg = {};
+        if (generi.length) agg.generiId = generi;
+        if (kw.length) agg.keyword = kw;
+        dentro[k] = Object.assign({}, dentro[k], agg);
         visti.tutto = dentro;
         presi += 1;
       } catch (e) { persi += 1; }
@@ -5282,6 +5478,11 @@ function pulsanteLancio(i, d) {
     try {
       const comeEAndata = await lancia(i.app, i.nome);
       if (comeEAndata) {
+        // SI SEGNA SOLO SE SI E' APERTA DAVVERO: `lancia` controlla che
+        // l'app sia andata in primo piano. Segnare il tocco e non
+        // l'apertura conterebbe anche i tentativi a TV spenta, e
+        // «aperto 12 volte» non vorrebbe dire niente.
+        usiServizi.segna(i.pid);
         b.className = "apri fatto";
         if (cercaDentro) {
           // Qui si chiude il cerchio: l'app e' aperta, e adesso il
@@ -7742,9 +7943,128 @@ function schermoImpostazioni() {
     riempi(dentro);
   };
   sotto(stanze[1][1], stanze[1][0]);
+  // DENTRO «altre cose» e non aperta: e' una cosa che si guarda
+  // quando ti viene il dubbio, non ogni volta che apri le Opzioni.
+  sotto((dove) => {
+    const suo = el("div");
+    dove.appendChild(suo);
+    const rifai = () => { suo.innerHTML = ""; suo.figli = []; bloccoSpesa(suo); };
+    bloccoSpesa.ridisegna = rifai;
+    rifai();
+  }, "Cosa paghi e non guardi");
   if (chiavi.tmdb) sotto(bloccoTmdb, "Chiave TMDB");
   sotto(bloccoFamiglia);
   sotto(bloccoDiagnosi);
+}
+
+// COSA PAGHI E NON GUARDI.
+//
+// Per ogni abbonamento: quante volte l'hai aperto, e quanti titoli
+// della tua lista perderesti disdicendolo. Il secondo numero e' quello
+// che decide, e si sa da subito.
+//
+// NON DICE «DISDICI QUESTO». Dice i due fatti e lascia la frase a chi
+// paga: un'app che consiglia di disdire Netflix perche' non l'hai
+// aperta da tre settimane non sa che ci guardi i cartoni con tuo
+// figlio dal telecomando, senza passare da qui.
+function bloccoSpesa(pad) {
+  const conti = contoServizi();
+  if (!conti.length) {
+    pad.appendChild(el("p", "nota",
+      "Prima scegli i tuoi abbonamenti, qui sopra."));
+    return;
+  }
+
+  const giorni = Math.floor((Date.now() - usiServizi.da) / 86400000);
+  const spiega = el("p", "nota");
+  spiega.innerHTML =
+    "Conto da quando hai l’app: <b>" +
+    (giorni < 1 ? "da oggi" : giorni + " " + quanti(giorni, "giorno", "giorni")) +
+    "</b>. " +
+    (giorni < 14
+      ? "È ancora poco per dire «questo non lo apri»: torna fra qualche settimana."
+      : "Un servizio che non apri e che non copre niente della tua lista " +
+        "è l’unico su cui vale la pena pensarci.");
+  pad.appendChild(spiega);
+
+  // dal meno usato: chi devi guardare sta in cima, non in fondo
+  conti.sort((a, b) => (a.volte - b.volte) || (a.soloQui - b.soloQui));
+
+  let totale = 0, sospeso = 0;
+  const zona = el("div", "spesa");
+  conti.forEach(c => {
+    totale += c.prezzo;
+    // «fermo»: mai aperto E non copre niente che perderesti. Due
+    // condizioni e non una: un servizio che non apri da qui ma che ha
+    // dentro mezza lista non e' un candidato, magari lo apri dalla TV.
+    const fermo = c.volte === 0 && c.soloQui === 0 && giorni >= 14;
+    if (fermo) sospeso += c.prezzo;
+    const r = el("div", "vocespesa" + (fermo ? " fermo" : ""));
+    const lg = logoProvider(c.pid);
+    r.innerHTML =
+      (lg ? '<img src="' + IMG + "/w92" + lg +
+            '" alt="" onerror="this.style.display=\'none\'">' : '<span></span>') +
+      '<div class="che"><b>' + esc(c.nome) + "</b><span>" +
+      (c.volte === 0 ? "mai aperto da qui"
+        : "aperto " + c.volte + " " + quanti(c.volte, "volta", "volte") +
+          " · ultima " + quandoEsce(new Date(c.quando).toISOString().slice(0, 10))) +
+      "</span><span>" +
+      (c.inLista === 0
+        ? "niente della tua lista"
+        : c.soloQui === 0
+          ? c.inLista + " " + quanti(c.inLista, "titolo", "titoli") +
+            " della lista, ma li trovi anche altrove"
+          : c.soloQui + " " + quanti(c.soloQui, "titolo", "titoli") +
+            " che perderesti") +
+      "</span></div>";
+    // Il prezzo si scrive qui, accanto al servizio: metterlo in una
+    // schermata sua vuol dire che non lo scrive nessuno.
+    const campo = el("input", "euro");
+    campo.type = "number";
+    campo.step = "0.01";
+    campo.min = "0";
+    campo.placeholder = "€";
+    campo.value = c.prezzo ? String(c.prezzo) : "";
+    campo.setAttribute("aria-label", "Quanto paghi " + c.nome + " al mese");
+    campo.onchange = () => {
+      prezziServizi.metti(c.pid, campo.value);
+      bloccoSpesa.ridisegna && bloccoSpesa.ridisegna();
+    };
+    r.appendChild(campo);
+    zona.appendChild(r);
+  });
+  pad.appendChild(zona);
+
+  const fermi = conti.filter(c => c.volte === 0 && c.soloQui === 0 && giorni >= 14);
+  const t = el("p", "contoTotale");
+  const pezzi = [];
+  if (totale) pezzi.push("In tutto <b>" + soldi(totale) + " al mese</b>.");
+  if (fermi.length) {
+    // IL NOME, non «un servizio»: e' l'unica riga che serve leggere,
+    // e farti ricercare quale era in un elenco di sei e' farti il
+    // lavoro due volte.
+    pezzi.push("<b>" + fermi.map(c => esc(c.nome)).join(" e ") + "</b> " +
+      (fermi.length === 1 ? "non l’hai" : "non li hai") +
+      " mai aperto da qui, e non " +
+      (fermi.length === 1 ? "copre" : "coprono") +
+      " niente della tua lista" +
+      (sospeso
+        ? ": sono <b>" + soldi(sospeso) + " al mese</b>."
+        : fermi.every(c => !c.prezzo)
+          ? ". Scrivi quanto paghi e ti dico quanto ti costa."
+          : "."));
+  }
+  if (!totale && !fermi.length) {
+    pezzi.push("Scrivi quanto paghi accanto a ciascuno e ti dico il totale.");
+  }
+  t.innerHTML = pezzi.join(" ");
+  pad.appendChild(t);
+}
+
+/// «12,99 €»: la virgola e il simbolo dopo, come si scrive in italiano.
+function soldi(euro) {
+  const n = Math.round(euro * 100) / 100;
+  return (Number.isInteger(n) ? String(n) : n.toFixed(2).replace(".", ",")) + " €";
 }
 
 // Le cose che si fanno UNA VOLTA: aperte finche' non sono fatte,
@@ -8167,6 +8487,10 @@ function bloccoFireComandi(dove) {
         apriAppSulFire(pacchetto).then((e) => {
           b.disabled = false;
           if (e.ok) {
+            // lo stesso registro della TV: e' lo stesso abbonamento,
+            // e che tu lo apra in salotto o in camera non cambia se
+            // ti serve
+            usiServizi.segna(pid);
             et.textContent = prima;
             b.classList.add("fatto");
             setTimeout(() => b.classList.remove("fatto"), 1200);
@@ -8424,11 +8748,11 @@ function bloccoDiagnosi(pad) {
   // i voti dati dal mazzo - la maggior parte - sono rimasti senza.
   // Si recuperano, una volta.
   {
-    const senza = votiSenzaGeneri();
-    const r = riga("Voti senza generi", String(senza.length), senza.length === 0);
+    const senza = votiDaCompletare();
+    const r = riga("Voti da completare", String(senza.length), senza.length === 0);
     if (senza.length) {
       const b = el("button", "svuota",
-                   "Recupera i generi di " + senza.length + " " +
+                   "Recupera generi e keyword di " + senza.length + " " +
                    quanti(senza.length, "voto", "voti"));
       b.style.cssText = "width:100%;margin:6px 0 0";
       b.onclick = async () => {
@@ -8439,8 +8763,8 @@ function bloccoDiagnosi(pad) {
           });
           b.textContent = e.presi + " " + quanti(e.presi, "recuperato", "recuperati") +
             (e.persi ? ", " + e.persi + " non trovati" : "");
-          r.aggiorna(String(votiSenzaGeneri().length),
-                     votiSenzaGeneri().length === 0);
+          r.aggiorna(String(votiDaCompletare().length),
+                     votiDaCompletare().length === 0);
         } catch (err) {
           b.disabled = false;
           b.textContent = "Non riuscito: " + err.message;
