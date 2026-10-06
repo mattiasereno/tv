@@ -1291,7 +1291,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261005215434";
+const VERSIONE = "20261006075524";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -1805,7 +1805,9 @@ function vociDaRiga(r) {
   return {
     tipo: r.tipo, id: r.id, titolo: r.titolo || "", anno: r.anno || "",
     locandina: r.locandina || null,
-    generiId: (r.generi || "").split(",").filter(Boolean).map(Number),
+    // stringhe come in tutto il resto del codice: qui erano numeri, e
+    // un voto arrivato dalla nuvola si confrontava male con uno locale
+    generiId: (r.generi || "").split(",").filter(Boolean).map(String),
     keyword: (r.keyword || "").split(",").filter(Boolean).map(Number),
     quando: Number(r.quando || 0),
   };
@@ -2169,6 +2171,50 @@ const SOGLIA_CERCO = 3, SOGLIA_EVITO = -3;
 // `generi`/`keyword` sono quelli da cercare, `senzaGeneri` quelli da
 // cui stare alla larga - e li' finisce il segnale dei voti bassi, che
 // prima si buttava via.
+/// I voti che non hanno generi salvati: non spostano «Sul mio gusto»
+/// di un millimetro, perche' il profilo pesa i generi.
+function votiSenzaGeneri() {
+  return visti.tutto.filter(v => PESO_VOTO[v.mio || 0] !== undefined
+                                 && !(v.generiId || []).length);
+}
+
+/// Recupera da TMDB i generi dei voti che non li hanno.
+///
+/// Serve perche' per un pezzo `normalizza()` buttava via i `genre_ids`
+/// che TMDB manda insieme alla lista: i voti dati dal mazzo - cioe' la
+/// maggior parte - sono rimasti senza. Correggere `normalizza` sistema
+/// i voti NUOVI; questi vanno ripresi uno per uno, perche' TMDB non ha
+/// un modo di chiederne tanti insieme.
+///
+/// A lotti e con avanzamento: con cento voti sono cento chiamate, e
+/// una barra che non si muove sembra un'app piantata.
+async function recuperaGeneri(avanza) {
+  const da = votiSenzaGeneri();
+  let presi = 0, persi = 0;
+  for (let i = 0; i < da.length; i += 5) {
+    const lotto = da.slice(i, i + 5);
+    await Promise.all(lotto.map(async (v) => {
+      try {
+        const d = await tmdb("/" + v.tipo + "/" + v.id, { language: LINGUA });
+        const generi = (d.genres || []).map(g => String(g.id));
+        if (!generi.length) { persi += 1; return; }
+        // si riscrive il voto CONSERVANDO il resto: il voto, la data,
+        // la locandina. Qui si aggiungono i generi e basta.
+        const dentro = visti.tutto;
+        const k = dentro.findIndex(x => x.tipo === v.tipo
+                                        && String(x.id) === String(v.id));
+        if (k < 0) { persi += 1; return; }
+        dentro[k] = Object.assign({}, dentro[k], { generiId: generi });
+        visti.tutto = dentro;
+        presi += 1;
+      } catch (e) { persi += 1; }
+    }));
+    if (avanza) avanza(Math.min(i + 5, da.length), da.length);
+  }
+  if (presi) daMandare();
+  return { presi, persi, quanti: da.length };
+}
+
 function profiloGusto() {
   const votati = visti.tutto.filter(v => PESO_VOTO[v.mio || 0] !== undefined);
   const generi = {}, keyword = {};
@@ -3340,6 +3386,16 @@ function normalizza(v, tipoNoto) {
     anno: (v.release_date || v.first_air_date || "").slice(0, 4),
     voto: v.vote_average || 0,
     locandina: v.poster_path,
+    // I GENERI, che TMDB manda GIA' QUI come `genre_ids` e che per un
+    // pezzo buttavamo via.
+    //
+    // Non e' un dettaglio di completezza: un voto senza generi non
+    // sposta «Sul mio gusto» di un millimetro, perche' il profilo pesa
+    // i generi dei titoli votati. E dal MAZZO si vota proprio questa
+    // roba - cioe' il modo principale di votare non alimentava il
+    // gusto. Chiedere i dettagli uno per uno per averli sarebbe una
+    // chiamata per titolo; qui arrivano gratis, nella stessa risposta.
+    generiId: (v.genre_ids || []).map(String),
   };
 }
 
@@ -7699,6 +7755,36 @@ function bloccoDiagnosi(pad) {
   riga("Abbonamenti scelti", String(chiavi.servizi.length), chiavi.servizi.length > 0);
   riga("Da guardare", String(lista.tutto.length));
   riga("Titoli votati", String(visti.tutto.length));
+  // I voti SENZA GENERI non spostano «Sul mio gusto»: per un pezzo
+  // `normalizza()` buttava i genre_ids che TMDB manda con la lista, e
+  // i voti dati dal mazzo - la maggior parte - sono rimasti senza.
+  // Si recuperano, una volta.
+  {
+    const senza = votiSenzaGeneri();
+    const r = riga("Voti senza generi", String(senza.length), senza.length === 0);
+    if (senza.length) {
+      const b = el("button", "svuota",
+                   "Recupera i generi di " + senza.length + " " +
+                   quanti(senza.length, "voto", "voti"));
+      b.style.cssText = "width:100%;margin:6px 0 0";
+      b.onclick = async () => {
+        b.disabled = true;
+        try {
+          const e = await recuperaGeneri((fatti, tot) => {
+            b.textContent = "Recupero… " + fatti + " di " + tot;
+          });
+          b.textContent = e.presi + " " + quanti(e.presi, "recuperato", "recuperati") +
+            (e.persi ? ", " + e.persi + " non trovati" : "");
+          r.aggiorna(String(votiSenzaGeneri().length),
+                     votiSenzaGeneri().length === 0);
+        } catch (err) {
+          b.disabled = false;
+          b.textContent = "Non riuscito: " + err.message;
+        }
+      };
+      d.appendChild(b);
+    }
+  }
   riga("Servizi noti", String(Object.keys(PROVIDER).length));
   riga("Famiglia", nuvola.pronta ? "pronta" : "non impostata", nuvola.pronta);
   if (nuvola.pronta) {
