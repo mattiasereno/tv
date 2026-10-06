@@ -210,6 +210,10 @@
     color: var(--debole);
   }
   .carta .oraCompreso.nuovo { color: var(--verde); font-weight: 600; }
+  /* «S2 E5»: in crema, che qui vuol dire «tuo» - come il tuo voto. */
+  .carta .aChePunto {
+    margin: 1px 0 0; font-size: 11px; font-weight: 600; color: var(--acceso);
+  }
   .carta .manca {
     display: flex; align-items: center; justify-content: center;
     height: 100%; padding: 10px; text-align: center;
@@ -494,6 +498,18 @@
   .prossimo.finita .quando { color: var(--debole); }
   .prossimo .cosa { margin: 0; font-size: 15.5px; font-weight: 550; }
   .prossimo .data { margin: 4px 0 0; font-size: 13.5px; color: var(--tenue); }
+  /* RIPRENDI DA: stessa scatola del prossimo episodio, ma in crema -
+     quello e' un fatto della serie, questo e' un fatto tuo. */
+  .riprendi {
+    margin: 14px 0 0; padding: 14px 16px; border-radius: 13px;
+    background: color-mix(in srgb, var(--acceso) 7%, var(--fondo-alto));
+    border: 1px solid color-mix(in srgb, var(--acceso) 45%, transparent);
+  }
+  .riprendi .quando { font-size: 12px; font-weight: 640; letter-spacing: .06em;
+                      text-transform: uppercase; color: var(--acceso); margin: 0 0 5px; }
+  .riprendi .cosa { margin: 0; font-size: 15.5px; font-weight: 550; }
+  .riprendi .data { margin: 4px 0 0; font-size: 13.5px; color: var(--tenue); }
+  .riga .qua { font-size: 12px; font-weight: 640; color: var(--acceso); }
 
   .episodio {
     display: flex; gap: 12px; width: 100%; text-align: left;
@@ -505,6 +521,23 @@
   }
   .episodio .fermo img { width: 100%; height: 100%; object-fit: cover; }
   .episodio .dati { flex: 1; min-width: 0; align-self: center; }
+  /* DOVE SEI ARRIVATO. Il segno sta accanto al titolo dell'episodio e
+     non sull'immagine: la miniatura e' piccola e un bollino sopra
+     coprirebbe la faccia di chi c'e'. */
+  .episodio .segno { display: none; font-size: 12px; font-weight: 600; }
+  .episodio.quiSono { background: color-mix(in srgb, var(--acceso) 9%, transparent); }
+  .episodio.quiSono .segno {
+    display: inline-block; margin-top: 3px; color: var(--acceso);
+  }
+  .episodio.quiSono .segno::before { content: "◉ sei arrivato qui"; }
+  /* Gli episodi PRIMA del segno restano leggibili, solo piu' spenti:
+     servono ancora - e' li' che vai a cercare «com'e' che finiva». */
+  .episodio.giaVisto .fermo { opacity: .55; }
+  .episodio.giaVisto b { color: var(--tenue); font-weight: 450; }
+  .episodio.giaVisto .segno {
+    display: inline-block; margin-top: 3px; color: var(--debole);
+  }
+  .episodio.giaVisto .segno::before { content: "visto"; }
   .episodio b { display: block; font-size: 14.5px; font-weight: 550; line-height: 1.3; }
   .episodio span { font-size: 12.5px; color: var(--debole); }
   .episodio .trama2 {
@@ -1380,7 +1413,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261006164337";
+const VERSIONE = "20261006171511";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -1556,6 +1589,43 @@ const lista = {
     if (i < 0) return;
     a[i] = Object.assign({}, a[i], campi);
     this.tutto = a;
+  },
+};
+
+// DOVE SEI ARRIVATO in una serie.
+//
+// Non un bollino «cominciata», che dice poco: la cosa che serve per
+// davvero e' riprendere una serie lasciata a meta' tre mesi fa, e per
+// quella servono due numeri. L'app non li puo' sapere da sola - la TV
+// non dice niente di cosa hai guardato - quindi li segni tu con un
+// tocco sull'episodio, mentre l'elenco e' sotto gli occhi.
+//
+// Sta in un deposito suo e non dentro `lista`: una serie che segui non
+// e' detto che sia in lista, e una volta finita esce dalla lista ma il
+// punto in cui eri arrivato resta un fatto.
+const avanzamento = {
+  get tutto() {
+    try {
+      const v = JSON.parse(localStorage.getItem("avanzamento") || "{}");
+      return v && typeof v === "object" ? v : {};
+    } catch (e) { return {}; }
+  },
+  set tutto(o) { localStorage.setItem("avanzamento", JSON.stringify(o)); },
+  dove(id) { return this.tutto[String(id)] || null; },
+  segna(id, stagione, episodio) {
+    const t = this.tutto;
+    t[String(id)] = { s: Number(stagione), e: Number(episodio), quando: Date.now() };
+    this.tutto = t;
+  },
+  togli(id) {
+    const t = this.tutto;
+    delete t[String(id)];
+    this.tutto = t;
+  },
+  /// «S2 E5», la forma corta per una carta
+  breve(id) {
+    const d = this.dove(id);
+    return d ? "S" + d.s + " E" + d.e : "";
   },
 };
 
@@ -3661,6 +3731,40 @@ async function minutiDiTutto(d) {
   return _cacheDurata.get(k);
 }
 
+/// DA DOVE RIPRENDI, e quanto ti resta.
+///
+/// Non basta ricordare dove sei arrivato: la domanda vera, quando
+/// riapri una serie dopo mesi, e' «quale episodio metto adesso» e
+/// «quanto me ne resta». Qui si risponde a entrambe.
+function daDoveRiprendi(d) {
+  const dove = avanzamento.dove(d.id);
+  if (!dove) return null;
+  // Solo le stagioni vere: la zero sono gli speciali, e contarli
+  // gonfierebbe quello che ti resta con roba che non e' la serie.
+  const st = (d.stagioni || []).filter(x => x.quanti > 0 && x.numero >= 1)
+                               .sort((a, b) => a.numero - b.numero);
+  if (!st.length) return null;
+
+  const qui = st.find(x => x.numero === dove.s);
+  let prossimo = null;
+  if (qui && dove.e < qui.quanti) {
+    prossimo = { s: dove.s, e: dove.e + 1 };
+  } else {
+    const dopo = st.find(x => x.numero > dove.s);
+    if (dopo) prossimo = { s: dopo.numero, e: 1 };
+  }
+
+  // Quanti ne restano: tutti quelli delle stagioni successive, piu'
+  // quelli che restano in questa.
+  let restano = 0;
+  st.forEach(x => {
+    if (x.numero > dove.s) restano += x.quanti;
+    else if (x.numero === dove.s) restano += Math.max(0, x.quanti - dove.e);
+  });
+
+  return { dove, prossimo, restano };
+}
+
 /// «circa 23 ore», o «1 h 45» per un film: la forma che si legge.
 function quantoDura(minuti) {
   if (!minuti) return "";
@@ -3979,13 +4083,23 @@ function grigliaDi(elementi, mostraMio = false) {
       // la lista non dava, ed erano il motivo per cui la lista esiste:
       // ci metti dentro anche quello che non hai, e nessuno ti diceva
       // quando arrivava.
+      // La DURATA TOTALE sparisce se la serie l'hai cominciata: lì
+      // sotto c'è già «sei arrivato a S2 E4», e quante ore fa tutta la
+      // serie non e' piu' la domanda - quante te ne restano sì, e
+      // quella la dice la scheda.
       '<p>' + (v.anno || "—") +
-        (v.minutiTotali ? ' <span class="dura">· ' + esc(quantoDura(v.minutiTotali)) +
-                          "</span>" : "") +
+        (v.minutiTotali && !(v.tipo === "tv" && avanzamento.dove(v.id))
+          ? ' <span class="dura">· ' + esc(quantoDura(v.minutiTotali)) + "</span>"
+          : "") +
       "</p>" +
       (v.compreso && v.dove && v.dove.length
         ? '<p class="oraCompreso' + (v.arrivato ? " nuovo" : "") + '">' +
           (v.arrivato ? "✦ ora è su " : "su ") + esc(v.dove.join(", ")) + "</p>"
+        : "") +
+      // DOVE SEI ARRIVATO, per le serie che hai cominciato: e' la cosa
+      // che cerchi quando riapri la lista dopo settimane.
+      (v.tipo === "tv" && avanzamento.breve(v.id)
+        ? '<p class="aChePunto">◉ sei a ' + esc(avanzamento.breve(v.id)) + "</p>"
         : "");
     c.onclick = () => { cache.scroll = window.scrollY; schermoDettaglio(v.tipo, v.id); };
     g.appendChild(c);
@@ -5314,6 +5428,42 @@ async function schermoDettaglio(tipo, id, torna) {
   }
   pad.appendChild(box);
 
+  // RIPRENDI DA, subito sotto il verdetto: per una serie che stai
+  // seguendo e' la seconda cosa da sapere, dopo se la paghi. Prima
+  // stava giu' fra le stagioni, e per leggerla dovevi scorrere oltre
+  // il trailer e le stelle del voto - cioe' oltre tutto quello che
+  // qui NON stavi cercando.
+  const ri = d.tipo === "tv" ? daDoveRiprendi(d) : null;
+  if (ri) {
+    const r = el("div", "riprendi");
+    // UN NUMERO SOLO, in grande: quello che devi mettere. «Sei
+    // arrivato a S2 E4» e «riprendi da S2 E5» uno sopra l'altro sono
+    // due numeri che si somigliano, e dei due serve il secondo -
+    // dove sei arrivato lo rivedi comunque nell'elenco stagioni.
+    r.innerHTML = ri.prossimo
+      ? '<p class="quando">Riprendi da</p>' +
+        '<p class="cosa">Stagione ' + ri.prossimo.s +
+        ", episodio " + ri.prossimo.e + "</p>" +
+        (ri.restano
+          ? '<p class="data resto">Ti restano ' + ri.restano +
+            (ri.restano === 1 ? " episodio" : " episodi") + "</p>"
+          : "")
+      : '<p class="quando">L’hai finita</p>' +
+        '<p class="cosa">Sei arrivato a S' + ri.dove.s + " E" + ri.dove.e + "</p>";
+    pad.appendChild(r);
+    // Le ore che ti restano arrivano dopo, quando si sa la durata:
+    // e' un numero in piu', non deve far aspettare il resto.
+    if (ri.restano && d.quantiEpisodi) {
+      minutiDiTutto(d).then(tot => {
+        if (!tot) return;
+        const nodo = r.querySelector(".resto");
+        if (!nodo) return;
+        const quanto = quantoDura(Math.round(tot / d.quantiEpisodi * ri.restano));
+        if (quanto) nodo.textContent += " · " + quanto;
+      });
+    }
+  }
+
   // Le due strade sono ESCLUSIVE, e va bene cosi': sono due stanze, e
   // il modo scelto dice in quale sei. In modo Fire Stick la TV NON si
   // lancia - confermato da chi la usa. Il bollino accanto al titolo
@@ -5449,6 +5599,8 @@ async function schermoDettaglio(tipo, id, torna) {
   pad.appendChild(blocco);
 
   if (d.tipo === "tv") {
+    const ri = daDoveRiprendi(d);
+
     const box = el("div", "prossimo");
     if (d.prossimo) {
       box.innerHTML =
@@ -5473,9 +5625,12 @@ async function schermoDettaglio(tipo, id, torna) {
       pad.appendChild(el("p", "sezione", "Stagioni"));
       d.stagioni.forEach(st => {
         const r = el("button", "riga");
+        const seiQui = ri && ri.dove.s === st.numero;
         r.innerHTML =
           '<div class="mini">' + locandina(st.locandina, "w154") + "</div>" +
-          '<div class="dati"><b>' + esc(st.nome) + "</b><span>" +
+          '<div class="dati"><b>' + esc(st.nome) +
+          (seiQui ? ' <span class="qua">◉ E' + ri.dove.e + "</span>" : "") +
+          "</b><span>" +
           st.quanti + (st.quanti === 1 ? " episodio" : " episodi") +
           (st.anno ? " · " + st.anno : "") + "</span></div>";
         r.onclick = () => schermoStagione(d, st);
@@ -5573,10 +5728,47 @@ async function schermoStagione(serie, stagione) {
     return;
   }
 
+  // DOVE SEI ARRIVATO: lo dici con un tocco sull'episodio.
+  //
+  // Un tocco e non un menu: l'elenco e' gia' sotto gli occhi, e il
+  // gesto naturale e' indicare l'ultimo che hai visto. Toccare quello
+  // gia' segnato lo toglie, perche' un segno che non si puo' levare
+  // diventa sbagliato per sempre.
+  const dove = avanzamento.dove(serie.id);
+  const avviso = el("p", "nota");
+  const diciDove = () => {
+    const d = avanzamento.dove(serie.id);
+    avviso.innerHTML = d
+      ? "Sei arrivato a <b>S" + d.s + " E" + d.e + "</b>. Tocca un altro " +
+        "episodio per spostare il segno, o quello segnato per toglierlo."
+      : "Tocca l’episodio dove sei arrivato: così quando riprendi la " +
+        "serie fra tre mesi lo sai.";
+  };
+  diciDove();
+  pad.appendChild(avviso);
+
   const oggi = new Date().toISOString().slice(0, 10);
+  const righe = [];
+  const ridisegnaSegni = () => {
+    const d = avanzamento.dove(serie.id);
+    righe.forEach(({ nodo, numero }) => {
+      const qui = d && d.s === stagione.numero && d.e === numero;
+      // «prima» esclude gia' l'episodio dove sei: nella stessa stagione
+      // chiede numero < d.e, e in una stagione precedente nessuno puo'
+      // essere quello dove sei.
+      const prima = d && (d.s > stagione.numero ||
+                          (d.s === stagione.numero && numero < d.e));
+      nodo.classList.toggle("quiSono", !!qui);
+      nodo.classList.toggle("giaVisto", !!prima);
+    });
+    diciDove();
+  };
+
   episodi.forEach(e => {
     const futuro = e.air_date && e.air_date > oggi;
-    const r = el("div", "episodio" + (futuro ? " futuro" : ""));
+    // un pulsante e non un div: si deve poter premere, anche da
+    // tastiera e da chi usa VoiceOver
+    const r = el("button", "episodio" + (futuro ? " futuro" : ""));
     r.innerHTML =
       '<div class="fermo">' +
         (e.still_path ? '<img loading="lazy" src="' + IMG + "/w300" + e.still_path + '" alt="">' : "") +
@@ -5586,9 +5778,24 @@ async function schermoStagione(serie, stagione) {
       (e.runtime ? " · " + e.runtime + " min" : "") +
       (e.vote_average ? " · ★ " + e.vote_average.toFixed(1) : "") + "</span>" +
       (e.overview ? '<div class="trama2">' + esc(e.overview) + "</div>" : "") +
+      '<span class="segno"></span>' +
       "</div>";
+    r.setAttribute("aria-label",
+      "Episodio " + e.episode_number + ", " + (e.name || "") +
+      ". Tocca se sei arrivato qui.");
+    r.onclick = () => {
+      const d = avanzamento.dove(serie.id);
+      if (d && d.s === stagione.numero && d.e === e.episode_number) {
+        avanzamento.togli(serie.id);
+      } else {
+        avanzamento.segna(serie.id, stagione.numero, e.episode_number);
+      }
+      ridisegnaSegni();
+    };
+    righe.push({ nodo: r, numero: e.episode_number });
     pad.appendChild(r);
   });
+  ridisegnaSegni();
 }
 
 // Attori e registi: la stessa schermata serve per entrambi.
