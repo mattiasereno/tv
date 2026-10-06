@@ -1203,6 +1203,22 @@ const TASTIERE = { "8": "netflix", "39": "now", "337": "disney",
                    "1899": "hbomax", "584": "discovery",
                    "119": "prime", "359": "infinity" };
 
+// Un indirizzo di rete ha una forma. Dirlo subito vale piu' che
+// scoprirlo quando non si arriva: «non arrivo a 1921680121» non fa
+// capire che il difetto e' nel numero.
+//
+// RIMESSA QUI il 06/10/2026: stava in mezzo al blocco della catena
+// vecchia, e togliendo quello e' andata via anche lei - mentre il
+// campo dell'indirizzo del Fire la usa ancora. La sintassi era a
+// posto, quindi `node --check` non ha visto niente: si e' vista
+// aprendo la schermata in un browser, dove ha rotto le Opzioni a
+// meta'.
+function indirizzoBuono(ip) {
+  const pezzi = String(ip).split(".");
+  return pezzi.length === 4 && pezzi.every(
+    p => /^[0-9]{1,3}$/.test(p) && Number(p) <= 255);
+}
+
 // Dove si ferma la catena sul Fire TV, e come si chiama in italiano.
 // L'ordine e' dal piu' prudente al piu' spiccio.
 const FERMATE_FIRE = [
@@ -1291,7 +1307,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261006093209";
+const VERSIONE = "20261006093708";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -7165,47 +7181,56 @@ function schermoImpostazioni() {
     ben.innerHTML =
       "<b>Benvenuto.</b> Per cominciare serve una <b>chiave TMDB</b> " +
       "— è gratis, e senza l’app non sa niente di nessun " +
-      "film. La metti qui sotto, in <b>Chiave TMDB</b>. Poi scegli i " +
-      "tuoi abbonamenti, e sei pronto.";
+      "film. La metti qui sotto. Poi scegli i tuoi abbonamenti, e sei " +
+      "pronto.";
     pad.appendChild(ben);
-    // e quando manca la chiave, quella viene PRIMA: e' l'unica cosa
-    // che blocca tutto, gli abbonamenti si sistemano dopo.
+    // quando manca la chiave, quella viene PRIMA e APERTA: e' l'unica
+    // cosa che blocca tutto, il resto si sistema dopo.
     bloccoTmdb(pad);
     bloccoStanza(pad);
     bloccoAbbonamenti(pad);
   } else {
+    // TRE COSE APERTE, e sono le tre che si toccano davvero: dove
+    // guardi (un tocco, e cambia cosa fanno le schede), gli
+    // abbonamenti (l'unica cosa che cambia nel tempo) e l'apparecchio
+    // che stai usando adesso.
+    //
+    // Tutto il resto sta dietro UNA porta. Prima erano sette sezioni
+    // di fila, e chi apriva le Opzioni per cambiare un abbonamento
+    // scorreva la chiave TMDB, due apparecchi, la famiglia e la
+    // diagnostica - roba che si tocca una volta nella vita, o quando
+    // qualcosa si rompe.
     bloccoStanza(pad);
     bloccoAbbonamenti(pad);
-    bloccoTmdb(pad);
   }
-
-  // Prima la stanza in cui sei, APERTA. L'altra resta sotto ma
-  // CHIUSA: c'e' se la cerchi, e non ti fa scorrere due schermate di
-  // impostazioni di un apparecchio che in questo momento non stai
-  // usando. La pagina era lunga nove schermate.
-  const stanza = (nome, riempi, aperta) => {
-    if (aperta) {
-      pad.appendChild(el("p", "sezione", nome));
-      riempi(pad);
-      return;
-    }
-    const d = el("details", "stanzaPiegata");
-    d.appendChild(el("summary", null, nome));
-    const dentro = el("div");
-    d.appendChild(dentro);
-    // attaccato PRIMA di riempirlo: i blocchi cercano i loro campi
-    // con getElementById, e fuori dal documento non li trovano
-    pad.appendChild(d);
-    riempi(dentro);
-  };
 
   const stanze = chiavi.strada === "fire"
     ? [["Il Fire Stick in camera", bloccoFire], ["La TV in salotto", bloccoTv]]
     : [["La TV in salotto", bloccoTv], ["Il Fire Stick in camera", bloccoFire]];
-  stanze.forEach(([nome, riempi], i) => stanza(nome, riempi, i === 0));
 
-  bloccoFamiglia(pad);
-  bloccoDiagnosi(pad);
+  // la stanza in cui sei: aperta, senza pieghevole
+  pad.appendChild(el("p", "sezione", stanze[0][0]));
+  stanze[0][1](pad);
+
+  // E la porta per il resto. Una sola, e non quattro pieghevoli di
+  // fila: quattro porte chiuse sono comunque quattro cose da leggere.
+  const altre = el("details", "stanzaPiegata");
+  altre.appendChild(el("summary", null, "Altre cose"));
+  const dentro = el("div");
+  altre.appendChild(dentro);
+  pad.appendChild(altre);
+
+  // `nome` solo per i blocchi che NON si intitolano da soli:
+  // bloccoFamiglia e bloccoDiagnosi lo fanno, e passarglielo
+  // comunque stampava il titolo due volte.
+  const sotto = (riempi, nome) => {
+    if (nome) dentro.appendChild(el("p", "sezione", nome));
+    riempi(dentro);
+  };
+  sotto(stanze[1][1], stanze[1][0]);
+  if (chiavi.tmdb) sotto(bloccoTmdb, "Chiave TMDB");
+  sotto(bloccoFamiglia);
+  sotto(bloccoDiagnosi);
 }
 
 // Le cose che si fanno UNA VOLTA: aperte finche' non sono fatte,
