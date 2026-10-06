@@ -1369,7 +1369,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261006161708";
+const VERSIONE = "20261006163001";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -8062,7 +8062,12 @@ function bloccoDiagnosi(pad) {
     // chi chiama puo' riempirla dopo, quando la risposta arriva
     return {
       aggiorna: (v2, s2) => {
+        // La risposta del nativo arriva DOPO, e nel frattempo la
+        // schermata puo' essere cambiata: se la riga non c'e' piu' non
+        // si aggiorna niente, invece di morire in una promessa che
+        // nessuno guarda.
         const sp = r.lastElementChild;
+        if (!sp) return;
         sp.textContent = v2;
         sp.className = s2 === true ? "si" : s2 === false ? "no" : "";
         const i = voci.findIndex(([c]) => c === cosa);
