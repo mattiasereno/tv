@@ -980,6 +980,15 @@
     font-size: 13px; font-weight: 560; white-space: nowrap;
   }
   .strada b { color: var(--testo); font-weight: 600; }
+  /* L'interruttore nelle testate: piu' compatto di quello in Opzioni,
+     perche' li' ha una riga sua e qui divide lo spazio col titolo. */
+  .interruttore.stradaSu { margin-left: 10px; }
+  .interruttore.stradaSu button {
+    /* 44px: e' la misura minima comoda per un dito. A 40 ci stava, ma
+       questo interruttore cambia COSA FANNO i pulsanti sulle schede -
+       premerlo per sbaglio, o mancarlo, costa caro. */
+    padding: 8px 14px; font-size: 13px; min-height: 44px; min-width: 52px;
+  }
   .strada svg { width: 14px; height: 14px; fill: none; stroke: currentColor;
     stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: 0 0 14px; }
 
@@ -1335,7 +1344,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261006103542";
+const VERSIONE = "20261006115706";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -3923,15 +3932,19 @@ function pannelloFiltri() {
 }
 
 // Le due strade, con le parole che contano per chi deve scegliere.
+// Il quarto campo e' il nome CORTO, per l'interruttore nelle testate:
+// «TV Samsung» e «Fire Stick» per intero andavano a capo su due righe
+// dentro la pillola, e una pillola alta il doppio alza tutta la
+// testata. Sono gli stessi nomi che usa il widget sul telefono.
 // Non e' una preferenza estetica: cambia quali pulsanti compaiono
 // sulle schede, e quindi cosa succede quando le premi.
 const STRADE = [
   ["tv", "TV Samsung", "Apro l\u2019app giusta sulla TV e le scrivo il " +
    "titolo dentro, lettera per lettera. Un pulsante per ogni app che ce " +
-   "l\u2019ha."],
+   "l\u2019ha.", "TV"],
   ["fire", "Fire Stick", "Cerco il titolo nella ricerca del Fire TV, che " +
    "copre tutte le app insieme e dice da s\u00e9 quali ce l\u2019hanno. Un " +
-   "pulsante solo."],
+   "pulsante solo.", "Fire"],
 ];
 
 // Si chiede UNA volta, e non a chi non ha ancora la chiave TMDB: a
@@ -4059,25 +4072,39 @@ function mostraTour() {
 // il titolo proprio nel momento in cui volevi vedere l'altro pulsante.
 function bolloStrada(ridisegna) {
   const rifai = ridisegna || (() => vai(scheda_attiva));
-  const b = el("button", "strada");
-  const scrivi = () => {
-    const altra = chiavi.strada === "fire" ? "TV Samsung" : "Fire Stick";
-    b.innerHTML = ICONE.scambia + "<b>" + esc(nomeStrada()) + "</b>";
-    b.setAttribute("aria-label",
-      "Stai usando " + nomeStrada() + ". Toccalo per passare a " + altra + ".");
-    b.setAttribute("title", "Passa a " + altra);
-  };
-  scrivi();
-  b.onclick = () => {
-    chiavi.strada = chiavi.strada === "fire" ? "tv" : "fire";
-    rifai();                            // la schermata si rifa' nel modo nuovo
-  };
-  // chi vuole rileggere cosa fa ciascuna strada: tocco lungo
-  b.oncontextmenu = (e) => {
-    e.preventDefault();
-    schermoBivio(rifai);
-  };
-  return b;
+
+  // DUE PILLOLE, non una.
+  //
+  // Prima era una pillola sola che mostrava l'apparecchio IN USO e che,
+  // toccata, passava all'ALTRO. A schermo si leggeva «↰ TV Samsung», e
+  // non si capiva se volesse dire «stai sulla TV» o «premi per andare
+  // sulla TV»: lo spiegava solo l'aria-label e il tocco lungo, cioe'
+  // due posti che non si vedono.
+  //
+  // Con due pillole la domanda non esiste: quella accesa e' dove sei,
+  // l'altra e' dove puoi andare. Ed e' la stessa forma che questa
+  // stessa scelta ha gia' in Opzioni e nel widget del telefono - la
+  // stessa cosa deve avere la stessa faccia in tutti i posti.
+  const sw = el("div", "interruttore stradaSu");
+  STRADE.forEach(([v, nome, , corto]) => {
+    const b = el("button", null, corto || nome);
+    b.setAttribute("aria-pressed", String(chiavi.strada === v));
+    b.setAttribute("aria-label", chiavi.strada === v
+      ? "Stai guardando su " + nome
+      : "Passa a " + nome);
+    b.onclick = () => {
+      if (chiavi.strada === v) {
+        // toccare quella in cui sei non fa niente di brutto: apre la
+        // spiegazione, che prima era nascosta nel tocco lungo
+        schermoBivio(rifai);
+        return;
+      }
+      chiavi.strada = v;
+      rifai();                          // la schermata si rifa' nel modo nuovo
+    };
+    sw.appendChild(b);
+  });
+  return sw;
 }
 
 async function schermoSfoglia() {
