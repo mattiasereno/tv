@@ -1291,7 +1291,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261006075524";
+const VERSIONE = "20261006093209";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -2188,6 +2188,37 @@ function votiSenzaGeneri() {
 ///
 /// A lotti e con avanzamento: con cento voti sono cento chiamate, e
 /// una barra che non si muove sembra un'app piantata.
+/// Il recupero fatto DA SOLA, in sottofondo, una volta.
+///
+/// Senza questo il recupero era un pulsante in Diagnostica, cioe' una
+/// cosa che si fa se si sa che esiste. Ma i voti senza generi non
+/// danno nessun segno: «Sul mio gusto» funziona, dice solo cose piu'
+/// povere del dovuto, e nessuno va a cercare un pulsante per un
+/// difetto che non si vede.
+///
+/// Prudente di proposito: parte dieci secondi dopo l'avvio per non
+/// rubare banda alla prima schermata, si ferma al primo errore di
+/// rete, e si ricorda di averlo fatto - cosi' non ripassa ogni volta
+/// su titoli che TMDB non conosce piu'.
+async function recuperaGeneriDaSolo() {
+  if (!chiavi.tmdb) return;
+  if (localStorage.getItem("generi_recuperati")) return;
+  const da = votiSenzaGeneri();
+  if (!da.length) { localStorage.setItem("generi_recuperati", "niente"); return; }
+  await new Promise(r => setTimeout(r, 10000));
+  try {
+    const e = await recuperaGeneri();
+    // Si segna SOLO se e' andata del tutto: se la rete e' caduta a
+    // meta', la prossima apertura riprende da dove era.
+    if (e.presi + e.persi >= e.quanti) {
+      localStorage.setItem("generi_recuperati", String(Date.now()));
+    }
+    // Niente ridisegno della schermata aperta: i generi nuovi si
+    // vedono al prossimo giro fra le schede, e forzare un ridisegno
+    // mentre uno sta guardando una lista gli fa perdere il posto.
+  } catch (err) { /* si riprova alla prossima apertura */ }
+}
+
 async function recuperaGeneri(avanza) {
   const da = votiSenzaGeneri();
   let presi = 0, persi = 0;
@@ -8047,6 +8078,11 @@ try {
 } catch (e) { /* l'app funziona anche senza */ }
 
 controllaVersione();
+
+// I generi dei voti vecchi, in sottofondo: non blocca niente e non
+// chiede niente. Vedi recuperaGeneriDaSolo per il perche' non sia un
+// pulsante.
+recuperaGeneriDaSolo();
 </script>
 </body>
 </html>
