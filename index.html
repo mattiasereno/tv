@@ -1441,7 +1441,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261006174349";
+const VERSIONE = "20261007111642";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -3121,6 +3121,38 @@ function passiPerCercareSulFire(titolo, fino) {
     { cosa: "testo", testo: testo, pausa: 1200 },
     tap("conferma"),
   ].concat(tappe.map(tap));
+}
+
+/// I TITOLI DA DORMIRE, coi passi gia' calcolati, per l'app al polso.
+///
+/// Serve perche' al polso «metti qualcosa per dormire» e' il tasto che
+/// vale piu' di tutti - sei a letto e il telefono e' sul comodino di
+/// la' - ma il Watch non sa niente: la lista dei titoli da dormire la
+/// tiene questo deposito, e i percorsi per cercarli li calcola questa
+/// pagina.
+///
+/// Si travasano i PASSI e non i titoli: cosi' l'app nativa non deve
+/// sapere ne' dove sta la lente sulla schermata del Fire ne' come si
+/// normalizza un titolo per `input text`. Resta la divisione che
+/// funziona da sempre - la pagina calcola, il nativo preme - e il
+/// giorno che Amazon sposta la lente si corregge in un posto solo.
+///
+/// Solo per il FIRE STICK: sulla TV Samsung scrivere un titolo vuole
+/// la tastiera a schermo, cioe' un percorso che si calcola lettera per
+/// lettera guardando a che punto si e' arrivati. Dal polso non si puo'
+/// fare a occhi chiusi, e un tasto che a volte scrive «Amlie» e' peggio
+/// di un tasto che dice «qui serve il telefono».
+function dormirePerIlPolso() {
+  return dormire.tutto.slice(0, 12).map(v => {
+    try {
+      return { titolo: v.titolo, passi: passiPerCercareSulFire(v.titolo, chiavi.firefino) };
+    } catch (e) {
+      // un titolo da cui non resta niente da scrivere (tutto simboli)
+      // non si manda: al polso comparirebbe un nome e non accadrebbe
+      // niente
+      return null;
+    }
+  }).filter(Boolean);
 }
 
 /// Cerca un titolo sul Fire Stick, facendo premere al nativo.
