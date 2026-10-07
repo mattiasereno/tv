@@ -1441,7 +1441,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261007120144";
+const VERSIONE = "20261007124331";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -3145,6 +3145,24 @@ function passiPerCercareSulFire(titolo, fino) {
     { cosa: "testo", testo: testo, pausa: 1200 },
     tap("conferma"),
   ].concat(tappe.map(tap));
+}
+
+/// LE COORDINATE DELLA RICERCA SUL FIRE, per l'app nativa.
+///
+/// Serve perche' a voce il titolo arriva quando questa pagina non sta
+/// girando: «Ehi Siri, cerca Dune» deve funzionare col telefono in
+/// tasca, e in quel momento l'unica cosa in esecuzione e' il nativo.
+///
+/// Si travasano i NUMERI e non il codice: dove sta la lente, dove il
+/// campo, quanto aspettare. Il nativo compone i passi, questa pagina
+/// resta l'unico posto dove quei numeri sono scritti - e il giorno che
+/// Amazon sposta la lente si corregge qui, come prima.
+function puntiFirePerNativo() {
+  return {
+    punti: PUNTI_FIRE,
+    tappe: TAPPE_FIRE[chiavi.firefino] ? chiavi.firefino : "risultati",
+    daToccare: (TAPPE_FIRE[chiavi.firefino] || TAPPE_FIRE.risultati),
+  };
 }
 
 /// I TITOLI DA DORMIRE, coi passi gia' calcolati, per l'app al polso.
