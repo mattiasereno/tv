@@ -1441,7 +1441,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261007111642";
+const VERSIONE = "20261007120144";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -3094,11 +3094,35 @@ const TAPPE_FIRE = {
 /// Il titolo come lo vuole `input text`: minuscolo, senza accenti,
 /// gli spazi come %s. Non e' pignoleria - quel comando passa da una
 /// shell, e un apostrofo o un punto e virgola la spezzerebbero.
+///
+/// I PEZZI DI UNA LETTERA SOLA SI BUTTANO, e sono quasi sempre figli
+/// di un apostrofo.
+///
+/// L'apostrofo diventa uno spazio - deve, perche' la shell lo
+/// spezzerebbe - e questo lascia a meta' gli articoli elissi
+/// dell'italiano: «L'ultimo dominatore dell'aria» finiva scritto
+/// «l ultimo dominatore dell aria», e il Fire cercava anche quella
+/// «l» sola. Segnalato da chi lo usa il 07/10/2026: «c'e' un tema
+/// apostrofi che non mi cerca il titolo corretto».
+///
+/// Buttarli e' la cosa che fa anche una persona: nessuno digita «l»
+/// nella ricerca. «Assassin's Creed» diventa «assassin creed»,
+/// «C'era una volta» diventa «era una volta» - e quello che resta e'
+/// piu' specifico di quello che si toglie, quindi il titolo si trova
+/// anche meglio.
 function perInputText(titolo) {
   const piatto = String(titolo).toLowerCase()
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   const pulito = piatto.replace(/[^a-z0-9 \-_.]/g, " ");
-  return pulito.trim().split(/\s+/).filter(Boolean).join("%s");
+  const tutti = pulito.trim().split(/\s+/).filter(Boolean);
+  // una cifra sola INVECE si tiene: «Rocky 2» senza il 2 e' un
+  // altro film, mentre «L'ultimo» senza la «l» e' lo stesso titolo.
+  const pezzi = tutti.filter(x => x.length > 1 || /[0-9]/.test(x));
+  // SE NON RESTA NIENTE si tiene tutto: «M» di Fritz Lang e' un
+  // titolo di una lettera sola, e buttarla vorrebbe dire rifiutarsi di
+  // cercarlo. La regola serve a togliere il rumore ACCANTO alle
+  // parole, non a dire che un titolo corto non esiste.
+  return (pezzi.length ? pezzi : tutti).join("%s");
 }
 
 /// La sequenza di passi per cercare un titolo sul Fire Stick.
