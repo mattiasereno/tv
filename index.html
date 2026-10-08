@@ -216,6 +216,30 @@
   }
   /* «stasera esce»: verde come «ora è su Disney+», perche' sono la
      stessa categoria di notizia - qualcosa e' cambiato da ieri. */
+  /* DECIDI TU: la proposta e' una riga, non una carta grande.
+     Una sola cosa, letta in un secondo, con accanto il perche'. */
+  .decidi { padding: 0 16px; }
+  .proposta {
+    display: flex; gap: 12px; width: 100%; text-align: left; align-items: center;
+    margin: 10px 0 8px; padding: 10px; border-radius: 13px;
+    background: var(--fondo-alto);
+    border: 1px solid color-mix(in srgb, var(--acceso) 35%, transparent);
+  }
+  .proposta .mini {
+    flex: 0 0 54px; aspect-ratio: 2/3; border-radius: 8px; overflow: hidden;
+    background: var(--piano);
+  }
+  .proposta .mini img { width: 100%; height: 100%; object-fit: cover; }
+  .proposta .dati { flex: 1; min-width: 0; }
+  .proposta b { display: block; font-size: 15.5px; font-weight: 600; }
+  .proposta span {
+    display: block; font-size: 12.5px; color: var(--tenue); line-height: 1.35;
+  }
+  /* IL PERCHE' in crema: e' la parte che distingue una proposta da un
+     dado, e deve saltare all'occhio quanto il titolo. */
+  .proposta .perche { color: var(--acceso); font-weight: 600; }
+  .decidi .svuota { width: 100%; }
+
   /* SCEGLIERE IN DUE: una carta grande e due pulsanti larghi.
      Grande perche' qui si guarda UNA cosa per volta e si decide, non
      si scorre una griglia; larghi perche' la risposta si da' col
@@ -1490,7 +1514,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261008161606";
+const VERSIONE = "20261008162713";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -2160,6 +2184,68 @@ const altrui = {
 // Le risposte SCADONO dopo sei ore: «mi andava» ieri sera non vuol
 // dire niente stasera, e un accordo vecchio di una settimana proposto
 // come fresco e' peggio di nessuna proposta.
+/// DECIDI TU: un titolo dalla lista, scelto bene.
+///
+/// Alle dieci di sera il problema non e' la mancanza di scelte, e'
+/// l'eccesso: una lista di quaranta titoli si scorre e si richiude
+/// senza decidere niente. Qui l'app ne propone UNO.
+///
+/// NON E' UN DADO. Ogni titolo prende un punteggio, e si pesca fra i
+/// migliori - non fra tutti. I criteri, in ordine di peso:
+///
+///   - LO PAGHI GIA'? Un titolo che non puoi guardare stasera non e'
+///     una proposta, e' una presa in giro. Vale piu' di tutto il
+///     resto messo insieme.
+///   - CI STA NEL TEMPO che hai, se l'hai detto.
+///   - IL TUO GUSTO: i generi che i tuoi voti dicono che cerchi.
+///   - E' USCITO DA POCO? A parita' di tutto, il nuovo attira di piu'.
+///
+/// Fra i primi si pesca A CASO, e non si prende sempre il primo: se
+/// «Decidi tu» desse sempre la stessa risposta, lo premeresti una
+/// volta sola.
+function puntiPerStasera(v, gusto, minuti) {
+  let p = 0;
+  // Lo paghi: e' la differenza fra una proposta e un dispetto.
+  if (v.compreso) p += 100;
+  // Ci sta nel tempo che hai. `ciStaIn` dice gia' di si' quando non
+  // c'e' un limite e quando la durata non si sa: non sapere non e'
+  // una colpa del titolo, e il ricontrollo la riempie col tempo.
+  if (!ciStaIn(v, minuti)) p -= 60;
+  // Il gusto: ogni genere che cerchi vale, ma con rendimento
+  // decrescente - tre generi azzeccati non valgono tre volte uno.
+  const miei = (v.generiId || []).map(String);
+  const cerco = (gusto.generi || []).filter(g => miei.includes(String(g)));
+  p += Math.min(cerco.length, 3) * 12;
+  // E quelli da cui stai alla larga pesano in negativo, perche' il
+  // segnale dei voti bassi e' altrettanto buono.
+  const evito = (gusto.senzaGeneri || []).filter(g => miei.includes(String(g)));
+  p -= evito.length * 25;
+  // Uscito da poco, a parita' di tutto.
+  const anno = Number(v.anno) || 0;
+  const oggi = new Date().getFullYear();
+  if (anno && oggi - anno <= 2) p += 8;
+  // Gia' cominciata: se hai un segno a meta', riprenderla e' piu'
+  // facile che cominciare qualcosa di nuovo.
+  if (v.tipo === "tv" && avanzamento.dove(v.id)) p += 15;
+  return p;
+}
+
+/// Pesca un titolo dalla lista. `tranne` sono quelli gia' proposti in
+/// questo giro: «un altro» non deve ridare lo stesso.
+function decidiTu(minuti, tranne) {
+  const fuori = new Set(tranne || []);
+  const gusto = profiloGusto();
+  const can = lista.tutto
+    .filter(v => !fuori.has(v.tipo + v.id))
+    .map(v => ({ v, p: puntiPerStasera(v, gusto, minuti) }))
+    .sort((a, b) => b.p - a.p);
+  if (!can.length) return null;
+  // Fra i primi cinque, a caso: abbastanza stretto da restare una
+  // buona proposta, abbastanza largo da non dare sempre la stessa.
+  const cima = can.slice(0, Math.min(5, can.length));
+  return cima[Math.floor(Math.random() * cima.length)].v;
+}
+
 // Si chiama `scelteSera` e non `stasera` perche' `STASERA` esiste
 // gia': e' la schermata «cosa guardiamo stasera», che e' un'altra
 // cosa. Due nomi quasi uguali per due cose diverse sono una trappola
@@ -6606,6 +6692,9 @@ function visteLista() {
 }
 
 function schermoLista() {
+  // Quanti minuti hai stasera: lo usano il filtro della lista E
+  // «Decidi tu», quindi sta qui in cima e non in mezzo.
+  let tempoLista = 0;
   schermo.innerHTML = "";
   const pad = el("div", "pad");
   pad.appendChild(el("h1", "titolone", "La tua lista"));
@@ -6640,6 +6729,59 @@ function schermoLista() {
     v.appendChild(b);
     schermo.appendChild(v);
     return;
+  }
+
+  // DECIDI TU: un tasto, una proposta.
+  //
+  // In cima perche' e' il motivo per cui apri la lista quando non sai
+  // cosa guardare: se devi scorrere per trovarlo, tanto vale scorrere
+  // la lista e basta.
+  //
+  // Da otto titoli in su: sotto quella soglia li vedi tutti in uno
+  // schermo, e farsi scegliere da un tasto e' una cerimonia inutile.
+  if (lista.tutto.length >= 8) {
+    const zona = el("div", "decidi");
+    let propostaFatta = [];
+    const b = el("button", "primario", "Decidi tu");
+    b.style.cssText = "margin:0 auto; display:block";
+    const mostra = () => {
+      const v = decidiTu(tempoLista, propostaFatta);
+      zona.innerHTML = "";
+      zona.figli = [];
+      if (!v) {
+        zona.appendChild(el("p", "nota",
+          "Le ho proposte tutte. Ricomincio?"));
+        propostaFatta = [];
+        const r = el("button", "svuota", "Riprova");
+        r.onclick = mostra;
+        zona.appendChild(r);
+        return;
+      }
+      propostaFatta.push(v.tipo + v.id);
+      const c = el("button", "proposta");
+      c.innerHTML =
+        '<div class="mini">' + (v.locandina ? locandina(v.locandina, "w154")
+          : '<div class="manca"></div>') + "</div>" +
+        '<div class="dati"><b>' + esc(v.titolo) + "</b><span>" +
+        (v.tipo === "tv" ? "Serie" : "Film") +
+        (v.anno ? " · " + esc(String(v.anno)) : "") +
+        (minutiDiUnaVolta(v) ? " · " + esc(quantoDura(minutiDiUnaVolta(v))) : "") +
+        "</span>" +
+        // PERCHE' QUESTO: senza, sembra un dado. Con la ragione
+        // davanti, o ti convince o capisci cosa correggere.
+        (v.compreso && (v.dove || []).length
+          ? '<span class="perche">lo paghi già, su ' + esc(v.dove.join(", ")) + "</span>"
+          : '<span class="perche">non è nei tuoi abbonamenti</span>') +
+        "</div>";
+      c.onclick = () => vai((A_PAROLA[v.tipo] || "film") + "/" + v.id);
+      zona.appendChild(c);
+      const altro = el("button", "svuota", "Un altro");
+      altro.onclick = mostra;
+      zona.appendChild(altro);
+    };
+    b.onclick = mostra;
+    schermo.appendChild(b);
+    schermo.appendChild(zona);
   }
 
   // RIPRENDI: le serie cominciate, col prossimo episodio.
@@ -6696,11 +6838,6 @@ function schermoLista() {
   schermo.appendChild(grigliaZona);
 
   let cerca = "", tipoLista = "tutti", genereLista = "";
-  // Quanti minuti hai. 0 = nessun limite, e NON si ricorda fra
-  // un'apertura e l'altra: il tempo che hai stasera non e' quello di
-  // ieri, e un filtro rimasto acceso nasconde mezza lista senza che
-  // si capisca perche'.
-  let tempoLista = 0;
   const senzaAccenti = (t) => (t || "").toLowerCase()
     .normalize("NFD").replace(/[̀-ͯ]/g, "");
   const disegnaGriglia = () => {
