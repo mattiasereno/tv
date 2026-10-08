@@ -1514,7 +1514,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261008163406";
+const VERSIONE = "20261008165230";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -2184,6 +2184,88 @@ const altrui = {
 // Le risposte SCADONO dopo sei ore: «mi andava» ieri sera non vuol
 // dire niente stasera, e un accordo vecchio di una settimana proposto
 // come fresco e' peggio di nessuna proposta.
+/// SALVARE TUTTO FUORI DAL TELEFONO.
+///
+/// Lista, voti, spunte notte e segni vivono SOLO qui dentro, nel
+/// deposito del browser. Basta resettare il telefono, cambiarlo, o
+/// che Safari faccia pulizia dei siti che non apri da un po', e sono
+/// anni di voti che se ne vanno senza un avviso. Non e' una
+/// funzione, e' un'assicurazione.
+///
+/// LE CHIAVI NON SI ESPORTANO: la chiave TMDB, il token della TV,
+/// quelli di Supabase e di SmartThings restano fuori dal file. Un
+/// file con dentro un token e' un rischio che si porta dietro per
+/// sempre - finisce in una cartella condivisa, in un backup, in una
+/// chat - mentre quelle chiavi si rimettono a mano in due minuti.
+const DA_SALVARE = [
+  "lista", "visti", "dormire", "avanzamento", "scartati", "rassegnati",
+  "tombe", "altrui", "usi_servizi", "prezzi_servizi", "usi_da",
+  "arrivi_detti", "servizi", "strada", "fire_fino",
+];
+
+function datiDaSalvare() {
+  const dentro = {};
+  DA_SALVARE.forEach(k => {
+    const v = localStorage.getItem(k);
+    if (v !== null) dentro[k] = v;
+  });
+  return {
+    che: "telecomando-tv",
+    versione: VERSIONE,
+    quando: new Date().toISOString(),
+    // Due numeri in chiaro, per capire a colpo d'occhio se il file e'
+    // quello giusto prima di ripristinarlo.
+    quantiInLista: lista.tutto.length,
+    quantiVoti: visti.tutto.length,
+    dati: dentro,
+  };
+}
+
+/// Rimette dentro quello che c'e' nel file, SENZA buttare via quello
+/// che c'e' gia'.
+///
+/// Unisce invece di sostituire, e titolo per titolo vince il piu'
+/// recente - la stessa regola della Famiglia. Cosi' ripristinare su un
+/// telefono che nel frattempo ha vissuto non cancella quello che ha
+/// fatto: il caso peggiore sarebbe recuperare un backup di tre mesi fa
+/// e perdere tre mesi di voti per averlo fatto.
+function ripristina(testo) {
+  let f;
+  try { f = JSON.parse(testo); } catch (e) { return { ok: false, perche: "Non è un file di questa app." }; }
+  if (!f || f.che !== "telecomando-tv" || !f.dati) {
+    return { ok: false, perche: "Non è un salvataggio del Telecomando." };
+  }
+  let messi = 0;
+  // I MAGAZZINI A ELENCO si fondono voce per voce: quella col
+  // «quando» piu' alto vince, come fra due telefoni.
+  [["lista", lista], ["visti", visti], ["dormire", dormire]].forEach(([k, dove]) => {
+    let dal;
+    try { dal = JSON.parse(f.dati[k] || "[]"); } catch (e) { return; }
+    if (!Array.isArray(dal)) return;
+    const ora = dove.tutto.slice();
+    dal.forEach(v => {
+      const i = ora.findIndex(
+        x => x.tipo === v.tipo && String(x.id) === String(v.id));
+      if (i < 0) { ora.push(v); messi++; }
+      else if (Number(v.quando || 0) > Number(ora[i].quando || 0)) {
+        ora[i] = v; messi++;
+      }
+    });
+    dove.tutto = ora;
+  });
+  // IL RESTO sono oggetti o elenchi senza un «quando» per voce: li si
+  // rimette solo se qui non c'e' niente, perche' non c'e' modo di
+  // dire quale dei due sia piu' nuovo e indovinare sarebbe peggio.
+  ["avanzamento", "scartati", "rassegnati", "usi_servizi",
+   "prezzi_servizi", "usi_da", "servizi", "fire_fino"].forEach(k => {
+    const mio = localStorage.getItem(k);
+    const vuoto = !mio || mio === "[]" || mio === "{}" || mio === "";
+    if (vuoto && f.dati[k]) { localStorage.setItem(k, f.dati[k]); messi++; }
+  });
+  daMandare();
+  return { ok: true, messi, quando: f.quando };
+}
+
 /// I TITOLI CHE DORMONO IN LISTA.
 ///
 /// Una lista di cento titoli non si legge piu', e quando non si legge
@@ -8772,8 +8854,86 @@ function schermoImpostazioni() {
     rifai();
   }, "Cosa paghi e non guardi");
   if (chiavi.tmdb) sotto(bloccoTmdb, "Chiave TMDB");
+  sotto(bloccoSalvataggio, "Salva i tuoi dati");
   sotto(bloccoFamiglia);
   sotto(bloccoDiagnosi);
+}
+
+// SALVA E RIPRISTINA, in Opzioni.
+//
+// Due pulsanti e una riga che dice quanto rischi: senza quel numero
+// davanti, «salva i dati» e' una voce di menu che non si tocca mai.
+function bloccoSalvataggio(pad) {
+  const quanti = lista.tutto.length + visti.tutto.length;
+  const p = el("p", "nota");
+  p.innerHTML =
+    "Lista, voti e segni stanno <b>solo in questo telefono</b>. " +
+    "Se lo cambi o lo resetti, " +
+    (quanti ? "i tuoi <b>" + quanti + "</b> titoli spariscono" : "spariscono") +
+    " — e non c’è modo di riaverli. Il file che scarichi qui li riporta " +
+    "indietro su qualunque telefono.";
+  pad.appendChild(p);
+
+  const giu = el("button", "svuota", "Salva tutto in un file");
+  giu.style.cssText = "width:100%;margin:8px 0 0";
+  giu.onclick = () => {
+    const d = datiDaSalvare();
+    const b = new Blob([JSON.stringify(d, null, 1)], { type: "application/json" });
+    const u = URL.createObjectURL(b);
+    const a = document.createElement("a");
+    a.href = u;
+    // La data nel nome: di salvataggi ne accumuli piu' di uno, e
+    // «salvataggio.json» tre volte non si distingue.
+    a.download = "telecomando-" + d.quando.slice(0, 10) + ".json";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(u), 1000);
+    giu.textContent = "Salvato: " + d.quantiInLista + " in lista, " +
+                      d.quantiVoti + " voti";
+    setTimeout(() => { giu.textContent = "Salva tutto in un file"; }, 3000);
+  };
+  pad.appendChild(giu);
+
+  const esito = el("p", "nota");
+  esito.style.cssText = "margin:8px 0 0";
+  const su = el("input");
+  su.type = "file";
+  su.accept = "application/json,.json";
+  su.style.cssText = "display:none";
+  su.onchange = () => {
+    const f = su.files && su.files[0];
+    if (!f) return;
+    const r = new FileReader();
+    r.onload = () => {
+      const e = ripristina(String(r.result || ""));
+      // IL NUMERO, non «fatto»: «rimesse 143 cose» si controlla,
+      // «fatto» si puo' solo sperare.
+      esito.textContent = e.ok
+        ? "Rimesse " + e.messi + " cose dal salvataggio del " +
+          String(e.quando || "").slice(0, 10) + ". Riapri la Lista per vederle."
+        : e.perche;
+      su.value = "";
+    };
+    r.readAsText(f);
+  };
+  pad.appendChild(su);
+
+  const prendi = el("button", "svuota", "Riprendi da un file");
+  prendi.style.cssText = "width:100%;margin:8px 0 0";
+  prendi.onclick = () => su.click();
+  pad.appendChild(prendi);
+  pad.appendChild(esito);
+
+  pad.appendChild(comeSiFa(
+    "Il file NON contiene le chiavi — né TMDB, né la TV, né la " +
+    "Famiglia. Un file con dentro un token resta in giro per sempre, " +
+    "fra cartelle condivise e chat, mentre le chiavi si rimettono a " +
+    "mano in due minuti.<br><br>" +
+    "Riprendendo da un file <b>non si perde niente</b> di quello che " +
+    "c’è già: si uniscono, e titolo per titolo vince il più recente — " +
+    "la stessa regola di quando due telefoni non sono d’accordo.",
+    "Cosa c’è nel file"));
 }
 
 // COSA PAGHI E NON GUARDI.
