@@ -216,6 +216,50 @@
   }
   /* «stasera esce»: verde come «ora è su Disney+», perche' sono la
      stessa categoria di notizia - qualcosa e' cambiato da ieri. */
+  /* SCEGLIERE IN DUE: una carta grande e due pulsanti larghi.
+     Grande perche' qui si guarda UNA cosa per volta e si decide, non
+     si scorre una griglia; larghi perche' la risposta si da' col
+     pollice senza mirare. */
+  .cartona { padding: 0 16px; }
+  .cartona .tela {
+    width: 100%; aspect-ratio: 2/3; max-height: 46vh; margin: 0 auto;
+    border-radius: 14px; overflow: hidden; background: var(--piano);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .cartona .tela img { width: 100%; height: 100%; object-fit: cover; }
+  .cartona .manca {
+    padding: 16px; text-align: center; color: var(--tenue); font-size: 15px;
+  }
+  .cartona h2 {
+    margin: 10px 0 2px; font-size: 20px; font-weight: 600; line-height: 1.2;
+  }
+  .cartona .meta { margin: 0; font-size: 13.5px; color: var(--tenue); }
+
+  .siNo { display: flex; gap: 10px; padding: 12px 16px 16px; }
+  .siNo button {
+    flex: 1; padding: 15px 0; border-radius: 13px; font-size: 16px;
+    font-weight: 600; font-family: inherit; border: 1px solid var(--bordo);
+    background: var(--piano); color: var(--testo);
+  }
+  /* IL «SÌ» E' CREMA E IL «NO» NO: in crema qui dentro vuol dire «tuo»,
+     e la cosa che conta e' quella che dici tu. Il no resta un pulsante
+     normale, non rosso: dire no a un film non e' un errore. */
+  .siNo .si {
+    background: var(--acceso); border-color: var(--acceso);
+    color: var(--acceso-testo);
+  }
+
+  /* L'ACCORDO: la spunta verde sul poster, come un bollo. */
+  .carta.accordo .tela { outline: 2px solid var(--verde); outline-offset: -2px; }
+  .carta.accordo .spunta {
+    position: absolute; right: 6px; top: 6px; width: 24px; height: 24px;
+    border-radius: 50%; background: var(--verde); color: #0B1014;
+    font-size: 15px; font-weight: 700; line-height: 24px; text-align: center;
+  }
+  .carta .conChi {
+    margin: 1px 0 0; font-size: 11px; font-weight: 600; color: var(--verde);
+  }
+
   .carta .esceOra {
     margin: 1px 0 0; font-size: 11px; font-weight: 600; color: var(--verde);
   }
@@ -1446,7 +1490,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261008145927";
+const VERSIONE = "20261008154830";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -2101,6 +2145,93 @@ const altrui = {
   },
 };
 
+// SCEGLIERE IN DUE.
+//
+// Il problema della sera non e' «cosa c'e'», e' «cosa va bene a tutti
+// e due». Oggi si risolve parlandone, e vince chi insiste di piu' o
+// chi ha meno sonno.
+//
+// Qui ognuno dice «mi va» o «no» sui titoli, dal suo telefono e per
+// conto suo. Quando due persone hanno detto «mi va» sulla stessa cosa,
+// l'app lo dice. NESSUNO VEDE LE SCELTE DELL'ALTRO PRIMA: sapere che
+// lei ha gia' detto no a un film cambierebbe la tua risposta, e la
+// cosa smetterebbe di funzionare.
+//
+// Le risposte SCADONO dopo sei ore: «mi andava» ieri sera non vuol
+// dire niente stasera, e un accordo vecchio di una settimana proposto
+// come fresco e' peggio di nessuna proposta.
+// Si chiama `scelteSera` e non `stasera` perche' `STASERA` esiste
+// gia': e' la schermata «cosa guardiamo stasera», che e' un'altra
+// cosa. Due nomi quasi uguali per due cose diverse sono una trappola
+// per chi legge il codice fra sei mesi, me compreso.
+const SERA_DURA = 6 * 3600 * 1000;
+
+const scelteSera = {
+  get tutto() {
+    try {
+      const v = JSON.parse(localStorage.getItem("stasera_io") || "[]");
+      return Array.isArray(v)
+        ? v.filter(x => Date.now() - Number(x.quando || 0) < SERA_DURA) : [];
+    } catch (e) { return []; }
+  },
+  set tutto(a) { localStorage.setItem("stasera_io", JSON.stringify(a)); },
+  /// «mi va» oppure «no». Si puo' cambiare idea: l'ultima parola
+  /// conta, come ovunque nell'app.
+  dico(v, si) {
+    const resto = this.tutto.filter(
+      x => !(x.tipo === v.tipo && String(x.id) === String(v.id)));
+    this.tutto = [{
+      tipo: v.tipo, id: v.id, titolo: v.titolo, anno: v.anno,
+      locandina: v.locandina, si: !!si, quando: Date.now(),
+    }, ...resto];
+    daMandare();
+  },
+  detto(tipo, id) {
+    const x = this.tutto.find(
+      y => y.tipo === tipo && String(y.id) === String(id));
+    return x ? (x.si ? "si" : "no") : "";
+  },
+  svuota() { this.tutto = []; daMandare(); },
+};
+
+/// Le risposte degli ALTRI. Magazzino a parte come `altrui` per i
+/// voti: le cose mie e quelle loro non si mescolano mai, cosi' non
+/// puo' succedere che un «mi va» di lei finisca fra i miei.
+const seraAltrui = {
+  get tutto() {
+    try {
+      const v = JSON.parse(localStorage.getItem("stasera_altrui") || "[]");
+      return Array.isArray(v)
+        ? v.filter(x => Date.now() - Number(x.quando || 0) < SERA_DURA) : [];
+    } catch (e) { return []; }
+  },
+  set tutto(a) { localStorage.setItem("stasera_altrui", JSON.stringify(a)); },
+  metti(r) {
+    const resto = this.tutto.filter(
+      x => !(x.chi === r.chi && x.tipo === r.tipo &&
+             String(x.id) === String(r.id)));
+    this.tutto = [r, ...resto];
+  },
+};
+
+/// I titoli su cui siete d'accordo: «mi va» da te E da qualcun altro.
+///
+/// Non basta che piacciano a entrambi in generale - per quello c'e'
+/// gia' il gusto. Qui conta che l'abbiate detto STASERA, nelle ultime
+/// sei ore, guardando le stesse carte.
+function accordiDiStasera() {
+  return scelteSera.tutto.filter(x => x.si)
+    .map(m => {
+      const con = seraAltrui.tutto.filter(
+        a => a.si && a.tipo === m.tipo && String(a.id) === String(m.id));
+      return con.length ? Object.assign({}, m, { con: con.map(c => c.chi) }) : null;
+    })
+    .filter(Boolean)
+    // il piu' recente in cima: e' quello a cui state pensando adesso
+    .sort((a, b) => b.quando - a.quando);
+}
+
+
 const nuvola = {
   get pronta() {
     return !!(chiavi.supaUrl && chiavi.supaChiave && chiavi.famiglia &&
@@ -2158,6 +2289,16 @@ function mieRighe(dopo) {
   lista.tutto.forEach(v => {
     if (v.quando > d) fuori.push(rigaDa("lista", "", v, false));
   });
+  // LE SCELTE DI STASERA viaggiano col nome di chi le ha fatte, come
+  // i voti: servono proprio a sapere CHI ha detto «mi va». Scadono da
+  // sole dopo sei ore, quindi non si accumulano nella tabella.
+  scelteSera.tutto.forEach(v => {
+    if (v.quando > d) {
+      const r = rigaDa("sera", chiavi.io, v, false, v.quando);
+      r.valore = v.si ? 1 : 0;
+      fuori.push(r);
+    }
+  });
   dormire.tutto.forEach(v => {
     if (v.quando > d) fuori.push(rigaDa("dormire", "", v, false));
   });
@@ -2190,6 +2331,18 @@ function applicaRighe(righe) {
       if (gia && Number(gia.quando || 0) >= quando) return;
       altrui.metti(Object.assign(vociDaRiga(r),
         { chi: r.chi, mio: r.tolto ? 0 : Number(r.valore || 0) }));
+      cambiato++;
+      return;
+    }
+    // LE SCELTE DI STASERA degli altri: come i voti, in un magazzino
+    // a parte. Le mie tornano indietro dalla nuvola e si scartano - le
+    // so gia', e riscriverle cambierebbe il «quando».
+    if (r.cosa === "sera") {
+      if (!r.chi || r.chi === chiavi.io) return;
+      if (Date.now() - quando > SERA_DURA) return;   // vecchia, inutile
+      seraAltrui.metti(Object.assign(vociDaRiga(r), {
+        chi: r.chi, si: !r.tolto && Number(r.valore || 0) > 0, quando,
+      }));
       cambiato++;
       return;
     }
@@ -6408,8 +6561,21 @@ const VISTE_LISTA = [
   ["da guardare", "Da guardare"],
   ["visti", "Visti"],
   ["votare", "Da votare"],
+  // «In due» compare SOLO se la famiglia e' impostata: senza un altro
+  // telefono con cui confrontarsi e' una schermata che non puo'
+  // funzionare, e un pulsante che porta a un vicolo e' peggio di un
+  // pulsante che non c'e'.
+  ["indue", "In due"],
 ];
-const PARTI_LISTA = { visti: parteVisti, votare: parteVotare };
+const PARTI_LISTA = { visti: parteVisti, votare: parteVotare, indue: parteInDue };
+
+/// Le viste che hanno senso ADESSO. Dichiararle tutte e filtrarle qui
+/// tiene l'elenco in un posto solo: l'interruttore e lo smistamento
+/// leggono la stessa cosa, e non puo' comparire un pulsante che non
+/// porta da nessuna parte.
+function visteLista() {
+  return VISTE_LISTA.filter(([v]) => v !== "indue" || nuvola.pronta);
+}
 
 function schermoLista() {
   schermo.innerHTML = "";
@@ -6417,7 +6583,11 @@ function schermoLista() {
   pad.appendChild(el("h1", "titolone", "La tua lista"));
 
   const sw = el("div", "interruttore");
-  VISTE_LISTA.forEach(([v, etichetta]) => {
+  // «In due» SOLO CON LA FAMIGLIA IMPOSTATA: senza un altro telefono
+  // con cui confrontarsi e' una schermata che non puo' funzionare, e
+  // un pulsante che porta in un vicolo e' peggio di un pulsante che
+  // non c'e'.
+  visteLista().forEach(([v, etichetta]) => {
     const b = el("button", null, etichetta);
     b.setAttribute("aria-pressed", String(vistaLista === v));
     b.onclick = () => { vistaLista = v; schermoLista(); };
@@ -6838,6 +7008,117 @@ function testoArchivio() {
     (q.dormirePronto ? "\u2713 Per dormire impara dalle tue spunte"
        : "Per dormire: " + quanti(mancaNotte, "manca una spunta",
            "mancano " + mancaNotte + " spunte"));
+}
+
+/// SCEGLIERE IN DUE: scorri, dici «mi va» o «no», e quando siete
+/// d'accordo l'app lo dice.
+///
+/// Le carte sono quelle della tua LISTA, non del catalogo: la domanda
+/// e' «cosa guardiamo stasera fra le cose che ci interessano», non
+/// «scopriamo qualcosa di nuovo» - per quella c'e' Sfoglia.
+///
+/// Si parte dagli accordi, in cima: se c'e' gia' qualcosa su cui siete
+/// d'accordo, la serata e' decisa e scorrere altre carte e' tempo
+/// perso.
+async function parteInDue() {
+  if (!nuvola.pronta) {
+    schermo.appendChild(el("p", "vuoto",
+      "Serve la Famiglia: in Opzioni, «Famiglia». Senza un altro " +
+      "telefono con cui confrontarsi non c'è niente da mettere d'accordo."));
+    return;
+  }
+
+  const zona = el("div");
+  schermo.appendChild(zona);
+
+  const disegna = () => {
+    zona.innerHTML = "";
+    zona.figli = [];
+
+    // --- gli accordi, se ce ne sono
+    const dacc = accordiDiStasera();
+    if (dacc.length) {
+      zona.appendChild(el("p", "sezione", dacc.length === 1
+        ? "Siete d’accordo su questo" : "Siete d’accordo su questi"));
+      const g = el("div", "griglia");
+      dacc.forEach(a => {
+        const c = el("button", "carta accordo");
+        c.innerHTML =
+          '<div class="tela">' +
+            (a.locandina ? locandina(a.locandina)
+              : '<div class="manca" aria-hidden="true">' + esc(a.titolo) + "</div>") +
+            '<span class="spunta">✓</span>' +
+          "</div><h3>" + esc(a.titolo) + "</h3>" +
+          '<p class="conChi">anche ' + esc(a.con.join(", ")) + "</p>";
+        c.onclick = () => vai(A_PAROLA[a.tipo] + "/" + a.id);
+        g.appendChild(c);
+      });
+      zona.appendChild(g);
+    }
+
+    // --- la carta su cui decidere
+    // Quelle su cui ho gia' detto la mia non tornano: «ci ho gia'
+    // pensato» e' una risposta, e rifarla non aggiunge niente.
+    const resta = lista.tutto.filter(v => !scelteSera.detto(v.tipo, v.id));
+    if (!resta.length) {
+      zona.appendChild(el("p", "vuoto", dacc.length
+        ? "Hai detto la tua su tutta la lista. L’accordo è qui sopra."
+        : "Hai detto la tua su tutta la lista. Aspetta che risponda " +
+          "anche l’altro, oppure ricomincia."));
+      const r = el("button", "svuota", "Ricomincia");
+      r.style.cssText = "margin:10px 16px; width:calc(100% - 32px)";
+      r.onclick = () => { scelteSera.svuota(); disegna(); };
+      zona.appendChild(r);
+      return;
+    }
+
+    const v = resta[0];
+    const quante = el("p", "nota");
+    quante.style.cssText = "text-align:center;margin:4px 0 2px";
+    quante.textContent = resta.length +
+      (resta.length === 1 ? " titolo da decidere" : " titoli da decidere");
+    zona.appendChild(quante);
+
+    const carta = el("div", "cartona");
+    carta.innerHTML =
+      '<div class="tela">' +
+        (v.locandina ? locandina(v.locandina, "w500")
+          : '<div class="manca">' + esc(v.titolo) + "</div>") +
+      "</div><h2>" + esc(v.titolo) + "</h2>" +
+      '<p class="meta">' + (v.tipo === "tv" ? "Serie" : "Film") +
+      (v.anno ? " · " + esc(String(v.anno)) : "") +
+      (minutiDiUnaVolta(v) ? " · " + quantoDura(minutiDiUnaVolta(v)) : "") +
+      "</p>";
+    zona.appendChild(carta);
+
+    const fila = el("div", "siNo");
+    const no = el("button", "no", "No");
+    // NESSUNO VEDE LA RISPOSTA DELL'ALTRO prima di aver dato la sua:
+    // sapere che lei ha detto no cambierebbe quello che dici tu, e la
+    // cosa smetterebbe di misurare quello che volete davvero.
+    no.onclick = () => { scelteSera.dico(v, false); disegna(); };
+    const si = el("button", "si", "Mi va");
+    si.onclick = () => { scelteSera.dico(v, true); disegna(); };
+    fila.appendChild(no);
+    fila.appendChild(si);
+    zona.appendChild(fila);
+  };
+
+  disegna();
+  // Le risposte dell'altro arrivano dalla nuvola: si guarda appena
+  // entrati e poi ogni dieci secondi, finche' si resta su questa
+  // schermata. Senza, scopriresti l'accordo solo riaprendo l'app.
+  const tocca = async () => {
+    if (!schermo.contains(zona)) return false;
+    try { await scambia(); } catch (e) { /* riprova fra dieci secondi */ }
+    if (!schermo.contains(zona)) return false;
+    disegna();
+    return true;
+  };
+  await tocca();
+  const batti = setInterval(async () => {
+    if (!(await tocca())) clearInterval(batti);
+  }, 10000);
 }
 
 async function parteVotare() {
