@@ -214,6 +214,11 @@
   .carta .aChePunto {
     margin: 1px 0 0; font-size: 11px; font-weight: 600; color: var(--acceso);
   }
+  /* «stasera esce»: verde come «ora è su Disney+», perche' sono la
+     stessa categoria di notizia - qualcosa e' cambiato da ieri. */
+  .carta .esceOra {
+    margin: 1px 0 0; font-size: 11px; font-weight: 600; color: var(--verde);
+  }
   .carta .manca {
     display: flex; align-items: center; justify-content: center;
     height: 100%; padding: 10px; text-align: center;
@@ -1441,7 +1446,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261007124542";
+const VERSIONE = "20261008145927";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -3147,6 +3152,115 @@ function passiPerCercareSulFire(titolo, fino) {
   ].concat(tappe.map(tap));
 }
 
+/// QUANTO TEMPO HAI, e cosa ci sta dentro.
+///
+/// Non e' il filtro durata di Sfoglia, che cerca nel catalogo di TMDB.
+/// Questo guarda la TUA lista e risponde alla domanda vera della sera:
+/// «ho quaranta minuti prima di crollare, cosa ci sta?».
+///
+/// Per un film e' la sua durata. Per una serie e' UN EPISODIO - non
+/// le trenta ore di tutte le stagioni, che e' un'altra domanda e a cui
+/// risponde gia' «circa 24 ore» sulla carta.
+const QUANTO_TEMPO = [
+  { n: "Quanto vuoi", max: 0 },
+  { n: "Mezz'ora", max: 35 },
+  { n: "Un'ora", max: 65 },
+  { n: "Due ore", max: 125 },
+];
+
+/// I minuti di UNA seduta: un film intero, o un episodio.
+function minutiDiUnaVolta(v) {
+  if (v.tipo === "movie") return v.minutiUno || v.minuti || v.minutiTotali || 0;
+  return v.minutiUno || 0;
+}
+
+/// Ci sta nel tempo che hai?
+///
+/// CHI NON HA UNA DURATA NOTA RESTA VISIBILE. Il ricontrollo della
+/// lista la riempie col tempo, e nel frattempo far sparire mezza lista
+/// sarebbe un guasto che sembra un filtro - uno guarda lo schermo
+/// mezzo vuoto e pensa di aver perso dei titoli.
+function ciStaIn(v, minuti) {
+  if (!minuti) return true;
+  const d = minutiDiUnaVolta(v);
+  // DETTO ESPLICITAMENTE, e non lasciato al caso: «0 <= 35» sarebbe
+  // vero da solo, quindi il comportamento giusto usciva per caso da
+  // un confronto numerico. Una cosa che funziona per caso si rompe
+  // appena qualcuno tocca quella riga, e nessuna prova se ne accorge
+  // - provato il 08/10/2026, il guasto messo apposta non lo vedeva
+  // nessuno.
+  if (!d) return true;
+  return d <= minuti;
+}
+
+/// «STASERA ESCE», o fra quanto.
+///
+/// La data del prossimo episodio la scheda ce l'ha gia', ma la sai
+/// solo se apri quel titolo. Qui diventa una riga in lista - ed e'
+/// l'informazione che fa cambiare i piani della sera, quindi deve
+/// stare dove guardi, non dove vai a cercare.
+///
+/// Torna "" quando non c'e' niente da dire: serie finita, data troppo
+/// lontana, o episodio gia' uscito. Un «fra 94 giorni» non e' una
+/// notizia, e' rumore.
+function quandoEsceIlProssimo(v) {
+  if (!v.prossimoQuando) return "";
+  const oggi = new Date(); oggi.setHours(0, 0, 0, 0);
+  const quel = new Date(v.prossimoQuando + "T00:00:00");
+  if (isNaN(quel)) return "";
+  const giorni = Math.round((quel - oggi) / 86400000);
+  if (giorni < 0) return "";
+  if (giorni === 0) return "stasera esce " + (v.prossimoQuale || "un episodio");
+  if (giorni === 1) return "domani esce " + (v.prossimoQuale || "un episodio");
+  // Oltre la settimana si tace: a dieci giorni non cambi i piani di
+  // stasera, e una riga che c'e' sempre smette di essere letta.
+  if (giorni <= 7) return "fra " + giorni + " giorni esce " + (v.prossimoQuale || "");
+  return "";
+}
+
+/// I TITOLI APPENA ARRIVATI, per avvisare chi non ha aperto l'app.
+///
+/// Il ricontrollo della lista sa gia' riconoscere un titolo che PRIMA
+/// non pagavi e ORA si': e' il bollino verde «✦ ora è su Disney+».
+/// Ma lo scopre solo quando apri l'app, e un film che arriva su
+/// Netflix di martedi' lo vedi il sabato che ti viene in mente di
+/// guardare la lista - cioe' quando non serve piu' a niente saperlo
+/// prima.
+///
+/// Questa funzione restituisce quelli arrivati e NON ancora annunciati.
+/// Il nativo la chiama in sottofondo una volta al giorno e manda una
+/// notifica.
+///
+/// Si segna chi e' stato annunciato: senza, la stessa notifica
+/// tornerebbe ogni giorno finche' il titolo resta in lista, e una
+/// notifica ripetuta si impara a ignorare.
+function arriviDaAnnunciare() {
+  let detti;
+  try { detti = JSON.parse(localStorage.getItem("arrivi_detti") || "[]"); }
+  catch (e) { detti = []; }
+  if (!Array.isArray(detti)) detti = [];
+  const nuovi = lista.tutto.filter(v =>
+    v.arrivato && v.compreso && (v.dove || []).length &&
+    !detti.includes(v.tipo + v.id));
+  return nuovi.map(v => ({
+    tipo: v.tipo, id: v.id, titolo: v.titolo, dove: (v.dove || []).join(", "),
+  }));
+}
+
+/// Segna che di questi si e' gia' parlato. La chiama il nativo DOPO
+/// aver mandato la notifica, non prima: se l'avviso non parte, il
+/// titolo deve restare da annunciare.
+function arriviAnnunciati(chiavi) {
+  let detti;
+  try { detti = JSON.parse(localStorage.getItem("arrivi_detti") || "[]"); }
+  catch (e) { detti = []; }
+  if (!Array.isArray(detti)) detti = [];
+  // Si tiene un tetto: la lista dei gia' detti non deve crescere per
+  // sempre, e un titolo uscito dalla lista mesi fa non torna.
+  const tutti = detti.concat(chiavi || []).slice(-200);
+  localStorage.setItem("arrivi_detti", JSON.stringify([...new Set(tutti)]));
+}
+
 /// LE COORDINATE DELLA RICERCA SUL FIRE, per l'app nativa.
 ///
 /// Serve perche' a voce il titolo arriva quando questa pagina non sta
@@ -4370,6 +4484,11 @@ function grigliaDi(elementi, mostraMio = false) {
       // che cerchi quando riapri la lista dopo settimane.
       (v.tipo === "tv" && avanzamento.breve(v.id)
         ? '<p class="aChePunto">◉ sei a ' + esc(avanzamento.breve(v.id)) + "</p>"
+        : "") +
+      // «stasera esce S3E4»: l'unica cosa che puo' cambiare i piani
+      // della sera, e finora stava sepolta nella scheda del titolo.
+      (quandoEsceIlProssimo(v)
+        ? '<p class="esceOra">' + esc(quandoEsceIlProssimo(v)) + "</p>"
         : "");
     c.onclick = () => { cache.scroll = window.scrollY; schermoDettaglio(v.tipo, v.id); };
     g.appendChild(c);
@@ -6246,6 +6365,29 @@ async function backfillGeneriLista(voci) {
         if (tot) {
           campi.minutiTotali = tot;
           v.minutiTotali = tot;
+          // QUANTO DURA UNA SERATA, che e' un'altra domanda.
+          //
+          // «Trenta ore» dice se vale la pena COMINCIARE una serie.
+          // Ma la sera la domanda e' un'altra: «ho quaranta minuti,
+          // cosa ci sta?». Per un film e' la sua durata, per una serie
+          // e' quella di UN episodio - e quella non era scritta da
+          // nessuna parte.
+          const una = d.tipo === "movie" ? tot
+            : (d.quantiEpisodi ? Math.round(tot / d.quantiEpisodi) : 0);
+          if (una) { campi.minutiUno = una; v.minutiUno = una; }
+        }
+
+        // IL PROSSIMO EPISODIO, se la serie e' ancora viva.
+        //
+        // La scheda lo sa gia' - lo mostra come «Prossimo episodio» -
+        // ma lo sai solo se apri quel titolo. In lista diventa la
+        // riga che ti fa dire «ah, stasera esce».
+        if (d.prossimo && d.prossimo.air_date) {
+          campi.prossimoQuando = d.prossimo.air_date;
+          campi.prossimoQuale = "S" + d.prossimo.season_number +
+                                "E" + d.prossimo.episode_number;
+          v.prossimoQuando = campi.prossimoQuando;
+          v.prossimoQuale = campi.prossimoQuale;
         }
 
         lista.aggiornaMeta(v.tipo, v.id, campi);
@@ -6315,6 +6457,11 @@ function schermoLista() {
   schermo.appendChild(grigliaZona);
 
   let cerca = "", tipoLista = "tutti", genereLista = "";
+  // Quanti minuti hai. 0 = nessun limite, e NON si ricorda fra
+  // un'apertura e l'altra: il tempo che hai stasera non e' quello di
+  // ieri, e un filtro rimasto acceso nasconde mezza lista senza che
+  // si capisca perche'.
+  let tempoLista = 0;
   const senzaAccenti = (t) => (t || "").toLowerCase()
     .normalize("NFD").replace(/[̀-ͯ]/g, "");
   const disegnaGriglia = () => {
@@ -6322,8 +6469,9 @@ function schermoLista() {
     const filtrati = voci.filter(v =>
       (tipoLista === "tutti" || v.tipo === tipoLista) &&
       (!q || senzaAccenti(v.titolo).includes(q)) &&
-      (!genereLista || (v.generiId || []).some(id => nomeGenere(id) === genereLista)));
-    const filtrato = cerca || tipoLista !== "tutti" || genereLista;
+      (!genereLista || (v.generiId || []).some(id => nomeGenere(id) === genereLista)) &&
+      ciStaIn(v, tempoLista));
+    const filtrato = cerca || tipoLista !== "tutti" || genereLista || tempoLista;
     intestazione.innerHTML = filtrati.length +
       (filtrati.length === 1 ? " titolo" : " titoli") +
       (filtrato
@@ -6362,6 +6510,23 @@ function schermoLista() {
         chips.appendChild(c);
       });
     schermo.insertBefore(chips, intestazione);
+
+    // QUANTO TEMPO HAI, accanto a Film/Serie: e' la stessa domanda -
+    // «restringi la lista» - e la sera si guarda li', non in un menu.
+    const tempi = el("div", "generi");
+    tempi.style.cssText = "padding:0 16px 2px";
+    QUANTO_TEMPO.forEach(t => {
+      const c = el("button", "chip", t.n);
+      c.setAttribute("aria-pressed", String(tempoLista === t.max));
+      c.onclick = () => {
+        tempoLista = t.max;
+        tempi.querySelectorAll(".chip").forEach(x =>
+          x.setAttribute("aria-pressed", String(x.textContent === t.n)));
+        disegnaGriglia();
+      };
+      tempi.appendChild(c);
+    });
+    schermo.insertBefore(tempi, intestazione);
 
     // Filtro per GENERE: solo i generi che hai davvero in lista. I nomi
     // stanno nella cache di sessione; se non c'e' la riempio prima
