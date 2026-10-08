@@ -284,6 +284,20 @@
     margin: 1px 0 0; font-size: 11px; font-weight: 600; color: var(--verde);
   }
 
+  /* LA NOTA: in corsivo e su due righe al massimo. E' un appunto tuo,
+     non un dato del film, e si deve distinguere a colpo d'occhio. */
+  .carta .notaCarta {
+    margin: 2px 0 0; font-size: 11px; font-style: italic; color: var(--tenue);
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .notaTitolo {
+    width: 100%; margin: 4px 0 0; padding: 10px 12px; border-radius: 11px;
+    background: var(--piano); border: 1px solid var(--bordo);
+    color: var(--testo); font-family: inherit; font-size: 14.5px;
+    line-height: 1.4; resize: vertical;
+  }
+
   .carta .esceOra {
     margin: 1px 0 0; font-size: 11px; font-weight: 600; color: var(--verde);
   }
@@ -1514,7 +1528,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261008172619";
+const VERSIONE = "20261008190636";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -1690,6 +1704,37 @@ const lista = {
     if (i < 0) return;
     a[i] = Object.assign({}, a[i], campi);
     this.tutto = a;
+  },
+};
+
+// LA NOTA SUL TITOLO: perche' l'avevi messo in lista.
+//
+// Guardando una lista di quaranta titoli, meta' delle volte la
+// domanda non e' «cos'e'» ma «perche' ce l'ho messo». Me l'ha
+// consigliato Luca, l'ho visto in un trailer, e' quello col finale
+// assurdo, aspetto che esca il doppiaggio. Senza, dopo sei mesi un
+// titolo in lista e' solo un titolo.
+//
+// Magazzino a parte e non dentro `lista`, come per i segni degli
+// episodi: la nota e' una cosa tua, resta anche se il titolo esce
+// dalla lista e poi ci torna, e non viaggia verso gli altri telefoni
+// - «me l'ha consigliato Luca» e' un appunto, non un dato condiviso.
+const note = {
+  get tutto() {
+    try {
+      const v = JSON.parse(localStorage.getItem("note") || "{}");
+      return v && typeof v === "object" && !Array.isArray(v) ? v : {};
+    } catch (e) { return {}; }
+  },
+  set tutto(o) { localStorage.setItem("note", JSON.stringify(o)); },
+  di(tipo, id) { return this.tutto[tipo + id] || ""; },
+  scrivi(tipo, id, testo) {
+    const t = this.tutto;
+    const pulito = String(testo || "").trim().slice(0, 280);
+    // Una nota svuotata si TOGLIE, non si salva vuota: se no il
+    // deposito si riempie di chiavi che non dicono niente.
+    if (pulito) t[tipo + id] = pulito; else delete t[tipo + id];
+    this.tutto = t;
   },
 };
 
@@ -2269,7 +2314,7 @@ function annoInCifre(anno) {
 const DA_SALVARE = [
   "lista", "visti", "dormire", "avanzamento", "scartati", "rassegnati",
   "tombe", "altrui", "usi_servizi", "prezzi_servizi", "usi_da",
-  "arrivi_detti", "servizi", "strada", "fire_fino",
+  "arrivi_detti", "servizi", "strada", "fire_fino", "note",
 ];
 
 function datiDaSalvare() {
@@ -2325,6 +2370,23 @@ function ripristina(testo) {
   // IL RESTO sono oggetti o elenchi senza un «quando» per voce: li si
   // rimette solo se qui non c'e' niente, perche' non c'e' modo di
   // dire quale dei due sia piu' nuovo e indovinare sarebbe peggio.
+  // LE NOTE SI FONDONO voce per voce, non «tutto o niente»: sono
+  // appunti che non si possono ricostruire da nessuna parte, e
+  // perderne anche uno solo perche' qui c'era gia' qualcosa sarebbe
+  // il contrario di quello che un salvataggio deve fare. Dove un
+  // titolo ha una nota sia qui sia nel file, resta quella di qui -
+  // e' piu' recente per definizione.
+  try {
+    const dal = JSON.parse(f.dati.note || "{}");
+    if (dal && typeof dal === "object" && !Array.isArray(dal)) {
+      const mie = note.tutto;
+      Object.keys(dal).forEach(k => {
+        if (!mie[k]) { mie[k] = dal[k]; messi++; }
+      });
+      note.tutto = mie;
+    }
+  } catch (e) { /* un file senza note va bene lo stesso */ }
+
   ["avanzamento", "scartati", "rassegnati", "usi_servizi",
    "prezzi_servizi", "usi_da", "servizi", "fire_fino"].forEach(k => {
     const mio = localStorage.getItem(k);
@@ -3578,6 +3640,30 @@ function passiPerCercareSulFire(titolo, fino) {
     tap("conferma"),
   ].concat(tappe.map(tap));
 }
+
+/// COME ORDINARE LA LISTA.
+///
+/// Fino a oggi era sempre «i piu' recenti in cima», che e' giusto
+/// finche' la lista e' corta: sopra i trenta titoli quelli vecchi
+/// diventano irraggiungibili, e la lista si usa solo per gli ultimi
+/// dieci aggiunti.
+const ORDINI_LISTA = [
+  { n: "I più recenti", come: (a, b) => Number(b.quando || 0) - Number(a.quando || 0) },
+  { n: "I più vecchi", come: (a, b) => Number(a.quando || 0) - Number(b.quando || 0) },
+  // Alfabetico con `localeCompare`: senza, «Él» finisce dopo «Zulu» e
+  // le maiuscole prima delle minuscole.
+  { n: "Alfabetico", come: (a, b) =>
+      String(a.titolo || "").localeCompare(String(b.titolo || ""), "it") },
+  { n: "I più corti", come: (a, b) => {
+      // Chi non ha durata in FONDO, non in cima: altrimenti un
+      // ordinamento per durata comincia con quelli di cui non si sa
+      // niente, che e' il contrario di quello che hai chiesto.
+      const x = minutiDiUnaVolta(a) || 99999;
+      const y = minutiDiUnaVolta(b) || 99999;
+      return x - y;
+    } },
+  { n: "Voto più alto", come: (a, b) => (Number(b.voto) || 0) - (Number(a.voto) || 0) },
+];
 
 /// QUANTO TEMPO HAI, e cosa ci sta dentro.
 ///
@@ -4944,6 +5030,10 @@ function grigliaDi(elementi, mostraMio = false) {
       // della sera, e finora stava sepolta nella scheda del titolo.
       (quandoEsceIlProssimo(v)
         ? '<p class="esceOra">' + esc(quandoEsceIlProssimo(v)) + "</p>"
+        : "") +
+      // La nota in lista, corta: e' un promemoria, non un tema.
+      (note.di(v.tipo, v.id)
+        ? '<p class="notaCarta">' + esc(note.di(v.tipo, v.id)) + "</p>"
         : "");
     c.onclick = () => { cache.scroll = window.scrollY; schermoDettaglio(v.tipo, v.id); };
     g.appendChild(c);
@@ -6529,6 +6619,34 @@ async function schermoDettaglio(tipo, id, torna) {
     pad.appendChild(el("p", "sezione", "Generi"));
     pad.appendChild(el("p", "meta", esc(d.generi.join(" · "))));
   }
+  // LA TUA NOTA, prima della trama: la trama la sai gia' - o la
+  // leggi una volta sola - mentre «me l'ha consigliato Luca» e'
+  // quello che sei tornato a cercare.
+  //
+  // Compare solo se il titolo e' in lista o fra i visti: su un film
+  // che stai solo guardando di sfuggita un campo da riempire e'
+  // ingombro.
+  if (lista.ha(d.tipo, d.id) || visti.voto(d.tipo, d.id)) {
+    pad.appendChild(el("p", "sezione", "La tua nota"));
+    const n = el("textarea", "notaTitolo");
+    n.rows = 2;
+    n.placeholder = "Perché l’hai messo? Chi te l’ha detto?";
+    n.setAttribute("aria-label", "La tua nota su " + d.titolo);
+    n.value = note.di(d.tipo, d.id);
+    const detto = el("p", "nota");
+    detto.style.cssText = "margin:4px 0 0;min-height:16px";
+    // SI SALVA USCENDO DAL CAMPO, non a ogni lettera: scrivere e
+    // vedere «salvato» lampeggiare a ogni tasto e' fastidioso, e
+    // salvare a ogni tasto riscrive il deposito trenta volte.
+    n.onblur = () => {
+      note.scrivi(d.tipo, d.id, n.value);
+      detto.textContent = n.value.trim() ? "Salvata." : "";
+      setTimeout(() => { detto.textContent = ""; }, 2000);
+    };
+    pad.appendChild(n);
+    pad.appendChild(detto);
+  }
+
   if (d.trama) {
     pad.appendChild(el("p", "sezione", "Trama"));
     pad.appendChild(el("p", "trama", esc(d.trama)));
@@ -6923,6 +7041,11 @@ function schermoLista() {
   // Quanti minuti hai stasera: lo usano il filtro della lista E
   // «Decidi tu», quindi sta qui in cima e non in mezzo.
   let tempoLista = 0;
+  // Come ordinare. Si ricorda, al contrario del tempo: l'ordine che
+  // preferisci è una preferenza, mentre il tempo che hai cambia ogni
+  // sera.
+  let ordineLista = Number(localStorage.getItem("ordine_lista") || 0);
+  if (!ORDINI_LISTA[ordineLista]) ordineLista = 0;
   schermo.innerHTML = "";
   const pad = el("div", "pad");
   pad.appendChild(el("h1", "titolone", "La tua lista"));
@@ -7124,7 +7247,8 @@ function schermoLista() {
       (tipoLista === "tutti" || v.tipo === tipoLista) &&
       (!q || senzaAccenti(v.titolo).includes(q)) &&
       (!genereLista || (v.generiId || []).some(id => nomeGenere(id) === genereLista)) &&
-      ciStaIn(v, tempoLista));
+      ciStaIn(v, tempoLista))
+        .sort(ORDINI_LISTA[ordineLista].come);
     const filtrato = cerca || tipoLista !== "tutti" || genereLista || tempoLista;
     intestazione.innerHTML = filtrati.length +
       (filtrati.length === 1 ? " titolo" : " titoli") +
@@ -7181,6 +7305,26 @@ function schermoLista() {
       tempi.appendChild(c);
     });
     schermo.insertBefore(tempi, intestazione);
+
+    // COME ORDINARE: da venti titoli in su. Sotto, la lista si legge
+    // tutta e un ordinamento e' una scelta in piu' che non serve.
+    if (voci.length >= 20) {
+      const ord = el("div", "generi");
+      ord.style.cssText = "padding:0 16px 2px";
+      ORDINI_LISTA.forEach((o, i) => {
+        const c = el("button", "chip", o.n);
+        c.setAttribute("aria-pressed", String(ordineLista === i));
+        c.onclick = () => {
+          ordineLista = i;
+          localStorage.setItem("ordine_lista", String(i));
+          ord.querySelectorAll(".chip").forEach(x =>
+            x.setAttribute("aria-pressed", String(x.textContent === o.n)));
+          disegnaGriglia();
+        };
+        ord.appendChild(c);
+      });
+      schermo.insertBefore(ord, intestazione);
+    }
 
     // Filtro per GENERE: solo i generi che hai davvero in lista. I nomi
     // stanno nella cache di sessione; se non c'e' la riempio prima
