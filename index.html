@@ -1514,7 +1514,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261008165230";
+const VERSIONE = "20261008172619";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -2184,6 +2184,75 @@ const altrui = {
 // Le risposte SCADONO dopo sei ore: «mi andava» ieri sera non vuol
 // dire niente stasera, e un accordo vecchio di una settimana proposto
 // come fresco e' peggio di nessuna proposta.
+/// L'ANNO IN CIFRE.
+///
+/// Non serve a decidere cosa guardare: serve a vedere a cosa e'
+/// servito tutto questo. Un conto onesto di quello che hai votato,
+/// quanto hai guardato, cosa ti piace davvero e quale abbonamento ha
+/// retto la stagione.
+///
+/// SI CONTANO SOLO I VOTI DELL'ANNO, per data del voto - non quando
+/// e' uscito il film. «Quest'anno hai visto» vuol dire quest'anno,
+/// anche se il film e' del 1994.
+///
+/// Chi ha votato senza data (i voti vecchi, di prima che l'app
+/// segnasse il quando) resta fuori dai conti dell'anno ma dentro
+/// quelli di sempre: inventargli una data li' metterebbe tutti in
+/// questo gennaio.
+function annoInCifre(anno) {
+  const quale = anno || new Date().getFullYear();
+  const dentro = (v) => {
+    const q = Number(v.quando || 0);
+    return q > 0 && new Date(q).getFullYear() === quale;
+  };
+  const diQuestAnno = visti.tutto.filter(v => v.mio && dentro(v));
+
+  let minuti = 0, senzaDurata = 0;
+  diQuestAnno.forEach(v => {
+    const m = v.tipo === "movie"
+      ? (v.minutiUno || v.minuti || v.minutiTotali || 0)
+      : (v.minutiUno || 0);
+    if (m) minuti += m; else senzaDurata++;
+  });
+
+  // I GENERI che hai votato meglio, non quelli che hai votato di piu':
+  // un genere guardato venti volte e sempre odiato non e' il tuo
+  // genere preferito, e' quello che continui a sbagliare.
+  const perGenere = {};
+  diQuestAnno.forEach(v => {
+    (v.generiId || []).forEach(g => {
+      const k = String(g);
+      if (!perGenere[k]) perGenere[k] = { somma: 0, quanti: 0 };
+      perGenere[k].somma += Number(v.mio) || 0;
+      perGenere[k].quanti++;
+    });
+  });
+  const generi = Object.entries(perGenere)
+    // da due in su: con un solo titolo la media non dice niente
+    .filter(([, x]) => x.quanti >= 2)
+    .map(([g, x]) => ({ id: g, media: x.somma / x.quanti, quanti: x.quanti }))
+    .sort((a, b) => b.media - a.media || b.quanti - a.quanti)
+    .slice(0, 3);
+
+  const capolavori = diQuestAnno.filter(v => v.mio === 5);
+  const bocciati = diQuestAnno.filter(v => v.mio <= 2);
+
+  return {
+    anno: quale,
+    quanti: diQuestAnno.length,
+    film: diQuestAnno.filter(v => v.tipo === "movie").length,
+    serie: diQuestAnno.filter(v => v.tipo === "tv").length,
+    minuti, senzaDurata,
+    media: diQuestAnno.length
+      ? diQuestAnno.reduce((t, v) => t + (Number(v.mio) || 0), 0) / diQuestAnno.length
+      : 0,
+    generi, capolavori, bocciati,
+    inLista: lista.tutto.length,
+    // di sempre, per dare la misura
+    sempre: visti.tutto.filter(v => v.mio).length,
+  };
+}
+
 /// SALVARE TUTTO FUORI DAL TELEFONO.
 ///
 /// Lista, voti, spunte notte e segni vivono SOLO qui dentro, nel
@@ -4133,11 +4202,26 @@ async function sfoglia(f, pagina = 1) {
     include_adult: "false",
     page: pagina,
   };
-  if (f.genere) parametri.with_genres = f.genere;
+  // CON I BAMBINI: generi di famiglia, e via quelli che non lo sono.
+  //
+  // NON si usa la classificazione italiana, e non per pigrizia:
+  // misurata sul catalogo vero il 08/10/2026, secondo TMDB sono
+  // classificati «T, per tutti» anche «Blade Runner 2049» e
+  // «Interstellar». Il genere invece azzecca: Famiglia e Animazione
+  // danno «Il robot selvaggio», «La città incantata», «Shrek».
+  //
+  // E si tolgono horror, thriller e crime: un cartone animato puo'
+  // essere tutte e tre le cose, e «animato» non vuol dire «per
+  // bambini».
+  if (f.bambini) {
+    parametri.with_genres = "10751,16";
+    parametri.without_genres = [f.senzaGenere, "27,53,80"]
+      .filter(Boolean).join(",");
+  } else if (f.genere) parametri.with_genres = f.genere;
   if (f.keyword) parametri.with_keywords = f.keyword;
   // Escludere generi, non solo chiederli: serve a "Per dormire", dove
   // la cosa importante non e' cosa vuoi ma cosa NON vuoi.
-  if (f.senzaGenere) parametri.without_genres = f.senzaGenere;
+  if (!f.bambini && f.senzaGenere) parametri.without_genres = f.senzaGenere;
   // Un tetto ai minuti, senza passare dalle durate con un nome: quelle
   // predefinite hanno tutte anche un minimo, e "90-120" avrebbe
   // buttato via i film sotto l'ora e mezza - che per dormire vanno
@@ -4761,7 +4845,10 @@ async function simili(d) {
 
 let scheda_attiva = "sfoglia";
 let F = { tipo: "movie", genere: "", keyword: "", ordine: "popularity.desc",
-          servizio: "", decennio: "Tutti", durata: "Qualsiasi" };
+          servizio: "", decennio: "Tutti", durata: "Qualsiasi",
+          // «con i bambini»: non si ricorda fra una visita e l'altra,
+          // come il tempo che hai. Stasera guardi con loro, domani no.
+          bambini: false };
 let filtri_aperti = false;
 let osservatore = null;
 
@@ -4781,7 +4868,7 @@ const chiaveFiltri = () => JSON.stringify(F);
 function quantiFiltri() {
   return (F.keyword ? 1 : 0) + (F.servizio ? 1 : 0) +
          (F.decennio !== "Tutti" ? 1 : 0) + (F.ordine !== "popularity.desc" ? 1 : 0) +
-         (F.durata !== "Qualsiasi" ? 1 : 0);
+         (F.durata !== "Qualsiasi" ? 1 : 0) + (F.bambini ? 1 : 0);
 }
 
 function vai(nome) {
@@ -5199,6 +5286,28 @@ async function schermoSfoglia() {
   });
   testa.appendChild(sw);
   schermo.appendChild(testa);
+
+  // CON I BAMBINI: un interruttore, non una voce nei filtri.
+  //
+  // Sta qui sopra e non dentro il pannello perche' e' una decisione
+  // che prendi PRIMA di cercare - «stasera guardiamo con loro» - e
+  // perche' mentre cerchi devi vedere a colpo d'occhio se e' acceso:
+  // un filtro del genere rimasto attivo senza accorgersene nasconde
+  // mezzo catalogo.
+  //
+  // Quando e' acceso i generi non si usano: li decide lui.
+  {
+    const riga = el("div", "generi");
+    riga.style.cssText = "padding:2px 16px 0";
+    const b = el("button", "chip", "Con i bambini");
+    b.setAttribute("aria-pressed", String(!!F.bambini));
+    b.onclick = () => {
+      F = { ...F, bambini: !F.bambini, genere: "", keyword: "" };
+      schermoSfoglia();
+    };
+    riga.appendChild(b);
+    schermo.appendChild(riga);
+  }
 
   // --------------------------------------------------------- generi
   const fasciaGeneri = el("div", "generi");
@@ -8854,10 +8963,78 @@ function schermoImpostazioni() {
     rifai();
   }, "Cosa paghi e non guardi");
   if (chiavi.tmdb) sotto(bloccoTmdb, "Chiave TMDB");
+  sotto(bloccoAnno, "L’anno in cifre");
   sotto(bloccoSalvataggio, "Salva i tuoi dati");
   sotto(bloccoFamiglia);
   sotto(bloccoDiagnosi);
 }
+
+// L'ANNO IN CIFRE, in Opzioni.
+//
+// Non serve a decidere cosa guardare: serve a vedere a cosa e'
+// servito tutto questo. Sta fra le «altre cose» perche' si guarda una
+// volta ogni tanto, non ogni sera.
+function bloccoAnno(pad) {
+  const a = annoInCifre();
+  if (!a.quanti) {
+    pad.appendChild(el("p", "nota",
+      a.sempre
+        ? "Quest’anno non hai ancora votato niente. In tutto hai dato " +
+          a.sempre + " " + quanti(a.sempre, "voto", "voti") + "."
+        : "Qui comparirà il conto dell’anno, appena cominci a votare."));
+    return;
+  }
+
+  const grosso = el("p", "contoTotale");
+  grosso.innerHTML =
+    "Nel " + a.anno + " hai votato <b>" + a.quanti + "</b> " +
+    quanti(a.quanti, "titolo", "titoli") +
+    (a.film && a.serie
+      ? " — " + a.film + " " + quanti(a.film, "film", "film") +
+        " e " + a.serie + " " + quanti(a.serie, "serie", "serie")
+      : "") + ".";
+  pad.appendChild(grosso);
+
+  if (a.minuti) {
+    const ore = el("p", "nota");
+    // IL NUMERO E' PER DIFETTO e va detto: i titoli senza durata nota
+    // non sono contati, e un totale che sembra esatto quando non lo e'
+    // vale meno di uno dichiarato approssimato.
+    ore.innerHTML = "Fanno <b>" + esc(quantoDura(a.minuti)) + "</b>" +
+      (a.senzaDurata
+        ? ", senza contare " + a.senzaDurata + " " +
+          quanti(a.senzaDurata, "titolo", "titoli") + " di cui non so la durata"
+        : "") + ".";
+    pad.appendChild(ore);
+  }
+
+  if (a.generi.length) {
+    const g = el("p", "nota");
+    g.innerHTML = "Hai votato meglio: " +
+      a.generi.map(x => "<b>" + esc(nomeGenere(x.id)) + "</b> (" +
+        x.media.toFixed(1) + " su " + x.quanti + ")").join(", ") + ".";
+    pad.appendChild(g);
+  }
+
+  const m = el("p", "nota");
+  m.innerHTML = "Media dei tuoi voti: <b>" + a.media.toFixed(1) + "</b>" +
+    (a.capolavori.length
+      ? " · <b>" + a.capolavori.length + "</b> da cinque stelle" : "") +
+    (a.bocciati.length
+      ? " · <b>" + a.bocciati.length + "</b> da dimenticare" : "") + ".";
+  pad.appendChild(m);
+
+  if (a.capolavori.length) {
+    const c = el("p", "nota");
+    // I NOMI e non solo il numero: «tre capolavori» non si ricorda,
+    // «Dune, Heat e Arrival» ti fa rivedere l'anno.
+    c.innerHTML = "I tuoi cinque stelle: " +
+      a.capolavori.slice(0, 6).map(v => esc(v.titolo)).join(", ") +
+      (a.capolavori.length > 6 ? " e altri" : "") + ".";
+    pad.appendChild(c);
+  }
+}
+
 
 // SALVA E RIPRISTINA, in Opzioni.
 //
