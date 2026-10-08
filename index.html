@@ -1490,7 +1490,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261008154830";
+const VERSIONE = "20261008161606";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -4278,8 +4278,18 @@ function daDoveRiprendi(d) {
   if (!dove) return null;
   // Solo le stagioni vere: la zero sono gli speciali, e contarli
   // gonfierebbe quello che ti resta con roba che non e' la serie.
-  const st = (d.stagioni || []).filter(x => x.quanti > 0 && x.numero >= 1)
-                               .sort((a, b) => a.numero - b.numero);
+  // LE STAGIONI ARRIVANO IN DUE FORME, e questa funzione le accetta
+  // entrambe: dalla SCHEDA sono oggetti `{numero, quanti, nome, ...}`,
+  // dalla LISTA sono coppie `[numero, quanti]` - li' si salva solo
+  // quello che serve, perche' quel deposito viaggia anche verso gli
+  // altri telefoni.
+  //
+  // Convertire qui invece che in due posti diversi: la regola di cosa
+  // significa «stagione» resta una sola.
+  const st = (d.stagioni || [])
+    .map(x => Array.isArray(x) ? { numero: x[0], quanti: x[1] } : x)
+    .filter(x => x && x.quanti > 0 && x.numero >= 1)
+    .sort((a, b) => a.numero - b.numero);
   if (!st.length) return null;
 
   const qui = st.find(x => x.numero === dove.s);
@@ -6530,6 +6540,24 @@ async function backfillGeneriLista(voci) {
           if (una) { campi.minutiUno = una; v.minutiUno = una; }
         }
 
+        // LE STAGIONI, in forma breve: [[numero, quanti], ...].
+        //
+        // Servono a dire «riprendi da S2 E5» dalla LISTA, senza aprire
+        // la scheda: `daDoveRiprendi` ha bisogno di sapere quanti
+        // episodi ha ogni stagione per capire dove porta il tuo segno.
+        // Senza, dalla lista si puo' solo ripetere «sei a S2 E4», che
+        // e' quello che gia' sai - e non quello che devi mettere su.
+        //
+        // Due numeri per stagione e non l'oggetto intero: in lista ci
+        // finiscono anche nomi, locandine e date che non servono, e
+        // quel deposito viaggia anche verso gli altri telefoni.
+        if (d.tipo === "tv" && (d.stagioni || []).length) {
+          const st = d.stagioni
+            .filter(x => x.quanti > 0 && x.numero >= 1)
+            .map(x => [x.numero, x.quanti]);
+          if (st.length) { campi.stagioni = st; v.stagioni = st; }
+        }
+
         // IL PROSSIMO EPISODIO, se la serie e' ancora viva.
         //
         // La scheda lo sa gia' - lo mostra come «Prossimo episodio» -
@@ -6612,6 +6640,47 @@ function schermoLista() {
     v.appendChild(b);
     schermo.appendChild(v);
     return;
+  }
+
+  // RIPRENDI: le serie cominciate, col prossimo episodio.
+  //
+  // Il dato c'era gia' - il segno che metti toccando un episodio - ma
+  // per vederlo dovevi aprire la scheda di quel titolo, cioe'
+  // ricordarti quale stavi guardando. Che e' esattamente la cosa che
+  // non ricordi quando riprendi una serie dopo due settimane.
+  //
+  // In cima e non in fondo: se hai qualcosa a meta', e' quello che
+  // stai cercando, e scorrere la lista intera per trovarlo e' il giro
+  // lungo.
+  {
+    const riprese = lista.tutto
+      .filter(v => v.tipo === "tv" && avanzamento.dove(v.id))
+      .map(v => ({ v, ri: daDoveRiprendi(v) }))
+      // senza le stagioni non si sa quale sia il prossimo: quel titolo
+      // aspetta il ricontrollo, e intanto resta nella griglia normale
+      .filter(x => x.ri && x.ri.prossimo)
+      // l'ultima toccata per prima: e' quella che stai guardando adesso
+      .sort((a, b) => (avanzamento.dove(b.v.id).quando || 0) -
+                      (avanzamento.dove(a.v.id).quando || 0))
+      .slice(0, 6);
+    if (riprese.length) {
+      schermo.appendChild(el("p", "sezione", "Riprendi"));
+      const g = el("div", "griglia");
+      riprese.forEach(({ v, ri }) => {
+        const c = el("button", "carta");
+        c.innerHTML =
+          '<div class="tela">' +
+            (v.locandina ? locandina(v.locandina)
+              : '<div class="manca" aria-hidden="true">' + esc(v.titolo) + "</div>") +
+          "</div><h3>" + esc(v.titolo) + "</h3>" +
+          '<p class="aChePunto">▶ S' + ri.prossimo.s + " E" + ri.prossimo.e + "</p>" +
+          (ri.restano
+            ? '<p class="conteggio">ne restano ' + ri.restano + "</p>" : "");
+        c.onclick = () => vai("serie/" + v.id);
+        g.appendChild(c);
+      });
+      schermo.appendChild(g);
+    }
   }
 
   // In arrivo: si popola dopo, senza far aspettare la griglia.
