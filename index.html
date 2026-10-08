@@ -1514,7 +1514,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261008162713";
+const VERSIONE = "20261008163406";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -2184,6 +2184,43 @@ const altrui = {
 // Le risposte SCADONO dopo sei ore: «mi andava» ieri sera non vuol
 // dire niente stasera, e un accordo vecchio di una settimana proposto
 // come fresco e' peggio di nessuna proposta.
+/// I TITOLI CHE DORMONO IN LISTA.
+///
+/// Una lista di cento titoli non si legge piu', e quando non si legge
+/// piu' si smette di usarla: e' il modo in cui queste app muoiono.
+/// Dentro ci finisce di tutto - il film di cui parlavano tutti due
+/// anni fa, la serie che «prima o poi», quello aggiunto per sbaglio.
+///
+/// Qui si propongono quelli da togliere, e il criterio e' il tempo
+/// piu' il silenzio: stanno li' da MESI e nel frattempo non e'
+/// successo niente - non li hai guardati, non li hai votati, non ci
+/// hai messo un segno.
+///
+/// NON SI CANCELLA NIENTE DA SOLI. Si mostrano e si chiede, uno per
+/// uno: una lista e' una cosa personale, e un'app che la sfoltisce di
+/// sua iniziativa e' un'app di cui non ti fidi piu'.
+const DORME_DA = 120 * 24 * 3600 * 1000;      // quattro mesi
+
+function titoliCheDormono() {
+  const ora = Date.now();
+  return lista.tutto.filter(v => {
+    const quando = Number(v.quando || 0);
+    // Senza data non si giudica: sono i titoli di prima che l'app
+    // segnasse il quando, e non sono vecchi per colpa loro.
+    if (!quando) return false;
+    if (ora - quando < DORME_DA) return false;
+    // L'HAI GUARDATO? Allora non dorme, e se e' ancora in lista e'
+    // un'altra faccenda.
+    if (visti.voto(v.tipo, v.id)) return false;
+    // L'HAI COMINCIATO? Allora lo stai guardando davvero.
+    if (v.tipo === "tv" && avanzamento.dove(v.id)) return false;
+    // E' ARRIVATO da poco su un servizio tuo? Allora adesso ha senso,
+    // ed e' il momento peggiore per proportelo di buttare.
+    if (v.arrivato) return false;
+    return true;
+  }).sort((a, b) => Number(a.quando || 0) - Number(b.quando || 0));
+}
+
 /// DECIDI TU: un titolo dalla lista, scelto bene.
 ///
 /// Alle dieci di sera il problema non e' la mancanza di scelte, e'
@@ -6731,6 +6768,56 @@ function schermoLista() {
     return;
   }
 
+  // CHI DORME IN LISTA: si propone di togliere, non si toglie.
+  //
+  // Una riga sola e discreta, in fondo alla lista e non in cima: non
+  // e' il motivo per cui sei entrato, ed e' una cosa che si fa quando
+  // uno ha voglia di mettere ordine - non mentre cerca cosa guardare.
+  // (Il blocco e' qui, ma si attacca in fondo piu' avanti.)
+  const zonaDormienti = el("div", "dormienti");
+  const disegnaDormienti = () => {
+    const dorm = titoliCheDormono();
+    zonaDormienti.innerHTML = "";
+    zonaDormienti.figli = [];
+    if (!dorm.length) return;
+    const quanti = dorm.length;
+    const p = el("p", "nota");
+    p.innerHTML = "<b>" + quanti + "</b> " +
+      (quanti === 1 ? "titolo sta in lista" : "titoli stanno in lista") +
+      " da mesi e non " + (quanti === 1 ? "l’hai" : "li hai") +
+      " mai guardati. Faccio vedere?";
+    zonaDormienti.appendChild(p);
+    const apri = el("button", "svuota", "Mostrali");
+    apri.onclick = () => {
+      zonaDormienti.innerHTML = "";
+      zonaDormienti.figli = [];
+      zonaDormienti.appendChild(el("p", "nota",
+        "Uno per uno: tolgo solo quelli che dici tu."));
+      dorm.forEach(v => {
+        const r = el("div", "vocespesa");
+        const mesi = Math.round((Date.now() - Number(v.quando)) / (30 * 86400000));
+        r.innerHTML =
+          (v.locandina ? '<img src="' + IMG + "/w92" + v.locandina + '" alt="">'
+                       : "<span></span>") +
+          '<div class="che"><b>' + esc(v.titolo) + "</b><span>" +
+          (v.anno ? esc(String(v.anno)) + " · " : "") +
+          "in lista da " + mesi + " mesi</span></div>";
+        const via = el("button", "svuota", "Togli");
+        via.style.cssText = "flex:0 0 auto;padding:8px 14px";
+        via.onclick = () => {
+          lista.togli(v.tipo, v.id);
+          r.remove();
+          // se non ne restano, si richiude da solo: una sezione vuota
+          // che resta aperta sembra una cosa rotta
+          if (!titoliCheDormono().length) disegnaDormienti();
+        };
+        r.appendChild(via);
+        zonaDormienti.appendChild(r);
+      });
+    };
+    zonaDormienti.appendChild(apri);
+  };
+
   // DECIDI TU: un tasto, una proposta.
   //
   // In cima perche' e' il motivo per cui apri la lista quando non sai
@@ -6973,6 +7060,12 @@ function schermoLista() {
     });
     zonaArrivo.appendChild(pad2);
   }).catch(() => {});
+
+  // I DORMIENTI, qui in fondo: non e' il motivo per cui sei entrato,
+  // ed e' una cosa che si fa quando hai voglia di mettere ordine - non
+  // mentre cerchi cosa guardare.
+  disegnaDormienti();
+  schermo.appendChild(zonaDormienti);
 
   schermo.appendChild(pulsanteManda(voci, false));
 
