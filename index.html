@@ -319,6 +319,18 @@
     font-size: 11px; font-weight: 700;
     padding: 3px 7px; border-radius: 7px;
   }
+  /* «✦ nuovo» nelle Novità: arrivato dopo la tua ultima visita. In
+     BASSO a sinistra: in alto, accanto al voto, su una carta da 95px
+     (375 di schermo) i due si sovrapponevano di 2,5px - misurato. Il
+     tuo voto, che sta qui nella Lista, nelle Novità non c'è.
+     Verde come «ora è su Disney+» e «stasera esce»: è la stessa notizia,
+     qualcosa è cambiato da quando hai guardato. */
+  .carta .nuovoQui {
+    position: absolute; bottom: 6px; left: 6px;
+    background: var(--verde); color: #0B1014;
+    font-size: 11px; font-weight: 700;
+    padding: 3px 6px; border-radius: 7px;
+  }
   .carta h3 {
     margin: 7px 1px 0; font-size: 13px; font-weight: 520; line-height: 1.3;
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
@@ -459,6 +471,28 @@
   .bottoneFiltri[aria-expanded=true], .bottoneFiltri.attivi {
     background: var(--acceso); border-color: var(--acceso); color: var(--acceso-testo);
   }
+  /* «Novità» sta sulla riga di Film | Serie, a destra: nella testata a
+     375px restano 43px fra la stanza e Stasera, qui ce n'erano 150 vuoti. */
+  .rigaTipo { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .apriNovita {
+    display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto;
+    min-height: 44px; padding: 8px 15px; border-radius: 999px;
+    font-size: 14.5px; font-weight: 560;
+    background: var(--piano); border: 1px solid var(--bordo); color: var(--testo);
+  }
+  .apriNovita svg { width: 16px; height: 16px; fill: none; stroke: var(--verde);
+                    stroke-width: 1.9; stroke-linejoin: round; }
+
+  /* -------------------------------------------------------- novità */
+  /* I servizi col loro logo: si riconoscono prima di leggerli. */
+  .chip.conLogo { gap: 8px; padding-left: 8px; }
+  .chip.conLogo img { width: 26px; height: 26px; border-radius: 7px; }
+  .spiegaNovita { margin: 10px 16px 0; color: var(--tenue); font-size: 13.5px; line-height: 1.5; }
+  .arriviNovita { margin: 10px 16px 2px; font-size: 14px; font-weight: 600; color: var(--verde); }
+  .arriviNovita.niente { color: var(--debole); font-weight: 500; }
+  /* JustWatch va citato: i dati su dove sta un titolo sono suoi, e
+     TMDB lo chiede a chi li usa. */
+  .fonteDati { margin: 14px 16px 6px; font-size: 11.5px; color: var(--debole); text-align: center; }
   .pannello {
     margin: 12px 16px 2px; padding: 4px 0 10px;
     border: 1px solid var(--bordo); border-radius: 14px; background: var(--fondo-alto);
@@ -1488,6 +1522,33 @@ const ORDINI = [
   { n: "Più recenti", v: "data.desc" },
 ];
 
+// LE NOVITA'. TMDB non sa in che giorno un titolo arriva su un servizio:
+// sa solo che ADESSO c'e' (il dato e' di JustWatch). Quindi qui
+// «novita'» vuol dire «uscito da poco, e ora sta sul servizio», e questi
+// numeri dicono quanto e' «da poco».
+const NOVITA = {
+  // serie con un episodio uscito negli ultimi N giorni
+  giorniSerie: 14,
+  // film usciti nell'ultimo anno, dal piu' recente
+  giorniFilm: 365,
+  // ...con almeno tanti voti. MISURATO il 26/10/2026 su Netflix: senza
+  // soglia, in cima per data c'erano un concerto dei BTS col titolo in
+  // coreano, tre spettacoli comici, la WWE e due film col titolo in
+  // hindi, tutti fra 0 e 7 voti. Con 10 restano Animals, UNABOMBER,
+  // Stormen, Terapia creativa (405 titoli -> 264). Il prezzo: un film
+  // uscito stamattina compare quando ha raccolto i primi voti, di
+  // solito in un giorno o due.
+  votiFilm: 10,
+  // una serie nata da meno di cosi' si dice «nuova», le altre «dal 2019»
+  giorniNuovaSerie: 30,
+  // le serie si caricano tutte insieme, fino a tante pagine: il bollino
+  // le confronta con la visita prima, e serve l'elenco intero.
+  // MISURATO: «Tutti i miei» (7 servizi) fa 153 serie, cioe' 8 pagine.
+  pagineSerie: 10,
+  // entro queste ore dall'inizio, e' ancora la stessa visita
+  oreVisita: 3,
+};
+
 // with_runtime funziona su film E serie (verificato). Per le serie il
 // minutaggio e' quello dell'episodio, quindi le soglie sono diverse.
 const DURATE = {
@@ -1528,7 +1589,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261008190636";
+const VERSIONE = "20261026111055";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -1826,6 +1887,9 @@ function leggiIndirizzo() {
   // liste condivise: #/lista/m27205,t1396  e  #/visti/m155:5,t1396:4
   const l = (location.hash || "").match(/^#\/(lista|visti)\/([mt0-9,:]+)$/);
   if (l) return { cosa: l[1], voci: decodificaVoci(l[2]) };
+  // le novita', di tutti i tuoi servizi o di uno: #/novita  #/novita/8
+  const n = (location.hash || "").match(/^#\/novita(?:\/(\d+))?$/);
+  if (n) return { cosa: "novita", servizio: n[1] || "" };
   // UN TITOLO CHIESTO A VOCE: #/cerca/<titolo>
   //
   // Lo scrive il guscio quando Siri ha preso un titolo: un intent non
@@ -4334,6 +4398,130 @@ async function sfoglia(f, pagina = 1) {
   };
 }
 
+// Oggi, o N giorni fa, come lo vuole TMDB: AAAA-MM-GG nell'ora di QUI.
+// toISOString e' in UTC, e d'estate fra mezzanotte e le due darebbe
+// ancora ieri.
+function giornoIso(spostamento = 0, adesso = new Date()) {
+  const d = new Date(adesso.getFullYear(), adesso.getMonth(),
+                     adesso.getDate() + spostamento);
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") +
+         "-" + String(d.getDate()).padStart(2, "0");
+}
+
+// Le novita' di un servizio (o di tutti i tuoi). Lo stesso /discover di
+// Sfoglia, con due domande diverse per film e serie.
+async function novita(f, pagina = 1) {
+  const parametri = {
+    language: LINGUA,
+    watch_region: PAESE,
+    with_watch_providers: f.servizio || chiavi.servizi.join("|"),
+    with_watch_monetization_types: COMPRESI.join("|"),
+    include_adult: "false",
+    page: pagina,
+  };
+  if (f.tipo === "tv") {
+    // LE SERIE CON UN EPISODIO NUOVO, non quelle nate da poco: air_date
+    // guarda tutti gli episodi, quindi entra anche la stagione nuova di
+    // una serie del 2019 - che e' la novita' che conta, e che
+    // first_air_date (cioe' «Più recenti» in Sfoglia) non vede.
+    // MISURATO il 26/10/2026: le prime dodici di Netflix avevano tutte
+    // l'ultimo episodio dentro la finestra, Law & Order (dal 1999)
+    // compreso.
+    parametri["air_date.gte"] = giornoIso(-NOVITA.giorniSerie);
+    parametri["air_date.lte"] = giornoIso(0);
+    // Talk show e notiziari escono tutti i giorni: starebbero sempre
+    // nell'elenco e non sarebbero mai una novita'.
+    parametri.without_genres = "10767,10763";
+    parametri.sort_by = "popularity.desc";
+  } else {
+    // Fino a OGGI, come guardia: un film annunciato per il mese
+    // prossimo starebbe in cima alle novita'. Misurato il 26/10/2026,
+    // su Netflix, Prime e Disney+ non ce n'era nessuno.
+    parametri["primary_release_date.gte"] = giornoIso(-NOVITA.giorniFilm);
+    parametri["primary_release_date.lte"] = giornoIso(0);
+    parametri["vote_count.gte"] = NOVITA.votiFilm;
+    parametri.sort_by = "primary_release_date.desc";
+  }
+  const dati = await tmdb("/discover/" + f.tipo, parametri);
+  return {
+    elementi: (dati.results || []).map(v => ({
+      ...normalizza(v, f.tipo),
+      data: v.release_date || v.first_air_date || "",
+    })),
+    // oltre la 500 TMDB risponde errore (verificato per Stasera)
+    pagine: Math.min(dati.total_pages || 1, 500),
+    totale: dati.total_results || 0,
+  };
+}
+
+/// «✦ NUOVO DALL'ULTIMA VISITA»: l'unico modo, senza un server, di
+/// avvicinarsi a «aggiunto da poco». TMDB non dice quando un titolo e'
+/// arrivato su un servizio; il telefono pero' si ricorda cosa c'era
+/// l'ultima volta che hai guardato, e quello che allora non c'era e'
+/// arrivato nel frattempo.
+///
+/// UNA VISITA dura NOVITA.oreVisita ore dal suo inizio: aprire un
+/// titolo e tornare non deve spegnere i bollini che stavi guardando.
+/// Alla visita dopo, quella di adesso diventa il termine di paragone.
+///
+/// Per servizio E per tipo, perche' sono elenchi diversi: cio' che e'
+/// nuovo su Netflix non dice niente su Disney+.
+///
+/// «NON C'ERA» VA DETTO CON CAUTELA, ed e' qui che si sbaglia facile:
+/// se l'altra volta hai visto solo la prima pagina, un titolo della
+/// terza non «non c'era», era solo piu' in basso. Quindi:
+/// - FILM, ordinati per data: la visita prima copre tutto cio' che e'
+///   piu' recente del piu' vecchio che hai visto (la `soglia`). Sotto,
+///   non si sa, e il bollino non si mette.
+/// - SERIE, ordinate per popolarita': nessuna soglia possibile, quindi
+///   il bollino solo se la visita prima aveva l'elenco INTERO.
+const visiteNovita = {
+  leggi() {
+    try { return JSON.parse(localStorage.getItem("novita_visite") || "{}") || {}; }
+    catch (e) { return {}; }
+  },
+  scrivi(t) {
+    try { localStorage.setItem("novita_visite", JSON.stringify(t)); }
+    catch (e) { /* senza memoria si vive: niente bollini e basta */ }
+  },
+  // All'apertura. Se la visita in corso e' finita, diventa il paragone.
+  inizia(chiave, adesso = Date.now()) {
+    const t = this.leggi();
+    const r = t[chiave];
+    const nuova = { ids: [], soglia: "", completo: false, quando: adesso };
+    if (!r || !r.ora) t[chiave] = { prima: null, ora: nuova };
+    else if (adesso - r.ora.quando >= NOVITA.oreVisita * 3600000)
+      // Una visita andata a vuoto (rete caduta, nessun titolo) non
+      // diventa il paragone: farebbe sembrare nuovo tutto.
+      t[chiave] = { prima: r.ora.ids.length ? r.ora : r.prima, ora: nuova };
+    this.scrivi(t);
+    return t[chiave];
+  },
+  // Quello che arriva si aggiunge alla visita in corso.
+  segna(chiave, elementi, completo = false) {
+    const t = this.leggi();
+    const r = t[chiave];
+    if (!r || !r.ora) return;
+    const ids = new Set(r.ora.ids);
+    elementi.forEach(v => ids.add(v.id));
+    // un tetto, perche' sta in localStorage: un anno di film su tutti
+    // i servizi sono qualche migliaio di numeri
+    r.ora.ids = [...ids].slice(-3000);
+    elementi.forEach(v => {
+      if (v.data && (!r.ora.soglia || v.data < r.ora.soglia)) r.ora.soglia = v.data;
+    });
+    if (completo) r.ora.completo = true;
+    this.scrivi(t);
+  },
+  nuovo(r, v) {
+    const p = r && r.prima;
+    if (!p || !p.ids || !p.ids.length) return false;
+    if (p.ids.includes(v.id)) return false;
+    if (v.tipo === "tv") return !!p.completo;
+    return !!(p.soglia && v.data && v.data >= p.soglia);
+  },
+};
+
 // Pesca un titolo a caso fra quelli che paghi. Per avere varieta'
 // vera scelgo una pagina casuale e non il primo risultato: TMDB
 // ordina per popolarita', quindi la pagina 1 e' sempre la stessa.
@@ -4975,7 +5163,9 @@ nav.onclick = e => {
   if (b) vai(b.dataset.scheda);
 };
 
-function grigliaDi(elementi, mostraMio = false) {
+// `apri`, se c'e', decide cosa fa il tocco: le schermate che non sono
+// Sfoglia lo usano per tornarci, dalla scheda, invece che su Sfoglia.
+function grigliaDi(elementi, mostraMio = false, apri = null) {
   const g = el("div", "griglia");
   elementi.forEach(v => {
     const c = el("button", "carta" +
@@ -5001,6 +5191,7 @@ function grigliaDi(elementi, mostraMio = false) {
         (v.locandina ? locandina(v.locandina)
           : '<div class="manca" aria-hidden="true">' + esc(v.titolo) + "</div>") +
         distintivo +
+        (v.nuovoQui ? '<span class="nuovoQui">✦ nuovo</span>' : "") +
       "</div>" +
       "<h3>" + esc(v.titolo) + "</h3>" +
       // L'anno, e accanto quello che si e' scoperto ricontrollando:
@@ -5012,7 +5203,10 @@ function grigliaDi(elementi, mostraMio = false) {
       // sotto c'è già «sei arrivato a S2 E4», e quante ore fa tutta la
       // serie non e' piu' la domanda - quante te ne restano sì, e
       // quella la dice la scheda.
-      '<p>' + (v.anno || "—") +
+      // Al posto dell'anno, se chi disegna ha una riga sua: nelle Novita'
+      // l'anno di un film uscito la settimana scorsa non dice niente,
+      // il giorno si'.
+      '<p>' + (v.sottotitolo ? esc(v.sottotitolo) : (v.anno || "—")) +
         (v.minutiTotali && !(v.tipo === "tv" && avanzamento.dove(v.id))
           ? ' <span class="dura">· ' + esc(quantoDura(v.minutiTotali)) + "</span>"
           : "") +
@@ -5035,7 +5229,8 @@ function grigliaDi(elementi, mostraMio = false) {
       (note.di(v.tipo, v.id)
         ? '<p class="notaCarta">' + esc(note.di(v.tipo, v.id)) + "</p>"
         : "");
-    c.onclick = () => { cache.scroll = window.scrollY; schermoDettaglio(v.tipo, v.id); };
+    c.onclick = apri ? () => apri(v)
+      : () => { cache.scroll = window.scrollY; schermoDettaglio(v.tipo, v.id); };
     g.appendChild(c);
   });
   return g;
@@ -5374,7 +5569,18 @@ async function schermoSfoglia() {
     };
     sw.appendChild(b);
   });
-  testa.appendChild(sw);
+  // LE NOVITA' sulla riga di Film | Serie: nella testata non ci stanno,
+  // e qui a destra dell'interruttore c'era spazio vuoto. Nessuna altezza
+  // in piu' prima del primo titolo.
+  const rigaTipo = el("div", "rigaTipo");
+  rigaTipo.appendChild(sw);
+  const nov = el("button", "apriNovita",
+    '<svg viewBox="0 0 24 24"><path d="M12 3c.7 4.6 2.4 6.3 7 7-4.6.7-6.3 2.4-7 7-.7-4.6-2.4-6.3-7-7 4.6-.7 6.3-2.4 7-7z"/></svg>' +
+    "Novità");
+  nov.setAttribute("aria-label", "Novità sui tuoi servizi");
+  nov.onclick = () => schermoNovita();
+  rigaTipo.appendChild(nov);
+  testa.appendChild(rigaTipo);
   schermo.appendChild(testa);
 
   // CON I BAMBINI: un interruttore, non una voce nei filtri.
@@ -5517,6 +5723,265 @@ function disegnaGriglia(contenitore) {
   } else if (cache.elementi.length > 20) {
     contenitore.appendChild(el("p", "altri", "Finiti: " + cache.elementi.length + " titoli."));
   }
+}
+
+/* ---------------------------------------------------------- novita' */
+
+// Lo stato delle Novita' e' suo, come quello di Stasera, e SI RICORDA:
+// chi guarda le novita' di Netflix stasera le riguardera' domani. Un
+// servizio che non hai piu' torna a «Tutti i miei».
+const NOV = {
+  get tipo() { return localStorage.getItem("novita_tipo") === "tv" ? "tv" : "movie"; },
+  set tipo(v) { localStorage.setItem("novita_tipo", v); },
+  get servizio() {
+    const s = localStorage.getItem("novita_servizio") || "";
+    return chiavi.servizi.includes(s) ? s : "";
+  },
+  set servizio(v) { localStorage.setItem("novita_servizio", v || ""); },
+  // La chiave della memoria delle visite. Per «Tutti i miei» c'e'
+  // dentro QUALI sono: aggiungendo un abbonamento l'elenco cambia, e
+  // il paragone con quello di prima darebbe per nuovo un catalogo.
+  get chiave() {
+    return (this.servizio || chiavi.servizi.slice().sort().join("+")) + "|" + this.tipo;
+  },
+};
+
+// Come la cache di Sfoglia, per tornare da una scheda dove eri. Vale
+// per UNA VISITA (la chiave ha dentro il suo inizio), non per un
+// giorno: l'app su iPhone resta in memoria, e con la cache del giorno
+// chi apriva le novita' alle 9 e poi alle 21 rivedeva l'elenco delle 9 -
+// senza bollini, perche' quelle delle 9 erano gia' il paragone.
+let cacheNovita = { chiave: "", elementi: [], pagina: 0, pagine: 1, totale: 0, scroll: 0 };
+let genNovita = 0;   // come `generazione`: le risposte tardive si scartano
+
+// «24 ott», e l'anno solo se non e' questo.
+function giornoBreve(iso) {
+  if (!iso) return "";
+  const d = new Date(iso + "T00:00:00");
+  if (isNaN(d)) return "";
+  return d.toLocaleDateString("it-IT", { day: "numeric", month: "short" }) +
+    (d.getFullYear() !== new Date().getFullYear() ? " " + d.getFullYear() : "");
+}
+
+// «ieri», «3 giorni fa», «oggi alle 18:20»: quando e' stata la visita
+// con cui si confronta.
+function quandoFu(ms) {
+  const oggi = new Date(); oggi.setHours(0, 0, 0, 0);
+  const d = new Date(ms);
+  const allora = new Date(d); allora.setHours(0, 0, 0, 0);
+  const giorni = Math.round((oggi - allora) / 86400000);
+  if (giorni <= 0)
+    return "oggi alle " + String(d.getHours()).padStart(2, "0") + ":" +
+           String(d.getMinutes()).padStart(2, "0");
+  if (giorni === 1) return "ieri";
+  return giorni + " giorni fa";
+}
+
+// La riga sotto il titolo di ogni carta. Film: il giorno d'uscita.
+// Serie: «nuova · 3 ott» se e' appena nata, altrimenti da quando c'e' -
+// che dice subito se e' una serie nuova o la stagione nuova di una
+// vecchia.
+function rigaNovita(v) {
+  if (v.tipo !== "tv") return giornoBreve(v.data);
+  if (v.data && v.data >= giornoIso(-NOVITA.giorniNuovaSerie))
+    return "nuova · " + giornoBreve(v.data);
+  return v.anno ? "dal " + v.anno : "";
+}
+
+// Il nome corto, come nei filtri di Sfoglia: TMDB dice «Amazon Prime
+// Video» e «Disney Plus», e in una fascia di pastiglie pesa.
+const nomeCorto = pid => (MAPPA[pid] || {}).nome || nomeProvider(pid);
+const suDove = () => NOV.servizio ? "su " + nomeCorto(NOV.servizio) : "sui tuoi servizi";
+
+// Cosa vuol dire l'elenco, e il suo limite: chi apre non sa che TMDB
+// non conosce il giorno d'arrivo, e senza dirlo cercherebbe il film
+// del 1999 aggiunto ieri.
+function spiegaNovita() {
+  return NOV.tipo === "tv"
+    ? "Con un episodio uscito negli ultimi " + NOVITA.giorniSerie + " giorni, " + suDove() + "."
+    : "Usciti nell'ultimo anno e ora " + suDove() + ", dal più recente. " +
+      "Non ci sono i film vecchi appena aggiunti: TMDB non sa quando arrivano.";
+}
+
+async function schermoNovita() {
+  if (!chiavi.tmdb) return vai("impostazioni");
+  const mia = ++genNovita;
+  if (osservatore) { osservatore.disconnect(); osservatore = null; }
+  schermo.innerHTML = "";
+  // l'indirizzo, per mandarlo: #/novita, o #/novita/8 per Netflix
+  const indirizzo = "#/novita" + (NOV.servizio ? "/" + NOV.servizio : "");
+  if (location.hash !== indirizzo) history.replaceState(null, "", indirizzo);
+
+  const su = el("button", "indietro", "← Sfoglia");
+  su.onclick = () => vai("sfoglia");
+  schermo.appendChild(su);
+
+  const pad = el("div", "pad");
+  pad.appendChild(el("h1", "titolone", "Novità"));
+  schermo.appendChild(pad);
+
+  if (!chiavi.servizi.length) {
+    pad.appendChild(el("p", "nota", "Prima scegli gli abbonamenti in Opzioni."));
+    return;
+  }
+
+  const sw = el("div", "interruttore");
+  [["movie", "Film"], ["tv", "Serie"]].forEach(([v, etichetta]) => {
+    const b = el("button", null, etichetta);
+    b.setAttribute("aria-pressed", String(NOV.tipo === v));
+    b.onclick = () => { NOV.tipo = v; schermoNovita(); };
+    sw.appendChild(b);
+  });
+  pad.appendChild(sw);
+
+  // I SERVIZI, col logo: e' il filtro che e' stato chiesto. Non
+  // fasciaChip, che scrive solo testo.
+  const fascia = el("div", "generi");
+  fascia.style.marginTop = "10px";
+  const disegnaServizi = () => {
+    fascia.innerHTML = "";
+    let scelto = null;
+    [{ pid: "", nome: "Tutti i miei" },
+     ...chiavi.servizi.map(pid => ({ pid, nome: nomeCorto(pid) }))]
+      .forEach(({ pid, nome }) => {
+        const logo = pid && logoProvider(pid);
+        const b = el("button", "chip" + (logo ? " conLogo" : ""),
+          (logo ? '<img src="' + IMG + "/w92" + logo + '" alt="">' : "") + esc(nome));
+        b.setAttribute("aria-pressed", String(pid === NOV.servizio));
+        if (pid === NOV.servizio) scelto = b;
+        b.onclick = () => { NOV.servizio = pid; schermoNovita(); };
+        fascia.appendChild(b);
+      });
+    // la scelta in fondo alla fascia va riportata in vista, come in
+    // fasciaChip: altrimenti non si vede cosa e' attivo
+    if (scelto && NOV.servizio) setTimeout(() => {
+      if (scelto.scrollIntoView) scelto.scrollIntoView({ inline: "center", block: "nearest" });
+    }, 0);
+  };
+  disegnaServizi();
+  schermo.appendChild(fascia);
+  // i loghi arrivano da TMDB una volta sola; la prima volta si ridisegna
+  if (!Object.keys(PROVIDER).length)
+    caricaProvider().then(() => { if (mia === genNovita) disegnaServizi(); }).catch(() => {});
+
+  schermo.appendChild(el("p", "spiegaNovita", esc(spiegaNovita())));
+
+  const contenitore = el("div");
+  schermo.appendChild(contenitore);
+
+  const visita = visiteNovita.inizia(NOV.chiave);
+  const chiaveCache = NOV.chiave + "|" + visita.ora.quando;
+
+  if (cacheNovita.chiave === chiaveCache && cacheNovita.elementi.length) {
+    disegnaNovita(contenitore, mia);
+    const dove = cacheNovita.scroll;
+    setTimeout(() => { if (mia === genNovita) window.scrollTo(0, dove); }, 0);
+    return;
+  }
+  cacheNovita = { chiave: chiaveCache, elementi: [], pagina: 0, pagine: 1,
+                  totale: 0, scroll: 0 };
+  window.scrollTo(0, 0);
+  contenitore.innerHTML = '<div class="caricamento"><div class="giro"></div></div>';
+  await paginaNovita(contenitore, true, mia);
+}
+
+async function paginaNovita(contenitore, prima, mia) {
+  if (mia !== genNovita) return;
+  if (cacheNovita.carica || (!prima && cacheNovita.pagina >= cacheNovita.pagine)) return;
+  cacheNovita.carica = true;
+  const f = { tipo: NOV.tipo, servizio: NOV.servizio };
+  const chiave = NOV.chiave;
+  try {
+    const r = await novita(f, cacheNovita.pagina + 1);
+    if (mia !== genNovita) return;
+    let arrivati = r.elementi;
+    let pagina = cacheNovita.pagina + 1;
+    // LE SERIE TUTTE INSIEME, fino a NOVITA.pagineSerie: il bollino le
+    // confronta con la visita prima, e solo un elenco intero dice cosa
+    // «non c'era».
+    if (f.tipo === "tv" && prima && r.pagine > 1) {
+      const fin = Math.min(r.pagine, NOVITA.pagineSerie);
+      const altre = await Promise.all(
+        Array.from({ length: fin - 1 }, (_, i) => novita(f, i + 2)));
+      if (mia !== genNovita) return;
+      altre.forEach(a => { arrivati = arrivati.concat(a.elementi); });
+      pagina = fin;
+    }
+    cacheNovita.pagina = pagina;
+    cacheNovita.pagine = r.pagine;
+    cacheNovita.totale = r.totale;
+    // TMDB puo' ripetere un titolo fra una pagina e l'altra
+    const gia = new Set(cacheNovita.elementi.map(x => x.id));
+    arrivati.forEach(x => { if (!gia.has(x.id)) { gia.add(x.id); cacheNovita.elementi.push(x); } });
+    visiteNovita.segna(chiave, arrivati, cacheNovita.pagina >= cacheNovita.pagine);
+    const dov_ero = window.scrollY;
+    disegnaNovita(contenitore, mia);
+    if (!prima) window.scrollTo(0, dov_ero);
+  } catch (e) {
+    if (mia === genNovita)
+      contenitore.innerHTML = '<p class="vuoto">' + esc(e.message) + "</p>";
+  } finally {
+    if (mia === genNovita) cacheNovita.carica = false;
+  }
+}
+
+function disegnaNovita(contenitore, mia) {
+  contenitore.innerHTML = "";
+  if (!cacheNovita.elementi.length) {
+    contenitore.appendChild(el("p", "vuoto", esc(NOV.tipo === "tv"
+      ? "Nessuna serie con episodi nuovi negli ultimi " + NOVITA.giorniSerie +
+        " giorni " + suDove() + "."
+      : "Nessun film uscito nell'ultimo anno " + suDove() + ".")));
+    return;
+  }
+
+  const r = visiteNovita.leggi()[NOV.chiave];
+  const tutti = cacheNovita.elementi.map(v => ({
+    ...v, nuovoQui: visiteNovita.nuovo(r, v), sottotitolo: rigaNovita(v) }));
+  // I NUOVI IN CIMA, nell'ordine che avevano: e' quello che sei venuto
+  // a vedere, e in cento serie per popolarita' un bollino a meta'
+  // elenco non lo trova nessuno.
+  const elementi = [...tutti.filter(v => v.nuovoQui), ...tutti.filter(v => !v.nuovoQui)];
+  const quantiNuovi = elementi.filter(v => v.nuovoQui).length;
+
+  // La riga del bollino. La prima volta non c'e' paragone, e si dice:
+  // un elenco senza bollini sembrerebbe «non e' arrivato niente».
+  if (!r || !r.prima)
+    contenitore.appendChild(el("p", "arriviNovita niente",
+      "Dalla prossima visita, ✦ segna quello che arriva nel frattempo."));
+  else if (quantiNuovi)
+    contenitore.appendChild(el("p", "arriviNovita",
+      "✦ " + quantiNuovi + " " + quanti(quantiNuovi, "arrivato", "arrivati") +
+      " dall'ultima visita, " + esc(quandoFu(r.prima.quando))));
+  else
+    contenitore.appendChild(el("p", "arriviNovita niente",
+      "Niente di nuovo dall'ultima visita, " + esc(quandoFu(r.prima.quando)) + "."));
+
+  contenitore.appendChild(grigliaDi(elementi, false, v => {
+    cacheNovita.scroll = window.scrollY;
+    schermoDettaglio(v.tipo, v.id, () => schermoNovita());
+  }));
+
+  if (cacheNovita.pagina < cacheNovita.pagine) {
+    const s = el("div", "sentinella");
+    contenitore.appendChild(s);
+    const b = el("button", "altri",
+      "Carica altri · " + cacheNovita.elementi.length + " di " +
+      cacheNovita.totale.toLocaleString("it-IT"));
+    b.onclick = async () => {
+      b.disabled = true;
+      b.textContent = "Carico…";
+      await paginaNovita(contenitore, false, mia);
+    };
+    contenitore.appendChild(b);
+    if (osservatore) osservatore.disconnect();
+    osservatore = new IntersectionObserver(voci => {
+      if (voci.some(v => v.isIntersecting)) paginaNovita(contenitore, false, mia);
+    }, { rootMargin: "600px" });
+    osservatore.observe(s);
+  }
+
+  contenitore.appendChild(el("p", "fonteDati", "Dove si trova ogni titolo: dati JustWatch, via TMDB."));
 }
 
 // Lo stato di "Stasera" e' suo: non voglio che toccare qui cambi
@@ -10279,6 +10744,11 @@ function apriIndirizzo(dove) {
   if (!chiavi.tmdb) return vai("impostazioni");
   if (dove.cosa === "lista" || dove.cosa === "visti")
     return schermoPrendi(dove.cosa, dove.voci);
+  if (dove.cosa === "novita") {
+    // un servizio che non hai: si mostrano i tuoi, non un elenco vuoto
+    NOV.servizio = chiavi.servizi.includes(dove.servizio) ? dove.servizio : "";
+    return schermoNovita();
+  }
   if (dove.cosa === "persona") return schermoPersona(dove.id, () => vai("sfoglia"));
   return schermoDettaglio(A_TIPO[dove.cosa], dove.id, () => vai("sfoglia"));
 }
