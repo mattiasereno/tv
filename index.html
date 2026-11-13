@@ -1140,6 +1140,37 @@
     background: linear-gradient(transparent, rgba(11,16,20,.85));
   }
 
+  /* ------------------------------------------------- dietro le quinte */
+  .produzione .trama:first-child { margin-top: 0; }
+  .produzione .sottotitolo {
+    font-size: 14.5px; font-weight: 640; color: var(--testo); margin: 18px 0 0;
+  }
+  /* Chiusa: si vede l'inizio, e sfuma. La sfumatura dice «continua»
+     meglio di tre puntini, e non taglia una parola a meta'. */
+  .produzione.chiusa {
+    max-height: 12em; overflow: hidden;
+    -webkit-mask-image: linear-gradient(#000 55%, transparent);
+            mask-image: linear-gradient(#000 55%, transparent);
+  }
+  .leggiTutto {
+    display: block; margin: 2px 0 0; padding: 6px 0; min-height: 44px;
+    color: var(--tenue); font-size: 13.5px; text-decoration: underline;
+  }
+  .fonte { margin: 6px 0 0; font-size: 12px; color: var(--debole); }
+  .fonte a { color: inherit; }
+  /* I video in fila, da scorrere: uno intero e un pezzo del dopo, cosi'
+     si capisce che ce ne sono altri. Escono dal margine come il cast. */
+  .quinte {
+    display: flex; gap: 10px; overflow-x: auto; scrollbar-width: none;
+    margin: 14px -16px 0; padding: 0 16px 4px; scroll-snap-type: x mandatory;
+    /* senza, lo scatto allinea il primo video al bordo dello schermo e
+       si mangia il margine: misurato, scrollLeft 16 appena disegnata */
+    scroll-padding: 0 16px;
+  }
+  .quinte::-webkit-scrollbar { display: none; }
+  .quinte .trailer { flex: 0 0 84%; margin: 0; scroll-snap-align: start; }
+  .quinte .trailer:only-child { flex-basis: 100%; }
+
   /* ------------------------------------------------------- tastiera TV */
   .tastiera { margin: 0 0 6px; }
   .tastiera .campo2 { display: flex; gap: 9px; }
@@ -1589,7 +1620,7 @@ const PAGANDO = ["rent", "buy"];
 
 // La versione di QUESTO file. pubblica.sh la aggiorna a ogni
 // pubblicazione, insieme a versione.json accanto.
-const VERSIONE = "20261026111055";
+const VERSIONE = "20261113093628";
 
 const TMDB = "https://api.themoviedb.org/3";
 const ST = "https://api.smartthings.com/v1";
@@ -4904,7 +4935,9 @@ function scheda(tipo, id) {
 async function schedaGrezza(tipo, id) {
   const d = await tmdb("/" + tipo + "/" + id, {
     language: LINGUA,
-    append_to_response: "credits,watch/providers,videos,keywords",
+    // external_ids per il wikidata_id, che porta alla voce di Wikipedia
+    // del «dietro le quinte»: chiederlo qui costa zero chiamate in piu'.
+    append_to_response: "credits,watch/providers,videos,keywords,external_ids",
   });
   const italia = ((d["watch/providers"] || {}).results || {})[PAESE] || {};
 
@@ -4972,6 +5005,7 @@ async function schedaGrezza(tipo, id) {
 
   return {
     tipo, id, video,
+    wikidata: (d.external_ids || {}).wikidata_id || null,
     titolo: d.title || d.name || "?",
     anno: (d.release_date || d.first_air_date || "").slice(0, 4),
     voto: d.vote_average || 0,
@@ -5017,6 +5051,167 @@ async function schedaGrezza(tipo, id) {
         locandina: x.poster_path,
       })),
   };
+}
+
+
+// ---------------------------------------------------- dietro le quinte
+// Come e' stato fatto un film: TMDB non lo sa. Lo sa Wikipedia, nella
+// sezione «Produzione» della voce - sviluppo, cast, riprese, effetti -
+// e ci si arriva senza indovinare il titolo: TMDB da' il wikidata_id,
+// Wikidata da' il nome esatto della voce in italiano e in inglese.
+// Misurato il 13/11/2026: la voce italiana ha «Produzione» su Inception,
+// La vita e' bella, Dune - Parte due, Breaking Bad.
+//
+// I video sono di TMDB, gli stessi del trailer: «Behind the Scenes».
+
+const SEZIONI_PRODUZIONE = {
+  it: ["Produzione", "Realizzazione"],
+  en: ["Production", "Development and production", "Development"],
+};
+
+// Sotto questa lunghezza la sezione e' un paio di righe di servizio
+// («Le riprese sono iniziate a marzo»): non vale la pena, provo l'altra
+// lingua.
+const QUINTE_MINIMO = 300;
+
+async function wiki(dominio, parametri) {
+  if (navigator.onLine === false) throw new Error("senza rete");
+  // origin=* e' il modo di Wikimedia per dire «chiamata anonima dal
+  // browser»: senza, la risposta non ha i permessi CORS.
+  const url = "https://" + dominio + "/w/api.php?" + new URLSearchParams({
+    ...parametri, format: "json", formatversion: "2", origin: "*",
+  });
+  let r;
+  try { r = await fetch(url); }
+  catch (e) {
+    registro.aggiungi("Wikipedia", dominio + " -> rete: " + e.message);
+    throw e;
+  }
+  if (!r.ok) {
+    registro.aggiungi("Wikipedia", dominio + " -> HTTP " + r.status);
+    throw new Error("Wikipedia non risponde (HTTP " + r.status + ").");
+  }
+  return r.json();
+}
+
+// Una frase che finisce coi due punti annunciava una citazione, e il
+// testo semplice di Wikipedia le citazioni a blocco le perde. Restava
+// «il regista ha dichiarato al The Hollywood Reporter riguardo al
+// film:» seguito dal niente. Se la frase e' corta e' solo l'annuncio, e
+// si toglie; se e' lunga dice gia' qualcosa di suo («e' stato girato
+// interamente in IMAX ... per evitare ripetizioni col primo film:») e
+// si chiude col punto.
+function chiudiCitazione(p) {
+  if (!p.endsWith(":")) return p;
+  const frasi = p.split(/(?<=[.!?»"”])\s+/);
+  const ultima = frasi.pop();
+  if (ultima.length < 140) return frasi.join(" ");
+  return frasi.concat(ultima.slice(0, -1) + ".").join(" ");
+}
+
+// Dal testo semplice di una voce (exsectionformat=wiki, quindi le
+// sezioni sono righe «== Nome ==») tiro fuori la sezione della
+// produzione, divisa nei suoi pezzi: [{ titolo, paragrafi }]. Il primo
+// pezzo ha titolo vuoto, e' il testo prima della prima sottosezione.
+function pezziProduzione(estratto, lingua) {
+  const righe = String(estratto || "").split("\n");
+  let i = -1;
+  for (const nome of SEZIONI_PRODUZIONE[lingua] || []) {
+    i = righe.findIndex(r => r.trim() === "== " + nome + " ==");
+    if (i >= 0) break;
+  }
+  if (i < 0) return [];
+  const pezzi = [{ titolo: "", paragrafi: [] }];
+  for (let j = i + 1; j < righe.length; j++) {
+    const r = righe[j].trim();
+    if (/^==[^=]/.test(r)) break;            // la sezione dopo: finito
+    const sotto = r.match(/^={3,}\s*(.*?)\s*={3,}$/);
+    if (sotto) { pezzi.push({ titolo: sotto[1], paragrafi: [] }); continue; }
+    const p = chiudiCitazione(r);
+    if (p) pezzi[pezzi.length - 1].paragrafi.push(p);
+  }
+  return pezzi.filter(p => p.paragrafi.length);
+}
+
+function lunghezzaPezzi(pezzi) {
+  return pezzi.reduce((n, p) => n + p.paragrafi.join("").length, 0);
+}
+
+// La voce in italiano se basta, altrimenti quella inglese. Se nessuna
+// delle due arriva alla soglia, la piu' lunga delle due - meglio poco
+// che niente, ma l'italiano non perde contro un inglese altrettanto
+// corto.
+async function produzioneDaWikipedia(wikidata) {
+  if (!wikidata) return null;
+  const ent = await wiki("www.wikidata.org", {
+    action: "wbgetentities", ids: wikidata, props: "sitelinks",
+    sitefilter: "itwiki|enwiki",
+  });
+  const link = (((ent.entities || {})[wikidata]) || {}).sitelinks || {};
+  let meglio = null;
+  for (const lingua of ["it", "en"]) {
+    const voce = (link[lingua + "wiki"] || {}).title;
+    if (!voce) continue;
+    const pag = await wiki(lingua + ".wikipedia.org", {
+      action: "query", prop: "extracts", explaintext: "1",
+      exsectionformat: "wiki", redirects: "1", titles: voce,
+    });
+    const estratto = ((((pag.query || {}).pages) || [])[0] || {}).extract || "";
+    const pezzi = pezziProduzione(estratto, lingua);
+    const quanto = lunghezzaPezzi(pezzi);
+    if (quanto >= QUINTE_MINIMO) return { lingua, voce, pezzi };
+    if (quanto && (!meglio || quanto > lunghezzaPezzi(meglio.pezzi)))
+      meglio = { lingua, voce, pezzi };
+  }
+  return meglio;
+}
+
+// I video del dietro le quinte. «Behind the Scenes» e' il tipo giusto;
+// le «Featurette» sono un cesto - su Dune - Parte due 21 su 21 erano
+// premi e conferenze stampa - quindi passano solo quelle che nel nome
+// dicono di essere un making of. Prima l'italiano, poi il resto.
+function scegliQuinte(lista) {
+  const yt = (lista || []).filter(v => v.site === "YouTube" && v.key);
+  const making = /making|dietro le quinte|behind the scenes|backstage|sul set|on set/i;
+  const buoni = [
+    ...yt.filter(v => v.type === "Behind the Scenes"),
+    ...yt.filter(v => v.type === "Featurette" && making.test(v.name || "")),
+  ];
+  const italiani = buoni.filter(v => v.iso_639_1 === "it");
+  const visti = new Set();
+  return [...italiani, ...buoni.filter(v => v.iso_639_1 !== "it")]
+    .filter(v => !visti.has(v.key) && visti.add(v.key))
+    .slice(0, 3);
+}
+
+async function videoDietroLeQuinte(tipo, id) {
+  // include_video_language: con la sola lingua italiana TMDB restituisce
+  // solo i video italiani, e i making of sono quasi tutti in inglese.
+  const v = await tmdb("/" + tipo + "/" + id + "/videos", {
+    language: LINGUA, include_video_language: "it,en,null",
+  });
+  return scegliQuinte(v.results);
+}
+
+const _cacheQuinte = new Map();
+function dietroLeQuinte(d) {
+  const k = d.tipo + ":" + d.id;
+  if (!_cacheQuinte.has(k)) {
+    // Le due fonti non dipendono l'una dall'altra, e una che non
+    // risponde non deve spegnere l'altra. Ma un errore non resta in
+    // cache: un attimo senza rete non deve togliere la sezione per
+    // tutta la sessione.
+    let caduta = false;
+    const p = Promise.all([
+      produzioneDaWikipedia(d.wikidata).catch(() => { caduta = true; return null; }),
+      videoDietroLeQuinte(d.tipo, d.id).catch(() => { caduta = true; return []; }),
+    ]).then(([testo, video]) => {
+      if (caduta) _cacheQuinte.delete(k);
+      return { testo, video };
+    });
+    _cacheQuinte.set(k, p);
+  }
+  return _cacheQuinte.get(k);
 }
 
 
@@ -6756,6 +6951,66 @@ function pulsanteLancio(i, d) {
   return b;
 }
 
+// Un video di YouTube: l'anteprima, e al tocco il video al suo posto.
+// Non l'iframe subito: tre iframe di YouTube aperti insieme pesano, e
+// la maggior parte delle volte non li guardi.
+function riquadroVideo(video, titolo) {
+  const t = el("div", "trailer");
+  t.innerHTML =
+    '<img src="https://img.youtube.com/vi/' + esc(video.key) + '/hqdefault.jpg" alt="">' +
+    '<div class="via"><span><svg viewBox="0 0 24 24"><path d="M7 4.5l12 7.5-12 7.5z"/></svg></span></div>' +
+    '<div class="quale">' + esc(video.name) + "</div>";
+  t.onclick = () => {
+    // youtube-nocookie: meno tracciamento, stesso video
+    t.innerHTML = '<iframe src="https://www.youtube-nocookie.com/embed/' +
+      esc(video.key) + '?autoplay=1&rel=0" allow="autoplay; fullscreen; encrypted-media" ' +
+      'allowfullscreen title="' + esc(titolo) + '"></iframe>';
+  };
+  return t;
+}
+
+// Oltre questa lunghezza il testo si apre chiuso, con «Leggi tutto»:
+// la sezione «Produzione» di Inception e' lunga quanto il resto della
+// scheda messo insieme.
+const QUINTE_CHIUSA = 500;
+
+function disegnaQuinte(zona, q) {
+  if (!q || (!q.testo && !(q.video || []).length)) return;
+  zona.appendChild(el("p", "sezione", "Dietro le quinte"));
+
+  if (q.testo) {
+    const box = el("div", "produzione");
+    q.testo.pezzi.forEach(p => {
+      if (p.titolo) box.appendChild(el("p", "sottotitolo", esc(p.titolo)));
+      p.paragrafi.forEach(t => box.appendChild(el("p", "trama", esc(t))));
+    });
+    zona.appendChild(box);
+    if (lunghezzaPezzi(q.testo.pezzi) > QUINTE_CHIUSA) {
+      box.classList.add("chiusa");
+      const piu = el("button", "leggiTutto", "Leggi tutto");
+      piu.onclick = () => { box.classList.remove("chiusa"); piu.remove(); };
+      zona.appendChild(piu);
+    }
+    // La fonte va detta: il testo e' di Wikipedia, CC BY-SA. Il link
+    // solo nel browser: dentro l'app iOS aprirebbe Wikipedia AL POSTO
+    // della pagina, e da li' non si torna indietro.
+    const { lingua, voce } = q.testo;
+    const nome = lingua === "it" ? "Wikipedia" : "Wikipedia in inglese";
+    const dove = NATIVO ? esc(nome)
+      : '<a href="https://' + lingua + ".wikipedia.org/wiki/" +
+        encodeURIComponent(voce.replace(/ /g, "_")) +
+        '" target="_blank" rel="noopener">' + esc(nome) + "</a>";
+    zona.appendChild(el("p", "fonte",
+      "Da " + dove + ", voce «" + esc(voce) + "» · testo CC BY-SA"));
+  }
+
+  if ((q.video || []).length) {
+    const fila = el("div", "quinte");
+    q.video.forEach(v => fila.appendChild(riquadroVideo(v, "Dietro le quinte")));
+    zona.appendChild(fila);
+  }
+}
+
 async function schermoDettaglio(tipo, id, torna) {
   window.scrollTo(0, 0);
   scriviIndirizzo(A_PAROLA[tipo] || "film", id);
@@ -6928,18 +7183,7 @@ async function schermoDettaglio(tipo, id, torna) {
 
   if (d.video) {
     pad.appendChild(el("p", "sezione", "Trailer"));
-    const t = el("div", "trailer");
-    t.innerHTML =
-      '<img src="https://img.youtube.com/vi/' + esc(d.video.key) + '/hqdefault.jpg" alt="">' +
-      '<div class="via"><span><svg viewBox="0 0 24 24"><path d="M7 4.5l12 7.5-12 7.5z"/></svg></span></div>' +
-      '<div class="quale">' + esc(d.video.name) + "</div>";
-    t.onclick = () => {
-      // youtube-nocookie: meno tracciamento, stesso video
-      t.innerHTML = '<iframe src="https://www.youtube-nocookie.com/embed/' +
-        esc(d.video.key) + '?autoplay=1&rel=0" allow="autoplay; fullscreen; encrypted-media" ' +
-        'allowfullscreen title="Trailer"></iframe>';
-    };
-    pad.appendChild(t);
+    pad.appendChild(riquadroVideo(d.video, "Trailer"));
   }
 
   // Serie: quando esce il prossimo, e le stagioni.
@@ -7116,6 +7360,15 @@ async function schermoDettaglio(tipo, id, torna) {
     pad.appendChild(el("p", "sezione", "Trama"));
     pad.appendChild(el("p", "trama", esc(d.trama)));
   }
+
+  // DIETRO LE QUINTE, subito dopo la trama: e' testo che si legge con
+  // la trama. Arriva dopo, come la saga e i simili - sono due fonti di
+  // fuori, Wikipedia e i video di TMDB - e se non c'e' niente la
+  // sezione non compare.
+  const zonaQuinte = el("div");
+  pad.appendChild(zonaQuinte);
+  dietroLeQuinte(d).then(q => disegnaQuinte(zonaQuinte, q)).catch(() => {});
+
   if (d.cast.length) {
     schermo.appendChild(el("p", "sezione pad", "Cast"));
     const fila = el("div", "cast");
